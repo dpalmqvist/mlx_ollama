@@ -1,4 +1,6 @@
 import asyncio
+import importlib
+import json
 import logging
 import re
 import time
@@ -7,6 +9,7 @@ from typing import Any
 
 from mlx_ollama.config import settings
 from mlx_ollama.engine.registry import ModelRegistry
+from mlx_ollama.engine.template_caps import TemplateCaps, detect_caps
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +21,7 @@ class LoadedModel:
     model: Any
     tokenizer: Any  # tokenizer (mlx-lm) or processor (mlx-vlm)
     is_vlm: bool = False
+    template_caps: TemplateCaps = field(default_factory=TemplateCaps)
     loaded_at: float = field(default_factory=time.time)
     expires_at: float | None = None
     size_bytes: int = 0
@@ -96,12 +100,16 @@ class ModelManager:
                 )
 
             logger.info("Loading model %s from %s", normalized, hf_path)
-            model, tokenizer, is_vlm = await asyncio.to_thread(self._load_model, hf_path)
+            model, tokenizer, is_vlm, caps = await asyncio.to_thread(self._load_model, hf_path)
 
             ka = parse_keep_alive(
                 keep_alive if keep_alive is not None else settings.default_keep_alive
             )
             expires = time.time() + ka if ka is not None else None
+
+            logger.info("Model %s caps: tools=%s, thinking=%s, thinking_tags=%s",
+                        normalized, caps.supports_tools, caps.supports_enable_thinking,
+                        caps.has_thinking_tags)
 
             lm = LoadedModel(
                 name=normalized,
@@ -109,6 +117,7 @@ class ModelManager:
                 model=model,
                 tokenizer=tokenizer,
                 is_vlm=is_vlm,
+                template_caps=caps,
                 expires_at=expires,
             )
             self._loaded[normalized] = lm
@@ -122,19 +131,77 @@ class ModelManager:
         self._loaded.pop(normalized, None)
 
     @staticmethod
-    def _load_model(hf_path: str) -> tuple[Any, Any, bool]:
-        """Try mlx-lm first; fall back to mlx-vlm for vision-language models."""
+    def _detect_model_kind(hf_path: str) -> str:
+        """Return 'text', 'vlm', or 'unknown' by checking config.json against installed libraries."""
+        try:
+            from huggingface_hub import hf_hub_download
+            config_path = hf_hub_download(hf_path, "config.json")
+            with open(config_path) as f:
+                config = json.load(f)
+        except Exception:
+            return "unknown"
+
+        model_type = config.get("model_type", "").lower()
+        if not model_type:
+            return "unknown"
+
+        # Check mlx-lm first
+        try:
+            from mlx_lm.utils import MODEL_REMAPPING as LM_REMAP
+            mapped = LM_REMAP.get(model_type, model_type)
+            spec = importlib.util.find_spec(f"mlx_lm.models.{mapped}")
+            if spec is not None:
+                return "text"
+        except (ImportError, ModuleNotFoundError):
+            pass
+
+        # Check mlx-vlm
+        try:
+            from mlx_vlm.utils import MODEL_REMAPPING as VLM_REMAP
+            mapped = VLM_REMAP.get(model_type, model_type)
+            spec = importlib.util.find_spec(f"mlx_vlm.models.{mapped}")
+            if spec is not None:
+                return "vlm"
+        except (ImportError, ModuleNotFoundError):
+            pass
+
+        return "unknown"
+
+    @staticmethod
+    def _load_model(hf_path: str) -> tuple[Any, Any, bool, TemplateCaps]:
+        """Load a model, using config.json inspection to choose the right library."""
+        kind = ModelManager._detect_model_kind(hf_path)
+        logger.info("Detected model kind for %s: %s", hf_path, kind)
+
+        if kind == "vlm":
+            # VLM detected — load with mlx-vlm directly
+            import mlx_vlm
+            model, processor = mlx_vlm.load(hf_path)
+            # Try to get template caps from underlying tokenizer
+            tok = processor.tokenizer if hasattr(processor, "tokenizer") else processor
+            caps = detect_caps(tok)
+            return model, processor, True, caps
+
+        if kind == "text":
+            # Text model — load with mlx-lm directly
+            import mlx_lm
+            model, tokenizer = mlx_lm.load(hf_path)
+            caps = detect_caps(tokenizer)
+            return model, tokenizer, False, caps
+
+        # Unknown — try mlx-lm first, fall back to mlx-vlm
         try:
             import mlx_lm
             model, tokenizer = mlx_lm.load(hf_path)
-            return model, tokenizer, False
-        except (ValueError, Exception) as exc:
-            if "not in model" not in str(exc) and "vision" not in str(exc).lower():
-                raise
-            logger.info("mlx-lm failed (%s), trying mlx-vlm", exc.__class__.__name__)
+            caps = detect_caps(tokenizer)
+            return model, tokenizer, False, caps
+        except Exception as exc:
+            logger.info("mlx-lm failed for %s (%s), trying mlx-vlm", hf_path, exc)
             import mlx_vlm
             model, processor = mlx_vlm.load(hf_path)
-            return model, processor, True
+            tok = processor.tokenizer if hasattr(processor, "tokenizer") else processor
+            caps = detect_caps(tok)
+            return model, processor, True, caps
 
     async def _check_expiry_loop(self):
         while True:
