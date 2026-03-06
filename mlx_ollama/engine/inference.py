@@ -192,7 +192,6 @@ async def _stream_completion(
     images: list[str] | None = None,
 ) -> AsyncGenerator[dict, None]:
     async with _inference_lock:
-        mx.clear_cache()
         stream = async_mlx_stream(
             lm.model, lm.tokenizer, prompt,
             max_tokens=max_tokens,
@@ -228,7 +227,6 @@ async def _full_completion(
     images: list[str] | None = None,
 ) -> dict:
     async with _inference_lock:
-        mx.clear_cache()
         with _inference_ref(lm):
             return await _full_completion_inner(
                 lm, prompt, max_tokens, gen_kwargs, stats, images,
@@ -243,29 +241,27 @@ async def _full_completion_inner(
     stats: TimingStats,
     images: list[str] | None = None,
 ) -> dict:
+    def _generate_sync():
+        """Run generate + synchronize in the same thread so GPU work completes
+        before the thread returns to the pool."""
+        if lm.is_vlm:
+            import mlx_vlm
+            result = mlx_vlm.generate(
+                lm.model, lm.tokenizer, prompt=prompt, image=images,
+                max_tokens=max_tokens, **gen_kwargs,
+            )
+        else:
+            import mlx_lm
+            result = mlx_lm.generate(
+                lm.model, lm.tokenizer, prompt=prompt,
+                max_tokens=max_tokens, **gen_kwargs,
+            )
+        mx.synchronize()
+        return result
+
     with Timer() as total_timer:
         with Timer() as eval_timer:
-            if lm.is_vlm:
-                import mlx_vlm
-                result = await asyncio.to_thread(
-                    mlx_vlm.generate,
-                    lm.model,
-                    lm.tokenizer,
-                    prompt=prompt,
-                    image=images,
-                    max_tokens=max_tokens,
-                    **gen_kwargs,
-                )
-            else:
-                import mlx_lm
-                result = await asyncio.to_thread(
-                    mlx_lm.generate,
-                    lm.model,
-                    lm.tokenizer,
-                    prompt=prompt,
-                    max_tokens=max_tokens,
-                    **gen_kwargs,
-                )
+            result = await asyncio.to_thread(_generate_sync)
 
     stats.eval_duration = eval_timer.duration_ns
     stats.total_duration = total_timer.duration_ns
@@ -377,4 +373,5 @@ async def generate_embeddings(
 
             embeddings.append(embedding.tolist())
 
+        mx.synchronize()
         return embeddings

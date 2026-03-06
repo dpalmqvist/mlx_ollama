@@ -248,7 +248,7 @@ class TestGenerateCompletion:
     @pytest.mark.asyncio
     async def test_non_streaming(self, mock_manager):
         mock_mx = MagicMock()
-        mock_mx.clear_cache = MagicMock()
+
         mock_mx.core = mock_mx
 
         mock_mlx_lm = MagicMock()
@@ -268,7 +268,7 @@ class TestGenerateCompletion:
     @pytest.mark.asyncio
     async def test_streaming(self, mock_manager):
         mock_mx = MagicMock()
-        mock_mx.clear_cache = MagicMock()
+
 
         tokens = [
             StreamToken(text="Hello", token=1, prompt_tokens=5,
@@ -309,7 +309,7 @@ class TestGenerateChat:
     @pytest.mark.asyncio
     async def test_non_streaming(self, mock_manager):
         mock_mx = MagicMock()
-        mock_mx.clear_cache = MagicMock()
+
 
         mock_manager._loaded["qwen3:latest"].tokenizer.apply_chat_template = MagicMock(
             return_value="formatted prompt"
@@ -330,7 +330,7 @@ class TestGenerateChat:
     @pytest.mark.asyncio
     async def test_with_tools(self, mock_manager):
         mock_mx = MagicMock()
-        mock_mx.clear_cache = MagicMock()
+
 
         mock_manager._loaded["qwen3:latest"].tokenizer.apply_chat_template = MagicMock(
             return_value="formatted prompt with tools"
@@ -418,7 +418,7 @@ class TestGenerateChatVlm:
         lm.is_vlm = True
 
         mock_mx = MagicMock()
-        mock_mx.clear_cache = MagicMock()
+
 
         mock_mlx_vlm = MagicMock()
         mock_mlx_vlm.apply_chat_template.return_value = "vlm prompt"
@@ -507,7 +507,7 @@ class TestStreamCancellationHoldsLock:
     async def test_lock_held_during_drain(self, mock_manager):
         """Lock should stay held until drain_and_join completes."""
         mock_mx = MagicMock()
-        mock_mx.clear_cache = MagicMock()
+
 
         tokens = [
             StreamToken(text="a", token=1, prompt_tokens=5,

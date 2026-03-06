@@ -88,6 +88,15 @@ class CancellableStream:
             except Exception:
                 pass
         finally:
+            # Synchronize Metal GPU on THIS thread before exiting — ensures all
+            # GPU command buffers submitted by this thread are fully complete.
+            # Without this, a new inference on another thread can hit in-flight
+            # Metal operations, causing 'Completed handler provided after commit'.
+            try:
+                import mlx.core as mx
+                mx.synchronize()
+            except Exception:
+                pass
             try:
                 asyncio.run_coroutine_threadsafe(
                     self._queue.put(_SENTINEL), self._loop
