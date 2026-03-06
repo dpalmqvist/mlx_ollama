@@ -17,7 +17,6 @@ from mlx_ollama.engine.inference import (
     generate_completion,
     generate_embeddings,
 )
-from mlx_ollama.engine.model_manager import LoadedModel, ModelManager
 from mlx_ollama.engine.template_caps import TemplateCaps
 from mlx_ollama.utils.streaming import CancellableStream, StreamToken
 from mlx_ollama.utils.timing import TimingStats
@@ -174,7 +173,7 @@ class TestApplyChatTemplateText:
         messages = [{"role": "user", "content": "hi"}]
         tools = [{"type": "function", "function": {"name": "f"}}]
         caps = TemplateCaps(supports_tools=True, supports_enable_thinking=True)
-        result = _apply_chat_template_text(tokenizer, messages, tools, caps)
+        _apply_chat_template_text(tokenizer, messages, tools, caps)
         call_kwargs = tokenizer.apply_chat_template.call_args[1]
         assert call_kwargs["tools"] == tools
         assert call_kwargs["enable_thinking"] is False
@@ -190,7 +189,7 @@ class TestApplyChatTemplateText:
             }
         ]
         caps = TemplateCaps(supports_tools=False)
-        result = _apply_chat_template_text(tokenizer, messages, tools, caps)
+        _apply_chat_template_text(tokenizer, messages, tools, caps)
         # Should inject tools into system message instead
         call_args = tokenizer.apply_chat_template.call_args[0][0]
         assert call_args[0]["role"] == "system"

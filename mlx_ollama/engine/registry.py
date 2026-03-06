@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 
 from mlx_ollama.config import settings
 

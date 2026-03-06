@@ -124,7 +124,7 @@ class TestManageRouter:
 
     @pytest.mark.asyncio
     async def test_pull_non_streaming(self, app_client):
-        from unittest.mock import AsyncMock, patch
+        from unittest.mock import patch
 
         async def mock_pull(name):
             yield {"status": "pulling manifest"}
@@ -148,7 +148,7 @@ class TestManageRouter:
 
     @pytest.mark.asyncio
     async def test_pull_streaming(self, app_client):
-        from unittest.mock import AsyncMock, patch
+        from unittest.mock import patch
 
         async def mock_pull(name):
             yield {"status": "pulling manifest"}

@@ -80,7 +80,6 @@ class TestModelRegistry:
         assert registry.resolve("new-model") == "org/new-model-MLX"
         # Should be persisted
         assert models_json.exists()
-        import json
 
         saved = json.loads(models_json.read_text())
         assert saved["new-model:latest"] == "org/new-model-MLX"

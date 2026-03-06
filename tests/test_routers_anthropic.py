@@ -695,7 +695,6 @@ class TestAnthropicEndpoint:
     @pytest.mark.asyncio
     async def test_streaming_tools_keepalive_ping(self, app_client):
         """Test that keepalive pings are sent during tool buffering."""
-        import asyncio
 
         async def mock_stream(*args, **kwargs):
             async def gen():

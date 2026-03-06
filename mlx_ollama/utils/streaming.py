@@ -2,7 +2,7 @@ import asyncio
 import logging
 import threading
 import traceback
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import Generator
 from dataclasses import dataclass
 from typing import Any, Callable
 

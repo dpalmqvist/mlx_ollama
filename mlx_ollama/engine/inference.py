@@ -11,7 +11,7 @@ import mlx.core as mx
 from mlx_ollama.engine.model_manager import LoadedModel, ModelManager, parse_keep_alive
 from mlx_ollama.config import settings
 from mlx_ollama.engine.template_caps import TemplateCaps
-from mlx_ollama.utils.streaming import CancellableStream, async_mlx_stream
+from mlx_ollama.utils.streaming import async_mlx_stream
 from mlx_ollama.utils.timing import Timer, TimingStats
 
 logger = logging.getLogger(__name__)

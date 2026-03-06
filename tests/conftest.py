@@ -1,11 +1,7 @@
 """Shared fixtures for mlx-ollama tests."""
 
-import asyncio
 import json
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -14,7 +10,6 @@ from mlx_ollama.engine.model_manager import LoadedModel, ModelManager
 from mlx_ollama.engine.registry import ModelRegistry
 from mlx_ollama.engine.template_caps import TemplateCaps
 from mlx_ollama.models.store import ModelStore
-from mlx_ollama.utils.timing import TimingStats
 
 
 @pytest.fixture

@@ -1,7 +1,6 @@
 """Tests for mlx_ollama.engine.model_manager."""
 
 import asyncio
-import importlib
 import json
 import time
 from unittest.mock import MagicMock, patch
@@ -130,7 +129,7 @@ class TestModelManager:
             "_load_model",
             return_value=(mock_model, mock_tokenizer, False, TemplateCaps()),
         ):
-            lm = await manager.ensure_loaded("qwen3")
+            await manager.ensure_loaded("qwen3")
 
         assert "llama3:8b" not in manager._loaded
         assert "qwen3:latest" in manager._loaded

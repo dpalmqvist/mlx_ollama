@@ -6,7 +6,6 @@ import pytest
 
 from mlx_ollama.models.manifest import ModelManifest
 from mlx_ollama.models.store import (
-    ModelStore,
     _dir_size,
     _extract_metadata,
     _safe_dir_name,

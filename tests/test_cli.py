@@ -2,10 +2,8 @@
 
 import json
 import plistlib
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-import pytest
 
 from mlx_ollama.cli import (
     DEFAULT_MODELS,
@@ -13,7 +11,6 @@ from mlx_ollama.cli import (
     _build_plist,
     build_parser,
     cli_main,
-    cmd_serve,
     cmd_service_install,
     cmd_service_status,
     cmd_service_uninstall,

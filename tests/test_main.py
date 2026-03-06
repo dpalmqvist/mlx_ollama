@@ -1,6 +1,6 @@
 """Tests for mlx_ollama.__main__."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from mlx_ollama.__main__ import main
 

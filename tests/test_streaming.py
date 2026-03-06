@@ -1,6 +1,5 @@
 """Tests for mlx_ollama.utils.streaming."""
 
-import asyncio
 import time
 from unittest.mock import MagicMock, patch
 

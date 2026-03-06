@@ -13,16 +13,13 @@ from mlx_ollama.schemas.chat import (
     ChatRequest,
     ChatResponse,
     Message,
-    Tool,
     ToolCall,
     ToolCallFunction,
 )
 from mlx_ollama.schemas.common import ModelOptions
 from mlx_ollama.schemas.embed import (
     EmbedRequest,
-    EmbedResponse,
     EmbeddingsRequest,
-    EmbeddingsResponse,
 )
 from mlx_ollama.schemas.generate import GenerateRequest, GenerateResponse
 from mlx_ollama.schemas.manage import CopyRequest, CreateRequest, DeleteRequest
@@ -30,7 +27,6 @@ from mlx_ollama.schemas.models import (
     ModelDetails,
     ModelInfo,
     ShowRequest,
-    ShowResponse,
     TagsResponse,
 )
 from mlx_ollama.schemas.openai import (

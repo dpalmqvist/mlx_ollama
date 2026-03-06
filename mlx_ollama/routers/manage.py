@@ -1,6 +1,5 @@
 import json
 import logging
-import re
 
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -64,14 +63,12 @@ async def delete_model(req: DeleteRequest, request: Request):
 async def create_model(req: CreateRequest, request: Request):
     """Parse a basic Modelfile and create a new model entry."""
     registry = request.app.state.registry
-    store = request.app.state.model_store
 
     if not req.modelfile:
         return JSONResponse({"error": "modelfile is required"}, status_code=400)
 
     # Parse Modelfile
     from_model = None
-    system_prompt = None
     parameters = {}
 
     for line in req.modelfile.splitlines():
@@ -79,7 +76,7 @@ async def create_model(req: CreateRequest, request: Request):
         if line.upper().startswith("FROM "):
             from_model = line[5:].strip()
         elif line.upper().startswith("SYSTEM "):
-            system_prompt = line[7:].strip().strip('"')
+            line[7:].strip().strip('"')
         elif line.upper().startswith("PARAMETER "):
             parts = line[10:].strip().split(None, 1)
             if len(parts) == 2:

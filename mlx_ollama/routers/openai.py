@@ -1,7 +1,6 @@
 import json
 import time
 import uuid
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse

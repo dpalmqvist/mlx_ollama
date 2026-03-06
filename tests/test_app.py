@@ -3,9 +3,8 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 
-from mlx_ollama.app import ForceJSONMiddleware, _make_error_response, create_app
+from mlx_ollama.app import _make_error_response, create_app
 
 
 class TestMakeErrorResponse:
@@ -116,7 +115,7 @@ class TestForceJSONMiddleware:
 class TestErrorHandlers:
     @pytest.mark.asyncio
     async def test_value_error_handler_ollama(self, app_client):
-        from unittest.mock import AsyncMock, patch
+        from unittest.mock import AsyncMock
 
         with patch(
             "mlx_ollama.routers.generate.generate_completion", new_callable=AsyncMock
@@ -136,7 +135,7 @@ class TestErrorHandlers:
 
     @pytest.mark.asyncio
     async def test_value_error_handler_anthropic(self, app_client):
-        from unittest.mock import AsyncMock, patch
+        from unittest.mock import AsyncMock
 
         with patch(
             "mlx_ollama.routers.anthropic.generate_chat", new_callable=AsyncMock
@@ -157,7 +156,7 @@ class TestErrorHandlers:
 
     @pytest.mark.asyncio
     async def test_value_error_handler_openai(self, app_client):
-        from unittest.mock import AsyncMock, patch
+        from unittest.mock import AsyncMock
 
         with patch(
             "mlx_ollama.routers.openai.generate_chat", new_callable=AsyncMock
@@ -177,7 +176,7 @@ class TestErrorHandlers:
 
     @pytest.mark.asyncio
     async def test_runtime_error_handler(self, app_client):
-        from unittest.mock import AsyncMock, patch
+        from unittest.mock import AsyncMock
 
         with patch(
             "mlx_ollama.routers.generate.generate_completion", new_callable=AsyncMock
@@ -197,7 +196,7 @@ class TestErrorHandlers:
 
     @pytest.mark.asyncio
     async def test_general_error_handler(self, app_client):
-        from unittest.mock import AsyncMock, patch
+        from unittest.mock import AsyncMock
 
         with patch(
             "mlx_ollama.routers.generate.generate_completion", new_callable=AsyncMock
