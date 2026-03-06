@@ -199,6 +199,42 @@ class TestTryBareJson:
         assert len(tool_uses) == 0
 
 
+class TestBareJsonMultiline:
+    def test_bare_json_multiline(self):
+        text = '{\n  "name": "get_weather",\n  "arguments": {\n    "city": "NYC"\n  }\n}'
+        tool_uses, remaining = _try_bare_json(text)
+        assert len(tool_uses) == 1
+        assert tool_uses[0]["name"] == "get_weather"
+        assert tool_uses[0]["input"] == {"city": "NYC"}
+
+    def test_bare_json_deeply_nested(self):
+        text = '{"name": "create", "arguments": {"config": {"nested": {"deep": true}}}}'
+        tool_uses, remaining = _try_bare_json(text)
+        assert len(tool_uses) == 1
+        assert tool_uses[0]["input"]["config"]["nested"]["deep"] is True
+
+    def test_bare_json_braces_in_string_values(self):
+        text = '{"name": "echo", "arguments": {"msg": "a { b } c"}}'
+        tool_uses, remaining = _try_bare_json(text)
+        assert len(tool_uses) == 1
+        assert tool_uses[0]["input"]["msg"] == "a { b } c"
+
+    def test_bare_json_multiple_multiline(self):
+        text = (
+            '{\n  "name": "a",\n  "arguments": {"x": 1}\n}\n'
+            '{\n  "name": "b",\n  "arguments": {"y": 2}\n}'
+        )
+        tool_uses, remaining = _try_bare_json(text)
+        assert len(tool_uses) == 2
+        assert tool_uses[0]["name"] == "a"
+        assert tool_uses[1]["name"] == "b"
+
+    def test_bare_json_unclosed_brace(self):
+        text = '{"name": "func", "arguments": {"x": 1}'
+        tool_uses, remaining = _try_bare_json(text)
+        assert len(tool_uses) == 0
+
+
 class TestParseModelOutput:
     def test_plain_text(self):
         thinking, visible, tools = parse_model_output("Hello world", has_tools=False)

@@ -92,10 +92,64 @@ class TestDetectCaps:
             "not a dict",
         ]
         caps = detect_caps(tok)
-        assert caps.supports_tools is True
+        # "tools" is static text, not a Jinja2 variable — correctly False
+        assert caps.supports_tools is False
 
     def test_thinking_in_lowercase(self):
         tok = MagicMock()
         tok.chat_template = "{{ messages }} Thinking block"
         caps = detect_caps(tok)
         assert caps.has_thinking_tags is True
+
+    def test_tools_variable_detected(self):
+        """Jinja2 variable `tools` in template → supports_tools=True."""
+        tok = MagicMock()
+        tok.chat_template = "{% if tools %}{{ tools }}{% endif %}"
+        caps = detect_caps(tok)
+        assert caps.supports_tools is True
+
+    def test_tools_in_comment_not_detected(self):
+        """The word 'tools' only in a Jinja2 comment → supports_tools=False."""
+        tok = MagicMock()
+        tok.chat_template = "{# tools #}{{ messages }}"
+        caps = detect_caps(tok)
+        assert caps.supports_tools is False
+
+    def test_tools_in_static_text_not_detected(self):
+        """The word 'tools' only in static text → supports_tools=False."""
+        tok = MagicMock()
+        tok.chat_template = "The word tools appears here. {{ messages }}"
+        caps = detect_caps(tok)
+        assert caps.supports_tools is False
+
+    def test_enable_thinking_variable_detected(self):
+        """Jinja2 variable `enable_thinking` → supports_enable_thinking=True."""
+        tok = MagicMock()
+        tok.chat_template = "{% if enable_thinking %}think{% endif %}{{ messages }}"
+        caps = detect_caps(tok)
+        assert caps.supports_enable_thinking is True
+
+    def test_enable_thinking_in_comment_not_detected(self):
+        """The word 'enable_thinking' only in a comment → supports_enable_thinking=False."""
+        tok = MagicMock()
+        tok.chat_template = "{# enable_thinking #}{{ messages }}"
+        caps = detect_caps(tok)
+        assert caps.supports_enable_thinking is False
+
+    def test_malformed_template_falls_back_to_substring(self):
+        """Invalid Jinja2 → fall back to substring matching."""
+        tok = MagicMock()
+        tok.chat_template = "{% if tools %}{{ tools }}{%"  # unclosed block
+        caps = detect_caps(tok)
+        # Substring fallback finds "tools"
+        assert caps.supports_tools is True
+
+    def test_list_template_jinja_parsing(self):
+        """List-of-dicts format works with AST-based parsing."""
+        tok = MagicMock()
+        tok.chat_template = [
+            {"name": "default", "template": "{{ messages }}"},
+            {"name": "tool_use", "template": "{% if tools %}{{ tools }}{% endif %}"},
+        ]
+        caps = detect_caps(tok)
+        assert caps.supports_tools is True

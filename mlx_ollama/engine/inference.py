@@ -16,7 +16,11 @@ from mlx_ollama.utils.timing import Timer, TimingStats
 
 logger = logging.getLogger(__name__)
 
-# Serialize inference to prevent concurrent Metal command buffer access
+# Metal does not support concurrent command buffer submission across any
+# models — they all share the same Metal device and command queue.  A per-model
+# lock would still allow interleaved GPU work from different models, risking
+# crashes or corruption.  A single global lock is an intentional trade-off:
+# we sacrifice parallelism for stability on Apple Silicon.
 _inference_lock = asyncio.Lock()
 
 
@@ -32,17 +36,30 @@ def _safe_sync():
 async def _inference_locked():
     """Async context manager that acquires the inference lock with Metal sync on entry/exit."""
     await _inference_lock.acquire()
+    # Sync the default Metal stream so any pending GPU work from the previous
+    # inference completes before we start a new one.
     _safe_sync()
     try:
         yield
     finally:
+        # Sync again on exit to ensure this inference's GPU work is fully
+        # complete before releasing the lock to the next caller.
         _safe_sync()
         _inference_lock.release()
 
 
 @contextlib.contextmanager
 def _inference_ref(lm: LoadedModel):
-    """Track active inference on a model to prevent expiry during use."""
+    """Track active inference on a model to prevent expiry during use.
+
+    Note: there is a small window between ``ensure_loaded()`` (which returns
+    the LoadedModel) and the point where ``_inference_ref`` increments
+    ``active_refs``.  During that window the expiry checker could remove the
+    model from ``_loaded``.  This is **safe**: the caller already holds a
+    Python reference to the LoadedModel object, so the model and tokenizer
+    remain alive in memory.  The only side-effect is that the next request
+    would re-load the model into ``_loaded``.
+    """
     lm.active_refs += 1
     try:
         yield
@@ -214,6 +231,7 @@ async def _stream_completion(
     # Use explicit acquire/release instead of `async with` to prevent
     # CancelledError from releasing the lock before cleanup completes.
     await _inference_lock.acquire()
+    # Sync default stream before starting — same purpose as _inference_locked entry.
     _safe_sync()
     stream = async_mlx_stream(
         lm.model, lm.tokenizer, prompt,
@@ -253,6 +271,8 @@ async def _stream_completion(
             if stream._thread is not None and stream._thread.is_alive():
                 stream._thread.join(timeout=30)
         finally:
+            # Sync default stream after drain to ensure cleanup is complete
+            # before releasing the lock.
             _safe_sync()
             _inference_lock.release()
 
@@ -297,8 +317,9 @@ async def _full_completion_inner(
                 max_tokens=max_tokens, **gen_kwargs,
             )
             from mlx_lm.generate import generation_stream
-        # Sync the actual generation_stream, not just the default stream.
-        # mlx_lm/mlx_vlm run GPU work on their own module-level stream.
+        # Sync the generation_stream specifically — mlx_lm/mlx_vlm run GPU
+        # work on this module-level stream, not the default stream.  Without
+        # this, generate() may return before GPU work is actually done.
         mx.synchronize(generation_stream)
         return result
 
@@ -422,5 +443,7 @@ async def generate_embeddings(
 
             embeddings.append(embedding.tolist())
 
+        # Defensive sync — _inference_locked exit also syncs, but this
+        # ensures embedding tensors are fully evaluated before .tolist().
         mx.synchronize()
         return embeddings

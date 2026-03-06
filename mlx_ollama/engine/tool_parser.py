@@ -44,11 +44,8 @@ _DEEPSEEK_CALL_RE = re.compile(
     re.DOTALL,
 )
 
-# Bare JSON: must be on its own line or at text start, requires "name" and "arguments"/"parameters"
-_BARE_JSON_RE = re.compile(
-    r'(?:^|\n)\s*(\{"name"\s*:\s*"[^"]+"\s*,\s*"(?:arguments|parameters)"\s*:\s*\{.*?\}\s*\})',
-    re.DOTALL,
-)
+# Bare JSON: find `{` at line start (possibly followed by whitespace/newline then "name")
+_BARE_JSON_START_RE = re.compile(r'(?:^|\n)\s*(\{)\s*"name"', re.MULTILINE)
 
 
 def _parse_json_call(data: dict) -> dict | None:
@@ -170,19 +167,56 @@ def _try_deepseek(text: str) -> tuple[list[dict], str]:
     return tool_uses, text
 
 
+def _extract_json_object(text: str, start: int) -> str | None:
+    """Extract a JSON object from text starting at a '{', counting braces.
+
+    Respects string literals so braces inside quoted strings are ignored.
+    Returns the substring from start to the matching '}', or None if unbalanced.
+    """
+    depth = 0
+    in_string = False
+    escape = False
+    i = start
+    while i < len(text):
+        ch = text[i]
+        if escape:
+            escape = False
+        elif ch == '\\' and in_string:
+            escape = True
+        elif ch == '"' and not escape:
+            in_string = not in_string
+        elif not in_string:
+            if ch == '{':
+                depth += 1
+            elif ch == '}':
+                depth -= 1
+                if depth == 0:
+                    return text[start:i + 1]
+        i += 1
+    return None
+
+
 def _try_bare_json(text: str) -> tuple[list[dict], str]:
     """Parse bare JSON tool calls (must be on own line or at text start)."""
     tool_uses = []
-    for match in _BARE_JSON_RE.finditer(text):
+    spans = []
+    for match in _BARE_JSON_START_RE.finditer(text):
+        brace_pos = match.start(1)
+        obj_str = _extract_json_object(text, brace_pos)
+        if obj_str is None:
+            continue
         try:
-            call = json.loads(match.group(1))
+            call = json.loads(obj_str)
             result = _parse_json_call(call)
             if result:
                 tool_uses.append(result)
+                spans.append((brace_pos, brace_pos + len(obj_str)))
         except (json.JSONDecodeError, AttributeError):
             continue
     if tool_uses:
-        text = _BARE_JSON_RE.sub("", text)
+        # Remove matched spans from text (in reverse order to preserve indices)
+        for start, end in reversed(spans):
+            text = text[:start] + text[end:]
     return tool_uses, text
 
 

@@ -971,6 +971,7 @@ source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
     { name = "huggingface-hub" },
+    { name = "jinja2" },
     { name = "mlx-lm" },
     { name = "mlx-vlm" },
     { name = "pydantic" },
@@ -992,6 +993,7 @@ dev = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.104" },
     { name = "huggingface-hub", specifier = ">=0.20" },
+    { name = "jinja2", specifier = ">=3.0" },
     { name = "mlx-lm", specifier = ">=0.20" },
     { name = "mlx-vlm", specifier = ">=0.3.12" },
     { name = "pydantic", specifier = ">=2.0" },

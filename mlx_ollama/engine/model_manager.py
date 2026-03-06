@@ -18,6 +18,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Exceptions from mlx-lm.load() that indicate the model simply isn't
+# compatible with mlx-lm and should be retried with mlx-vlm.  Errors like
+# ImportError, MemoryError, and RuntimeError indicate real problems that
+# should propagate immediately.
+_FALLBACK_EXCEPTIONS = (ValueError, KeyError, FileNotFoundError, OSError, json.JSONDecodeError)
+
 
 @dataclass
 class LoadedModel:
@@ -227,7 +233,7 @@ class ModelManager:
             model, tokenizer = mlx_lm.load(load_path)
             caps = detect_caps(tokenizer)
             return model, tokenizer, False, caps
-        except Exception as exc:
+        except _FALLBACK_EXCEPTIONS as exc:
             logger.warning("mlx-lm failed for %s (%s), trying mlx-vlm", label, exc)
             import mlx_vlm
             model, processor = mlx_vlm.load(load_path)
@@ -267,6 +273,11 @@ class ModelManager:
             await asyncio.sleep(30)
             now = time.time()
             async with self._lock:
+                # Models with active_refs > 0 are skipped — they are currently
+                # serving requests.  Even if a model slips through with
+                # active_refs == 0 between ensure_loaded() and _inference_ref(),
+                # the caller still holds a Python reference, so the model/
+                # tokenizer stay alive; only the _loaded dict entry is removed.
                 expired = [
                     name
                     for name, lm in self._loaded.items()

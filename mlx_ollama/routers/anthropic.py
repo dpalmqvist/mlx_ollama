@@ -18,6 +18,10 @@ from mlx_ollama.schemas.anthropic import (
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+THINKING_CHUNK_SIZE = 1000
+TEXT_CHUNK_SIZE = 100
+KEEPALIVE_PING_INTERVAL = 5.0
+
 
 def _make_msg_id() -> str:
     return f"msg_{uuid.uuid4().hex[:24]}"
@@ -133,7 +137,7 @@ def _sse(event: str, data: dict) -> str:
 _PING_SENTINEL = object()
 
 
-async def _with_keepalive_pings(aiter, interval=5.0):
+async def _with_keepalive_pings(aiter, interval=KEEPALIVE_PING_INTERVAL):
     """Yield items from aiter; yield _PING_SENTINEL if no item arrives within interval seconds."""
     ait = aiter.__aiter__()
     next_item_task = None
@@ -185,7 +189,7 @@ async def _stream_buffered_with_tools(result, tool_names):
     full_text = ""
     output_tokens = 0
 
-    async for chunk in _with_keepalive_pings(result, interval=5.0):
+    async for chunk in _with_keepalive_pings(result, interval=KEEPALIVE_PING_INTERVAL):
         if chunk is _PING_SENTINEL:
             yield _sse("ping", {"type": "ping"})
             continue
@@ -211,11 +215,11 @@ async def _stream_buffered_with_tools(result, tool_names):
     block_idx = 0
 
     if thinking:
-        for event in _emit_content_block(block_idx, "thinking", "thinking_delta", "thinking", thinking, 1000):
+        for event in _emit_content_block(block_idx, "thinking", "thinking_delta", "thinking", thinking, THINKING_CHUNK_SIZE):
             yield event
         block_idx += 1
 
-    for event in _emit_content_block(block_idx, "text", "text_delta", "text", visible_text, 100):
+    for event in _emit_content_block(block_idx, "text", "text_delta", "text", visible_text, TEXT_CHUNK_SIZE):
         yield event
     block_idx += 1
 
@@ -249,7 +253,7 @@ async def _stream_thinking_state_machine(result):
     state = "init"  # "init", "thinking", "text"
     text_block_started = False
 
-    async for chunk in _with_keepalive_pings(result, interval=5.0):
+    async for chunk in _with_keepalive_pings(result, interval=KEEPALIVE_PING_INTERVAL):
         if chunk is _PING_SENTINEL:
             yield _sse("ping", {"type": "ping"})
             continue

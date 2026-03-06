@@ -287,7 +287,7 @@ class TestLoadModel:
 
         with patch.object(manager, "_detect_model_kind", return_value="text"):
             mock_mlx_lm = MagicMock()
-            mock_mlx_lm.load.side_effect = Exception("unsupported")
+            mock_mlx_lm.load.side_effect = ValueError("unsupported")
             mock_mlx_vlm = MagicMock()
             mock_mlx_vlm.load.return_value = (mock_model, mock_processor)
             with patch.dict("sys.modules", {"mlx_lm": mock_mlx_lm, "mlx_vlm": mock_mlx_vlm}):
@@ -320,7 +320,7 @@ class TestLoadModel:
 
         with patch.object(manager, "_detect_model_kind", return_value="unknown"):
             mock_mlx_lm = MagicMock()
-            mock_mlx_lm.load.side_effect = Exception("fail")
+            mock_mlx_lm.load.side_effect = ValueError("fail")
             mock_mlx_vlm = MagicMock()
             mock_mlx_vlm.load.return_value = (mock_model, mock_processor)
             with patch.dict("sys.modules", {"mlx_lm": mock_mlx_lm, "mlx_vlm": mock_mlx_vlm}):
@@ -369,6 +369,79 @@ class TestLoadModel:
         assert mock_dl.call_args[1]["repo_id"] == "test/path"
 
 
+class TestTryLmThenVlmFallback:
+    """Test that _try_lm_then_vlm only falls back on expected exceptions."""
+
+    def _make_manager(self, registry, mock_store):
+        return ModelManager(registry, mock_store)
+
+    def _pre_download(self, mock_store, hf_path):
+        local_dir = mock_store.local_path(hf_path)
+        local_dir.mkdir(parents=True, exist_ok=True)
+        (local_dir / "config.json").write_text("{}")
+
+    def test_fallback_on_value_error(self, registry, mock_store):
+        manager = self._make_manager(registry, mock_store)
+        self._pre_download(mock_store, "test/path")
+        mock_processor = MagicMock()
+        mock_processor.tokenizer = MagicMock()
+        mock_processor.tokenizer.chat_template = None
+
+        mock_mlx_lm = MagicMock()
+        mock_mlx_lm.load.side_effect = ValueError("unsupported model type")
+        mock_mlx_vlm = MagicMock()
+        mock_mlx_vlm.load.return_value = (MagicMock(), mock_processor)
+
+        with patch.dict("sys.modules", {"mlx_lm": mock_mlx_lm, "mlx_vlm": mock_mlx_vlm}):
+            _, _, is_vlm, _ = manager._try_lm_then_vlm("test/path", "test")
+        assert is_vlm is True
+
+    def test_fallback_on_key_error(self, registry, mock_store):
+        manager = self._make_manager(registry, mock_store)
+        mock_processor = MagicMock()
+        mock_processor.tokenizer = MagicMock()
+        mock_processor.tokenizer.chat_template = None
+
+        mock_mlx_lm = MagicMock()
+        mock_mlx_lm.load.side_effect = KeyError("missing key")
+        mock_mlx_vlm = MagicMock()
+        mock_mlx_vlm.load.return_value = (MagicMock(), mock_processor)
+
+        with patch.dict("sys.modules", {"mlx_lm": mock_mlx_lm, "mlx_vlm": mock_mlx_vlm}):
+            _, _, is_vlm, _ = manager._try_lm_then_vlm("test/path", "test")
+        assert is_vlm is True
+
+    def test_no_fallback_on_import_error(self, registry, mock_store):
+        manager = self._make_manager(registry, mock_store)
+
+        mock_mlx_lm = MagicMock()
+        mock_mlx_lm.load.side_effect = ImportError("no module")
+
+        with patch.dict("sys.modules", {"mlx_lm": mock_mlx_lm}):
+            with pytest.raises(ImportError):
+                manager._try_lm_then_vlm("test/path", "test")
+
+    def test_no_fallback_on_runtime_error(self, registry, mock_store):
+        manager = self._make_manager(registry, mock_store)
+
+        mock_mlx_lm = MagicMock()
+        mock_mlx_lm.load.side_effect = RuntimeError("GPU error")
+
+        with patch.dict("sys.modules", {"mlx_lm": mock_mlx_lm}):
+            with pytest.raises(RuntimeError):
+                manager._try_lm_then_vlm("test/path", "test")
+
+    def test_no_fallback_on_memory_error(self, registry, mock_store):
+        manager = self._make_manager(registry, mock_store)
+
+        mock_mlx_lm = MagicMock()
+        mock_mlx_lm.load.side_effect = MemoryError("out of memory")
+
+        with patch.dict("sys.modules", {"mlx_lm": mock_mlx_lm}):
+            with pytest.raises(MemoryError):
+                manager._try_lm_then_vlm("test/path", "test")
+
+
 class TestExpiryChecker:
     @pytest.mark.asyncio
     async def test_expired_models_removed(self, registry, mock_store):
@@ -414,3 +487,58 @@ class TestExpiryChecker:
             del manager._loaded[name]
 
         assert "active:latest" in manager._loaded
+
+    @pytest.mark.asyncio
+    async def test_expiry_skips_model_with_active_refs(self, registry, mock_store):
+        """Models with active_refs > 0 must not be expired."""
+        manager = ModelManager(registry, mock_store)
+        lm = LoadedModel(
+            name="busy:latest",
+            hf_path="test/model",
+            model=MagicMock(),
+            tokenizer=MagicMock(),
+            expires_at=time.time() - 10,  # expired
+            active_refs=1,  # but actively in use
+        )
+        manager._loaded["busy:latest"] = lm
+
+        # Simulate one cycle of _check_expiry_loop logic
+        now = time.time()
+        expired = [
+            name for name, m in manager._loaded.items()
+            if m.expires_at is not None and m.expires_at <= now and m.active_refs == 0
+        ]
+        for name in expired:
+            del manager._loaded[name]
+
+        assert "busy:latest" in manager._loaded
+
+    @pytest.mark.asyncio
+    async def test_expired_model_object_still_usable(self, registry, mock_store):
+        """Even if a model is removed from _loaded, the object remains usable."""
+        manager = ModelManager(registry, mock_store)
+        model_mock = MagicMock()
+        tokenizer_mock = MagicMock()
+        lm = LoadedModel(
+            name="removed:latest",
+            hf_path="test/model",
+            model=model_mock,
+            tokenizer=tokenizer_mock,
+            expires_at=time.time() - 10,
+        )
+        manager._loaded["removed:latest"] = lm
+
+        # Hold a reference, then expire it
+        held_ref = lm
+        now = time.time()
+        expired = [
+            name for name, m in manager._loaded.items()
+            if m.expires_at is not None and m.expires_at <= now and m.active_refs == 0
+        ]
+        for name in expired:
+            del manager._loaded[name]
+
+        # Model object still accessible via held reference
+        assert "removed:latest" not in manager._loaded
+        assert held_ref.model is model_mock
+        assert held_ref.tokenizer is tokenizer_mock
