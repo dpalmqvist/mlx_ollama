@@ -9,3 +9,5 @@ build/
 models.json
 aliases.json
 *.mlx
+.coverage
+.pytest_cache/
