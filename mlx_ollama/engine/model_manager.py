@@ -130,6 +130,13 @@ class ModelManager:
         normalized = self.registry.normalize_name(name)
         self._loaded.pop(normalized, None)
 
+    # Config keys that indicate a vision-language model
+    _VLM_CONFIG_KEYS = frozenset({
+        "vision_config", "visual", "vision_tower", "vision_model",
+        "image_token_id", "vision_feature_layer", "mm_vision_tower",
+        "visual_config", "vit_config",
+    })
+
     @staticmethod
     def _detect_model_kind(hf_path: str) -> str:
         """Return 'text', 'vlm', or 'unknown' by checking config.json against installed libraries."""
@@ -145,7 +152,24 @@ class ModelManager:
         if not model_type:
             return "unknown"
 
-        # Check mlx-lm first
+        # Check for vision-related config keys — these indicate a VLM regardless
+        # of whether the base model_type also exists in mlx-lm
+        has_vision_keys = bool(ModelManager._VLM_CONFIG_KEYS & config.keys())
+        if has_vision_keys:
+            # Verify mlx-vlm can handle it
+            try:
+                from mlx_vlm.utils import MODEL_REMAPPING as VLM_REMAP
+                mapped = VLM_REMAP.get(model_type, model_type)
+                spec = importlib.util.find_spec(f"mlx_vlm.models.{mapped}")
+                if spec is not None:
+                    return "vlm"
+            except (ImportError, ModuleNotFoundError):
+                pass
+            # Has vision keys but mlx-vlm doesn't recognize it — still try as VLM
+            logger.info("Config has vision keys but model_type '%s' not in mlx-vlm, will try anyway", model_type)
+            return "vlm"
+
+        # No vision keys — check mlx-lm
         try:
             from mlx_lm.utils import MODEL_REMAPPING as LM_REMAP
             mapped = LM_REMAP.get(model_type, model_type)
@@ -155,7 +179,7 @@ class ModelManager:
         except (ImportError, ModuleNotFoundError):
             pass
 
-        # Check mlx-vlm
+        # Fallback: check mlx-vlm even without vision keys
         try:
             from mlx_vlm.utils import MODEL_REMAPPING as VLM_REMAP
             mapped = VLM_REMAP.get(model_type, model_type)
@@ -183,11 +207,19 @@ class ModelManager:
             return model, processor, True, caps
 
         if kind == "text":
-            # Text model — load with mlx-lm directly
-            import mlx_lm
-            model, tokenizer = mlx_lm.load(hf_path)
-            caps = detect_caps(tokenizer)
-            return model, tokenizer, False, caps
+            # Text model — load with mlx-lm, fall back to mlx-vlm if it fails
+            try:
+                import mlx_lm
+                model, tokenizer = mlx_lm.load(hf_path)
+                caps = detect_caps(tokenizer)
+                return model, tokenizer, False, caps
+            except Exception as exc:
+                logger.warning("mlx-lm failed for detected-text model %s (%s), trying mlx-vlm", hf_path, exc)
+                import mlx_vlm
+                model, processor = mlx_vlm.load(hf_path)
+                tok = processor.tokenizer if hasattr(processor, "tokenizer") else processor
+                caps = detect_caps(tok)
+                return model, processor, True, caps
 
         # Unknown — try mlx-lm first, fall back to mlx-vlm
         try:
