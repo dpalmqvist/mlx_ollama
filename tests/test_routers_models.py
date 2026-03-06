@@ -1,4 +1,4 @@
-"""Tests for mlx_ollama.routers.models."""
+"""Tests for olmlx.routers.models."""
 
 import pytest
 
@@ -23,7 +23,7 @@ class TestModelsRouter:
 
     @pytest.mark.asyncio
     async def test_show_found(self, app_client, tmp_path):
-        from mlx_ollama.models.manifest import ModelManifest
+        from olmlx.models.manifest import ModelManifest
 
         store = app_client._transport.app.state.model_store
         model_dir = store.models_dir / "qwen3_latest"

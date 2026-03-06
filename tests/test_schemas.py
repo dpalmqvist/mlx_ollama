@@ -1,6 +1,6 @@
 """Tests for all schema models."""
 
-from mlx_ollama.schemas.anthropic import (
+from olmlx.schemas.anthropic import (
     AnthropicContentBlock,
     AnthropicMessage,
     AnthropicMessagesRequest,
@@ -9,27 +9,27 @@ from mlx_ollama.schemas.anthropic import (
     AnthropicToolInputSchema,
     AnthropicUsage,
 )
-from mlx_ollama.schemas.chat import (
+from olmlx.schemas.chat import (
     ChatRequest,
     ChatResponse,
     Message,
     ToolCall,
     ToolCallFunction,
 )
-from mlx_ollama.schemas.common import ModelOptions
-from mlx_ollama.schemas.embed import (
+from olmlx.schemas.common import ModelOptions
+from olmlx.schemas.embed import (
     EmbedRequest,
     EmbeddingsRequest,
 )
-from mlx_ollama.schemas.generate import GenerateRequest, GenerateResponse
-from mlx_ollama.schemas.manage import CopyRequest, CreateRequest, DeleteRequest
-from mlx_ollama.schemas.models import (
+from olmlx.schemas.generate import GenerateRequest, GenerateResponse
+from olmlx.schemas.manage import CopyRequest, CreateRequest, DeleteRequest
+from olmlx.schemas.models import (
     ModelDetails,
     ModelInfo,
     ShowRequest,
     TagsResponse,
 )
-from mlx_ollama.schemas.openai import (
+from olmlx.schemas.openai import (
     OpenAIChatMessage,
     OpenAIChatRequest,
     OpenAIChatResponse,
@@ -44,8 +44,8 @@ from mlx_ollama.schemas.openai import (
     OpenAIModelList,
     OpenAIUsage,
 )
-from mlx_ollama.schemas.pull import PullRequest, PullResponse
-from mlx_ollama.schemas.status import PsResponse, RunningModel, VersionResponse
+from olmlx.schemas.pull import PullRequest, PullResponse
+from olmlx.schemas.status import PsResponse, RunningModel, VersionResponse
 
 
 class TestCommonSchemas:
@@ -222,7 +222,7 @@ class TestOpenAISchemas:
     def test_model(self):
         m = OpenAIModel(id="test")
         assert m.object == "model"
-        assert m.owned_by == "mlx-ollama"
+        assert m.owned_by == "olmlx"
 
     def test_model_list(self):
         ml = OpenAIModelList(data=[OpenAIModel(id="a"), OpenAIModel(id="b")])

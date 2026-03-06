@@ -1,10 +1,10 @@
-"""Tests for mlx_ollama.app."""
+"""Tests for olmlx.app."""
 
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from mlx_ollama.app import _make_error_response, create_app
+from olmlx.app import _make_error_response, create_app
 
 
 class TestMakeErrorResponse:
@@ -57,7 +57,7 @@ class TestMakeErrorResponse:
 class TestCreateApp:
     def test_app_created(self):
         app = create_app()
-        assert app.title == "MLX Ollama"
+        assert app.title == "olmlx"
 
     def test_routers_registered(self):
         app = create_app()
@@ -73,11 +73,11 @@ class TestLifespan:
     @pytest.mark.asyncio
     async def test_lifespan_startup_shutdown(self, tmp_path, monkeypatch):
         """Test that the lifespan creates and cleans up state properly."""
-        from mlx_ollama.app import lifespan
+        from olmlx.app import lifespan
 
-        monkeypatch.setattr("mlx_ollama.app.settings.models_dir", tmp_path / "models")
+        monkeypatch.setattr("olmlx.app.settings.models_dir", tmp_path / "models")
         monkeypatch.setattr(
-            "mlx_ollama.app.settings.models_config", tmp_path / "models.json"
+            "olmlx.app.settings.models_config", tmp_path / "models.json"
         )
         (tmp_path / "models.json").write_text("{}")
 
@@ -118,7 +118,7 @@ class TestErrorHandlers:
         from unittest.mock import AsyncMock
 
         with patch(
-            "mlx_ollama.routers.generate.generate_completion", new_callable=AsyncMock
+            "olmlx.routers.generate.generate_completion", new_callable=AsyncMock
         ) as mock_gen:
             mock_gen.side_effect = ValueError("bad input")
             resp = await app_client.post(
@@ -138,7 +138,7 @@ class TestErrorHandlers:
         from unittest.mock import AsyncMock
 
         with patch(
-            "mlx_ollama.routers.anthropic.generate_chat", new_callable=AsyncMock
+            "olmlx.routers.anthropic.generate_chat", new_callable=AsyncMock
         ) as mock_gen:
             mock_gen.side_effect = ValueError("invalid model")
             resp = await app_client.post(
@@ -159,7 +159,7 @@ class TestErrorHandlers:
         from unittest.mock import AsyncMock
 
         with patch(
-            "mlx_ollama.routers.openai.generate_chat", new_callable=AsyncMock
+            "olmlx.routers.openai.generate_chat", new_callable=AsyncMock
         ) as mock_gen:
             mock_gen.side_effect = ValueError("bad request")
             resp = await app_client.post(
@@ -179,7 +179,7 @@ class TestErrorHandlers:
         from unittest.mock import AsyncMock
 
         with patch(
-            "mlx_ollama.routers.generate.generate_completion", new_callable=AsyncMock
+            "olmlx.routers.generate.generate_completion", new_callable=AsyncMock
         ) as mock_gen:
             mock_gen.side_effect = RuntimeError("engine crashed")
             resp = await app_client.post(
@@ -199,7 +199,7 @@ class TestErrorHandlers:
         from unittest.mock import AsyncMock
 
         with patch(
-            "mlx_ollama.routers.generate.generate_completion", new_callable=AsyncMock
+            "olmlx.routers.generate.generate_completion", new_callable=AsyncMock
         ) as mock_gen:
             mock_gen.side_effect = TypeError("unexpected error")
             resp = await app_client.post(

@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 
-from mlx_ollama.schemas.common import ModelOptions
+from olmlx.schemas.common import ModelOptions
 
 
 class ToolCallFunction(BaseModel):

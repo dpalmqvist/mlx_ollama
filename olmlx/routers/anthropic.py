@@ -6,9 +6,9 @@ import uuid
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
-from mlx_ollama.engine.inference import generate_chat
-from mlx_ollama.engine.tool_parser import _make_tool_use_id, parse_model_output
-from mlx_ollama.schemas.anthropic import (
+from olmlx.engine.inference import generate_chat
+from olmlx.engine.tool_parser import _make_tool_use_id, parse_model_output
+from olmlx.schemas.anthropic import (
     AnthropicContentBlock,
     AnthropicMessagesRequest,
     AnthropicMessagesResponse,

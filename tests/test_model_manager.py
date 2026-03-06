@@ -1,4 +1,4 @@
-"""Tests for mlx_ollama.engine.model_manager."""
+"""Tests for olmlx.engine.model_manager."""
 
 import asyncio
 import json
@@ -7,8 +7,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from mlx_ollama.engine.model_manager import LoadedModel, ModelManager, parse_keep_alive
-from mlx_ollama.engine.template_caps import TemplateCaps
+from olmlx.engine.model_manager import LoadedModel, ModelManager, parse_keep_alive
+from olmlx.engine.template_caps import TemplateCaps
 
 
 class TestParseKeepAlive:
@@ -105,9 +105,7 @@ class TestModelManager:
 
     @pytest.mark.asyncio
     async def test_ensure_loaded_evicts_lru(self, registry, mock_store, monkeypatch):
-        monkeypatch.setattr(
-            "mlx_ollama.engine.model_manager.settings.max_loaded_models", 1
-        )
+        monkeypatch.setattr("olmlx.engine.model_manager.settings.max_loaded_models", 1)
         manager = ModelManager(registry, mock_store)
 
         # Pre-load a model

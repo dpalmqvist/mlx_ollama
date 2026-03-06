@@ -1,8 +1,8 @@
-"""Tests for mlx_ollama.engine.template_caps."""
+"""Tests for olmlx.engine.template_caps."""
 
 from unittest.mock import MagicMock
 
-from mlx_ollama.engine.template_caps import TemplateCaps, detect_caps
+from olmlx.engine.template_caps import TemplateCaps, detect_caps
 
 
 class TestTemplateCaps:

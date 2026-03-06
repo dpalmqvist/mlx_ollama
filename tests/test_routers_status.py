@@ -1,8 +1,8 @@
-"""Tests for mlx_ollama.routers.status."""
+"""Tests for olmlx.routers.status."""
 
 import pytest
 
-from mlx_ollama import __version__
+from olmlx import __version__
 
 
 class TestStatusRouter:

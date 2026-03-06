@@ -1,5 +1,5 @@
 [project]
-name = "mlx-ollama"
+name = "olmlx"
 version = "0.1.0"
 description = "Ollama API-compatible server using Apple MLX for inference"
 requires-python = ">=3.11"
@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [project.scripts]
-mlx-ollama = "mlx_ollama.__main__:main"
+olmlx = "olmlx.__main__:main"
 
 [build-system]
 requires = ["hatchling"]

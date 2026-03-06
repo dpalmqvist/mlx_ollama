@@ -9,12 +9,12 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from mlx_ollama.config import settings
-from mlx_ollama.engine.registry import ModelRegistry
-from mlx_ollama.engine.template_caps import TemplateCaps, detect_caps
+from olmlx.config import settings
+from olmlx.engine.registry import ModelRegistry
+from olmlx.engine.template_caps import TemplateCaps, detect_caps
 
 if TYPE_CHECKING:
-    from mlx_ollama.models.store import ModelStore
+    from olmlx.models.store import ModelStore
 
 logger = logging.getLogger(__name__)
 

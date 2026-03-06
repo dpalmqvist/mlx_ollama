@@ -1,11 +1,11 @@
-"""Tests for mlx_ollama.engine.inference (non-GPU parts)."""
+"""Tests for olmlx.engine.inference (non-GPU parts)."""
 
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from mlx_ollama.engine.inference import (
+from olmlx.engine.inference import (
     _build_generate_kwargs,
     _extract_images,
     _inference_lock,
@@ -17,9 +17,9 @@ from mlx_ollama.engine.inference import (
     generate_completion,
     generate_embeddings,
 )
-from mlx_ollama.engine.template_caps import TemplateCaps
-from mlx_ollama.utils.streaming import CancellableStream, StreamToken
-from mlx_ollama.utils.timing import TimingStats
+from olmlx.engine.template_caps import TemplateCaps
+from olmlx.utils.streaming import CancellableStream, StreamToken
+from olmlx.utils.timing import TimingStats
 
 
 class TestBuildGenerateKwargs:
@@ -250,7 +250,7 @@ class TestApplyChatTemplateText:
 
 class TestApplyChatTemplateVlm:
     def test_vlm_template(self):
-        from mlx_ollama.engine.inference import _apply_chat_template_vlm
+        from olmlx.engine.inference import _apply_chat_template_vlm
 
         mock_mlx_vlm = MagicMock()
         mock_mlx_vlm.apply_chat_template.return_value = "vlm prompt"
@@ -270,7 +270,7 @@ class TestApplyChatTemplateVlm:
         mock_mlx_vlm.apply_chat_template.assert_called_once()
 
     def test_vlm_template_no_config(self):
-        from mlx_ollama.engine.inference import _apply_chat_template_vlm
+        from olmlx.engine.inference import _apply_chat_template_vlm
 
         mock_mlx_vlm = MagicMock()
         mock_mlx_vlm.apply_chat_template.return_value = "result"
@@ -296,10 +296,10 @@ class TestGenerateCompletion:
         mock_mlx_lm = MagicMock()
         mock_mlx_lm.generate.return_value = "Generated output"
 
-        with patch("mlx_ollama.engine.inference.mx", mock_mx):
+        with patch("olmlx.engine.inference.mx", mock_mx):
             with patch.dict("sys.modules", {"mlx_lm": mock_mlx_lm}):
                 with patch(
-                    "mlx_ollama.engine.inference.asyncio.to_thread",
+                    "olmlx.engine.inference.asyncio.to_thread",
                     new_callable=AsyncMock,
                 ) as mock_thread:
                     mock_thread.return_value = "Generated output"
@@ -352,9 +352,9 @@ class TestGenerateCompletion:
         mock_stream.__aiter__ = lambda self: self
         mock_stream.__anext__ = lambda self: anext_impl()
 
-        with patch("mlx_ollama.engine.inference.mx", mock_mx):
+        with patch("olmlx.engine.inference.mx", mock_mx):
             with patch(
-                "mlx_ollama.engine.inference.async_mlx_stream", return_value=mock_stream
+                "olmlx.engine.inference.async_mlx_stream", return_value=mock_stream
             ):
                 gen = await generate_completion(
                     mock_manager,
@@ -380,9 +380,9 @@ class TestGenerateChat:
             return_value="formatted prompt"
         )
 
-        with patch("mlx_ollama.engine.inference.mx", mock_mx):
+        with patch("olmlx.engine.inference.mx", mock_mx):
             with patch(
-                "mlx_ollama.engine.inference.asyncio.to_thread", new_callable=AsyncMock
+                "olmlx.engine.inference.asyncio.to_thread", new_callable=AsyncMock
             ) as mock_thread:
                 mock_thread.return_value = "Chat response"
                 result = await generate_chat(
@@ -403,9 +403,9 @@ class TestGenerateChat:
             return_value="formatted prompt with tools"
         )
 
-        with patch("mlx_ollama.engine.inference.mx", mock_mx):
+        with patch("olmlx.engine.inference.mx", mock_mx):
             with patch(
-                "mlx_ollama.engine.inference.asyncio.to_thread", new_callable=AsyncMock
+                "olmlx.engine.inference.asyncio.to_thread", new_callable=AsyncMock
             ) as mock_thread:
                 mock_thread.return_value = "tool response"
                 result = await generate_chat(
@@ -423,7 +423,7 @@ class TestFullCompletionInner:
     @pytest.mark.asyncio
     async def test_result_with_text_attr(self, mock_manager):
         """Test when result has .text attribute (GenerationResult dataclass)."""
-        from mlx_ollama.engine.inference import _full_completion_inner
+        from olmlx.engine.inference import _full_completion_inner
 
         lm = mock_manager._loaded["qwen3:latest"]
 
@@ -431,7 +431,7 @@ class TestFullCompletionInner:
         mock_result.text = "result text"
 
         with patch(
-            "mlx_ollama.engine.inference.asyncio.to_thread", new_callable=AsyncMock
+            "olmlx.engine.inference.asyncio.to_thread", new_callable=AsyncMock
         ) as mock_thread:
             mock_thread.return_value = mock_result
             result = await _full_completion_inner(
@@ -446,12 +446,12 @@ class TestFullCompletionInner:
 
     @pytest.mark.asyncio
     async def test_result_as_string(self, mock_manager):
-        from mlx_ollama.engine.inference import _full_completion_inner
+        from olmlx.engine.inference import _full_completion_inner
 
         lm = mock_manager._loaded["qwen3:latest"]
 
         with patch(
-            "mlx_ollama.engine.inference.asyncio.to_thread", new_callable=AsyncMock
+            "olmlx.engine.inference.asyncio.to_thread", new_callable=AsyncMock
         ) as mock_thread:
             mock_thread.return_value = "plain string"
             result = await _full_completion_inner(
@@ -466,12 +466,12 @@ class TestFullCompletionInner:
 
     @pytest.mark.asyncio
     async def test_result_other_type(self, mock_manager):
-        from mlx_ollama.engine.inference import _full_completion_inner
+        from olmlx.engine.inference import _full_completion_inner
 
         lm = mock_manager._loaded["qwen3:latest"]
 
         with patch(
-            "mlx_ollama.engine.inference.asyncio.to_thread", new_callable=AsyncMock
+            "olmlx.engine.inference.asyncio.to_thread", new_callable=AsyncMock
         ) as mock_thread:
             mock_thread.return_value = 42  # unusual type
             result = await _full_completion_inner(
@@ -486,14 +486,14 @@ class TestFullCompletionInner:
 
     @pytest.mark.asyncio
     async def test_vlm_completion(self, mock_manager):
-        from mlx_ollama.engine.inference import _full_completion_inner
+        from olmlx.engine.inference import _full_completion_inner
 
         lm = mock_manager._loaded["qwen3:latest"]
         lm.is_vlm = True
 
         mock_mlx_vlm = MagicMock()
         with patch(
-            "mlx_ollama.engine.inference.asyncio.to_thread", new_callable=AsyncMock
+            "olmlx.engine.inference.asyncio.to_thread", new_callable=AsyncMock
         ) as mock_thread:
             mock_thread.return_value = "vlm output"
             with patch.dict("sys.modules", {"mlx_vlm": mock_mlx_vlm}):
@@ -521,10 +521,10 @@ class TestGenerateChatVlm:
         mock_mlx_vlm = MagicMock()
         mock_mlx_vlm.apply_chat_template.return_value = "vlm prompt"
 
-        with patch("mlx_ollama.engine.inference.mx", mock_mx):
+        with patch("olmlx.engine.inference.mx", mock_mx):
             with patch.dict("sys.modules", {"mlx_vlm": mock_mlx_vlm}):
                 with patch(
-                    "mlx_ollama.engine.inference.asyncio.to_thread",
+                    "olmlx.engine.inference.asyncio.to_thread",
                     new_callable=AsyncMock,
                 ) as mock_thread:
                     mock_thread.return_value = "vlm response"
@@ -647,9 +647,9 @@ class TestStreamCancellationHoldsLock:
 
         mock_stream.drain_and_join = spy_drain
 
-        with patch("mlx_ollama.engine.inference.mx", mock_mx):
+        with patch("olmlx.engine.inference.mx", mock_mx):
             with patch(
-                "mlx_ollama.engine.inference.async_mlx_stream", return_value=mock_stream
+                "olmlx.engine.inference.async_mlx_stream", return_value=mock_stream
             ):
                 gen = await generate_completion(
                     mock_manager,
@@ -700,13 +700,13 @@ class TestGenerateEmbeddingsAcquiresLock:
 class TestSafeSync:
     def test_success(self):
         """_safe_sync() should not raise when mx.synchronize() succeeds."""
-        with patch("mlx_ollama.engine.inference.mx") as mock_mx:
+        with patch("olmlx.engine.inference.mx") as mock_mx:
             _safe_sync()
             mock_mx.synchronize.assert_called_once()
 
     def test_suppresses_exception(self):
         """_safe_sync() should suppress exceptions from mx.synchronize()."""
-        with patch("mlx_ollama.engine.inference.mx") as mock_mx:
+        with patch("olmlx.engine.inference.mx") as mock_mx:
             mock_mx.synchronize.side_effect = RuntimeError("Metal error")
             _safe_sync()  # should not raise
 
@@ -715,7 +715,7 @@ class TestInferenceLocked:
     @pytest.mark.asyncio
     async def test_acquires_and_releases_lock(self):
         """_inference_locked() should acquire lock on entry and release on exit."""
-        with patch("mlx_ollama.engine.inference.mx"):
+        with patch("olmlx.engine.inference.mx"):
             assert not _inference_lock.locked()
             async with _inference_locked():
                 assert _inference_lock.locked()
@@ -724,7 +724,7 @@ class TestInferenceLocked:
     @pytest.mark.asyncio
     async def test_releases_lock_on_exception(self):
         """_inference_locked() should release lock even if body raises."""
-        with patch("mlx_ollama.engine.inference.mx"):
+        with patch("olmlx.engine.inference.mx"):
             with pytest.raises(ValueError):
                 async with _inference_locked():
                     raise ValueError("test error")
@@ -733,7 +733,7 @@ class TestInferenceLocked:
     @pytest.mark.asyncio
     async def test_syncs_on_entry_and_exit(self):
         """_inference_locked() should call mx.synchronize on entry and exit."""
-        with patch("mlx_ollama.engine.inference.mx") as mock_mx:
+        with patch("olmlx.engine.inference.mx") as mock_mx:
             async with _inference_locked():
                 pass
             # Called at least twice: entry sync + exit sync

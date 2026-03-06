@@ -4,35 +4,37 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
-from mlx_ollama.engine.inference import generate_chat
-from mlx_ollama.schemas.chat import ChatRequest, Message
+from olmlx.engine.inference import generate_completion
+from olmlx.schemas.generate import GenerateRequest
 
 router = APIRouter()
 
 
-@router.post("/api/chat")
-async def chat(req: ChatRequest, request: Request):
+@router.post("/api/generate")
+async def generate(req: GenerateRequest, request: Request):
     manager = request.app.state.model_manager
     options = req.options.model_dump(exclude_none=True) if req.options else {}
-    messages = [m.model_dump(exclude_none=True) for m in req.messages]
-    tools = [t.model_dump() for t in req.tools] if req.tools else None
+
+    prompt = req.prompt
+    if req.system and not req.raw:
+        prompt = f"{req.system}\n\n{prompt}"
+
     max_tokens = options.pop("num_predict", 512)
 
     if req.stream:
-        result = await generate_chat(
+        result = await generate_completion(
             manager,
             req.model,
-            messages,
+            prompt,
             options,
-            tools=tools,
             stream=True,
             keep_alive=req.keep_alive,
             max_tokens=max_tokens,
+            images=req.images,
         )
 
         async def stream_response():
             try:
-                full_text = ""
                 async for chunk in result:
                     now = datetime.now(timezone.utc).isoformat()
                     if chunk.get("done"):
@@ -40,9 +42,7 @@ async def chat(req: ChatRequest, request: Request):
                         final = {
                             "model": req.model,
                             "created_at": now,
-                            "message": Message(
-                                role="assistant", content=""
-                            ).model_dump(),
+                            "response": "",
                             "done": True,
                             "done_reason": "stop",
                         }
@@ -50,16 +50,12 @@ async def chat(req: ChatRequest, request: Request):
                             final.update(stats.to_dict())
                         yield json.dumps(final) + "\n"
                     else:
-                        text = chunk.get("text", "")
-                        full_text += text
                         yield (
                             json.dumps(
                                 {
                                     "model": req.model,
                                     "created_at": now,
-                                    "message": Message(
-                                        role="assistant", content=text
-                                    ).model_dump(),
+                                    "response": chunk.get("text", ""),
                                     "done": False,
                                 }
                             )
@@ -70,24 +66,22 @@ async def chat(req: ChatRequest, request: Request):
 
         return StreamingResponse(stream_response(), media_type="application/x-ndjson")
     else:
-        result = await generate_chat(
+        result = await generate_completion(
             manager,
             req.model,
-            messages,
+            prompt,
             options,
-            tools=tools,
             stream=False,
             keep_alive=req.keep_alive,
             max_tokens=max_tokens,
+            images=req.images,
         )
         now = datetime.now(timezone.utc).isoformat()
         stats = result.get("stats")
         response = {
             "model": req.model,
             "created_at": now,
-            "message": Message(
-                role="assistant", content=result.get("text", "")
-            ).model_dump(),
+            "response": result.get("text", ""),
             "done": True,
             "done_reason": "stop",
         }

@@ -3,8 +3,8 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Request
 from fastapi.responses import PlainTextResponse
 
-from mlx_ollama import __version__
-from mlx_ollama.schemas.status import PsResponse, RunningModel, VersionResponse
+from olmlx import __version__
+from olmlx.schemas.status import PsResponse, RunningModel, VersionResponse
 
 router = APIRouter()
 

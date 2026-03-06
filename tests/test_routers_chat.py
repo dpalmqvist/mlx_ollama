@@ -1,10 +1,10 @@
-"""Tests for mlx_ollama.routers.chat."""
+"""Tests for olmlx.routers.chat."""
 
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from mlx_ollama.utils.timing import TimingStats
+from olmlx.utils.timing import TimingStats
 
 
 class TestChatRouter:
@@ -14,7 +14,7 @@ class TestChatRouter:
         mock_result = {"text": "Hello!", "done": True, "stats": stats}
 
         with patch(
-            "mlx_ollama.routers.chat.generate_chat", new_callable=AsyncMock
+            "olmlx.routers.chat.generate_chat", new_callable=AsyncMock
         ) as mock_gen:
             mock_gen.return_value = mock_result
             resp = await app_client.post(
@@ -42,7 +42,7 @@ class TestChatRouter:
 
             return gen()
 
-        with patch("mlx_ollama.routers.chat.generate_chat", side_effect=mock_stream):
+        with patch("olmlx.routers.chat.generate_chat", side_effect=mock_stream):
             resp = await app_client.post(
                 "/api/chat",
                 json={
@@ -60,7 +60,7 @@ class TestChatRouter:
         mock_result = {"text": "hi", "done": True, "stats": TimingStats()}
 
         with patch(
-            "mlx_ollama.routers.chat.generate_chat", new_callable=AsyncMock
+            "olmlx.routers.chat.generate_chat", new_callable=AsyncMock
         ) as mock_gen:
             mock_gen.return_value = mock_result
             resp = await app_client.post(

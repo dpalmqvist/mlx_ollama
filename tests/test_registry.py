@@ -1,10 +1,10 @@
-"""Tests for mlx_ollama.engine.registry."""
+"""Tests for olmlx.engine.registry."""
 
 import json
 
 import pytest
 
-from mlx_ollama.engine.registry import ModelRegistry
+from olmlx.engine.registry import ModelRegistry
 
 
 class TestModelRegistry:
@@ -37,7 +37,7 @@ class TestModelRegistry:
 
     def test_add_alias(self, registry, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            "mlx_ollama.engine.registry.settings.models_config",
+            "olmlx.engine.registry.settings.models_config",
             tmp_path / "models.json",
         )
         registry._aliases_path = tmp_path / "aliases.json"
@@ -64,18 +64,14 @@ class TestModelRegistry:
     def test_load_empty_config(self, tmp_path, monkeypatch):
         config_path = tmp_path / "models.json"
         # No file exists
-        monkeypatch.setattr(
-            "mlx_ollama.engine.registry.settings.models_config", config_path
-        )
+        monkeypatch.setattr("olmlx.engine.registry.settings.models_config", config_path)
         reg = ModelRegistry()
         reg.load()
         assert reg._mappings == {}
 
     def test_add_mapping(self, registry, tmp_path, monkeypatch):
         models_json = tmp_path / "models2.json"
-        monkeypatch.setattr(
-            "mlx_ollama.engine.registry.settings.models_config", models_json
-        )
+        monkeypatch.setattr("olmlx.engine.registry.settings.models_config", models_json)
         registry.add_mapping("new-model", "org/new-model-MLX")
         assert registry.resolve("new-model") == "org/new-model-MLX"
         # Should be persisted
@@ -86,9 +82,7 @@ class TestModelRegistry:
 
     def test_add_mapping_idempotent(self, registry, tmp_path, monkeypatch):
         models_json = tmp_path / "models2.json"
-        monkeypatch.setattr(
-            "mlx_ollama.engine.registry.settings.models_config", models_json
-        )
+        monkeypatch.setattr("olmlx.engine.registry.settings.models_config", models_json)
         registry.add_mapping("qwen3", "Qwen/Qwen3-8B-MLX")
         # Should not raise, mapping already exists
 

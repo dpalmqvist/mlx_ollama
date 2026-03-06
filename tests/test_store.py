@@ -1,11 +1,11 @@
-"""Tests for mlx_ollama.models.store."""
+"""Tests for olmlx.models.store."""
 
 import json
 
 import pytest
 
-from mlx_ollama.models.manifest import ModelManifest
-from mlx_ollama.models.store import (
+from olmlx.models.manifest import ModelManifest
+from olmlx.models.store import (
     _dir_size,
     _extract_metadata,
     _safe_dir_name,
@@ -198,9 +198,7 @@ class TestModelStore:
         from unittest.mock import patch
 
         models_json = tmp_path / "models.json"
-        monkeypatch.setattr(
-            "mlx_ollama.engine.registry.settings.models_config", models_json
-        )
+        monkeypatch.setattr("olmlx.engine.registry.settings.models_config", models_json)
 
         with patch("huggingface_hub.snapshot_download"):
             async for _ in mock_store.pull("qwen3"):

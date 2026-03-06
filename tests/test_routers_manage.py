@@ -1,4 +1,4 @@
-"""Tests for mlx_ollama.routers.manage."""
+"""Tests for olmlx.routers.manage."""
 
 import pytest
 
@@ -108,7 +108,7 @@ class TestManageRouter:
 
     @pytest.mark.asyncio
     async def test_delete_model_success(self, app_client, tmp_path):
-        from mlx_ollama.models.manifest import ModelManifest
+        from olmlx.models.manifest import ModelManifest
 
         # Create a model directory with manifest
         models_dir = tmp_path / "models"

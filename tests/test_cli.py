@@ -1,11 +1,11 @@
-"""Tests for mlx_ollama.cli."""
+"""Tests for olmlx.cli."""
 
 import json
 import plistlib
 from unittest.mock import MagicMock
 
 
-from mlx_ollama.cli import (
+from olmlx.cli import (
     DEFAULT_MODELS,
     PLIST_LABEL,
     _build_plist,
@@ -21,7 +21,7 @@ from mlx_ollama.cli import (
 class TestEnsureConfig:
     def test_creates_dir_and_models_json(self, tmp_path, monkeypatch):
         config_path = tmp_path / "subdir" / "models.json"
-        monkeypatch.setattr("mlx_ollama.cli.settings.models_config", config_path)
+        monkeypatch.setattr("olmlx.cli.settings.models_config", config_path)
         ensure_config()
         assert config_path.exists()
         data = json.loads(config_path.read_text())
@@ -31,7 +31,7 @@ class TestEnsureConfig:
         config_path = tmp_path / "models.json"
         existing = {"custom:latest": "some/model"}
         config_path.write_text(json.dumps(existing))
-        monkeypatch.setattr("mlx_ollama.cli.settings.models_config", config_path)
+        monkeypatch.setattr("olmlx.cli.settings.models_config", config_path)
         ensure_config()
         data = json.loads(config_path.read_text())
         assert data == existing
@@ -39,44 +39,38 @@ class TestEnsureConfig:
 
 class TestBuildPlist:
     def test_plist_structure(self, monkeypatch):
-        monkeypatch.setattr(
-            "mlx_ollama.cli.shutil.which", lambda _: "/usr/local/bin/mlx-ollama"
-        )
+        monkeypatch.setattr("olmlx.cli.shutil.which", lambda _: "/usr/local/bin/olmlx")
         plist = _build_plist()
         assert plist["Label"] == PLIST_LABEL
-        assert plist["ProgramArguments"] == ["/usr/local/bin/mlx-ollama"]
+        assert plist["ProgramArguments"] == ["/usr/local/bin/olmlx"]
         assert plist["RunAtLoad"] is True
         assert plist["KeepAlive"] is True
         assert "StandardOutPath" in plist
         assert "StandardErrorPath" in plist
 
     def test_plist_fallback_to_python(self, monkeypatch):
-        monkeypatch.setattr("mlx_ollama.cli.shutil.which", lambda _: None)
-        monkeypatch.setattr("mlx_ollama.cli.sys.executable", "/usr/bin/python3")
+        monkeypatch.setattr("olmlx.cli.shutil.which", lambda _: None)
+        monkeypatch.setattr("olmlx.cli.sys.executable", "/usr/bin/python3")
         plist = _build_plist()
-        assert plist["ProgramArguments"] == ["/usr/bin/python3", "-m", "mlx_ollama"]
+        assert plist["ProgramArguments"] == ["/usr/bin/python3", "-m", "olmlx"]
 
     def test_plist_forwards_env_vars(self, monkeypatch):
-        monkeypatch.setattr(
-            "mlx_ollama.cli.shutil.which", lambda _: "/usr/local/bin/mlx-ollama"
-        )
-        monkeypatch.setenv("MLX_OLLAMA_PORT", "9999")
+        monkeypatch.setattr("olmlx.cli.shutil.which", lambda _: "/usr/local/bin/olmlx")
+        monkeypatch.setenv("OLMLX_PORT", "9999")
         plist = _build_plist()
-        assert plist["EnvironmentVariables"]["MLX_OLLAMA_PORT"] == "9999"
+        assert plist["EnvironmentVariables"]["OLMLX_PORT"] == "9999"
 
 
 class TestServiceInstall:
     def test_install_creates_plist_and_loads(self, tmp_path, monkeypatch):
-        plist_path = tmp_path / "com.dpalmqvist.mlx-ollama.plist"
-        monkeypatch.setattr("mlx_ollama.cli.PLIST_PATH", plist_path)
+        plist_path = tmp_path / "com.dpalmqvist.olmlx.plist"
+        monkeypatch.setattr("olmlx.cli.PLIST_PATH", plist_path)
         monkeypatch.setattr(
-            "mlx_ollama.cli.settings.models_config", tmp_path / "models.json"
+            "olmlx.cli.settings.models_config", tmp_path / "models.json"
         )
-        monkeypatch.setattr(
-            "mlx_ollama.cli.shutil.which", lambda _: "/usr/local/bin/mlx-ollama"
-        )
+        monkeypatch.setattr("olmlx.cli.shutil.which", lambda _: "/usr/local/bin/olmlx")
         mock_run = MagicMock()
-        monkeypatch.setattr("mlx_ollama.cli.subprocess.run", mock_run)
+        monkeypatch.setattr("olmlx.cli.subprocess.run", mock_run)
         cmd_service_install(None)
         assert plist_path.exists()
         with open(plist_path, "rb") as f:
@@ -90,11 +84,11 @@ class TestServiceInstall:
 
 class TestServiceUninstall:
     def test_uninstall_removes_plist(self, tmp_path, monkeypatch):
-        plist_path = tmp_path / "com.dpalmqvist.mlx-ollama.plist"
+        plist_path = tmp_path / "com.dpalmqvist.olmlx.plist"
         plist_path.write_text("dummy")
-        monkeypatch.setattr("mlx_ollama.cli.PLIST_PATH", plist_path)
+        monkeypatch.setattr("olmlx.cli.PLIST_PATH", plist_path)
         mock_run = MagicMock()
-        monkeypatch.setattr("mlx_ollama.cli.subprocess.run", mock_run)
+        monkeypatch.setattr("olmlx.cli.subprocess.run", mock_run)
         cmd_service_uninstall(None)
         assert not plist_path.exists()
         mock_run.assert_called_once_with(
@@ -103,10 +97,10 @@ class TestServiceUninstall:
         )
 
     def test_uninstall_no_plist(self, tmp_path, monkeypatch, capsys):
-        plist_path = tmp_path / "com.dpalmqvist.mlx-ollama.plist"
-        monkeypatch.setattr("mlx_ollama.cli.PLIST_PATH", plist_path)
+        plist_path = tmp_path / "com.dpalmqvist.olmlx.plist"
+        monkeypatch.setattr("olmlx.cli.PLIST_PATH", plist_path)
         mock_run = MagicMock()
-        monkeypatch.setattr("mlx_ollama.cli.subprocess.run", mock_run)
+        monkeypatch.setattr("olmlx.cli.subprocess.run", mock_run)
         cmd_service_uninstall(None)
         mock_run.assert_not_called()
         assert "No plist found" in capsys.readouterr().out
@@ -115,20 +109,16 @@ class TestServiceUninstall:
 class TestServiceStatus:
     def test_status_loaded(self, monkeypatch, capsys):
         mock_result = MagicMock(
-            returncode=0, stdout="PID\tStatus\tLabel\n123\t0\tcom.dpalmqvist.mlx-ollama"
+            returncode=0, stdout="PID\tStatus\tLabel\n123\t0\tcom.dpalmqvist.olmlx"
         )
-        monkeypatch.setattr(
-            "mlx_ollama.cli.subprocess.run", lambda *a, **kw: mock_result
-        )
+        monkeypatch.setattr("olmlx.cli.subprocess.run", lambda *a, **kw: mock_result)
         cmd_service_status(None)
         out = capsys.readouterr().out
         assert "is loaded" in out
 
     def test_status_not_loaded(self, monkeypatch, capsys):
         mock_result = MagicMock(returncode=1, stdout="")
-        monkeypatch.setattr(
-            "mlx_ollama.cli.subprocess.run", lambda *a, **kw: mock_result
-        )
+        monkeypatch.setattr("olmlx.cli.subprocess.run", lambda *a, **kw: mock_result)
         cmd_service_status(None)
         out = capsys.readouterr().out
         assert "is not loaded" in out
@@ -166,22 +156,22 @@ class TestBuildParser:
 
 class TestCliMain:
     def test_default_calls_serve(self, monkeypatch):
-        monkeypatch.setattr("sys.argv", ["mlx-ollama"])
+        monkeypatch.setattr("sys.argv", ["olmlx"])
         mock_serve = MagicMock()
-        monkeypatch.setattr("mlx_ollama.cli.cmd_serve", mock_serve)
+        monkeypatch.setattr("olmlx.cli.cmd_serve", mock_serve)
         cli_main()
         mock_serve.assert_called_once()
 
     def test_serve_calls_serve(self, monkeypatch):
-        monkeypatch.setattr("sys.argv", ["mlx-ollama", "serve"])
+        monkeypatch.setattr("sys.argv", ["olmlx", "serve"])
         mock_serve = MagicMock()
-        monkeypatch.setattr("mlx_ollama.cli.cmd_serve", mock_serve)
+        monkeypatch.setattr("olmlx.cli.cmd_serve", mock_serve)
         cli_main()
         mock_serve.assert_called_once()
 
     def test_service_install_calls_install(self, monkeypatch):
-        monkeypatch.setattr("sys.argv", ["mlx-ollama", "service", "install"])
+        monkeypatch.setattr("sys.argv", ["olmlx", "service", "install"])
         mock_install = MagicMock()
-        monkeypatch.setattr("mlx_ollama.cli.cmd_service_install", mock_install)
+        monkeypatch.setattr("olmlx.cli.cmd_service_install", mock_install)
         cli_main()
         mock_install.assert_called_once()

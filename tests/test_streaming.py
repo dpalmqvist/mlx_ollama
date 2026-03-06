@@ -1,11 +1,11 @@
-"""Tests for mlx_ollama.utils.streaming."""
+"""Tests for olmlx.utils.streaming."""
 
 import time
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from mlx_ollama.utils.streaming import CancellableStream, StreamToken, async_mlx_stream
+from olmlx.utils.streaming import CancellableStream, StreamToken, async_mlx_stream
 
 
 class TestStreamToken:

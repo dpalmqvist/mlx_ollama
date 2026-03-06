@@ -5,12 +5,12 @@ import uuid
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
-from mlx_ollama.engine.inference import (
+from olmlx.engine.inference import (
     generate_chat,
     generate_completion,
     generate_embeddings,
 )
-from mlx_ollama.schemas.openai import (
+from olmlx.schemas.openai import (
     OpenAIChatMessage,
     OpenAIChatRequest,
     OpenAIChatResponse,

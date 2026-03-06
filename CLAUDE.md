@@ -1,13 +1,13 @@
-# MLX Ollama
+# olmlx
 
 Ollama-compatible API server using Apple MLX for local inference on Apple Silicon.
 
 ## Project Structure
 
 ```
-mlx_ollama/
+olmlx/
 ├── app.py              # FastAPI app factory, middleware, router registration
-├── config.py           # Settings (pydantic-settings, MLX_OLLAMA_ env prefix)
+├── config.py           # Settings (pydantic-settings, OLMLX_ env prefix)
 ├── cli.py              # CLI with subcommands (serve, service install/uninstall/status)
 ├── __main__.py         # Entry point (delegates to cli.py)
 ├── engine/
@@ -53,11 +53,11 @@ mlx_ollama/
 
 ```bash
 uv sync --no-editable
-uv run mlx-ollama          # starts on http://localhost:11434
+uv run olmlx          # starts on http://localhost:11434
 uv run pytest              # run tests
 ```
 
-Models are configured in `~/.mlx_ollama/models.json` (auto-created on first run). For dev, override with `MLX_OLLAMA_MODELS_CONFIG=models.json`.
+Models are configured in `~/.olmlx/models.json` (auto-created on first run). For dev, override with `OLMLX_MODELS_CONFIG=models.json`.
 
 ### TDD
 

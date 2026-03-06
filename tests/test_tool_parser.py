@@ -1,8 +1,8 @@
-"""Tests for mlx_ollama.engine.tool_parser."""
+"""Tests for olmlx.engine.tool_parser."""
 
 import json
 
-from mlx_ollama.engine.tool_parser import (
+from olmlx.engine.tool_parser import (
     _parse_json_call,
     _try_bare_json,
     _try_deepseek,
