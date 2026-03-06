@@ -1,11 +1,7 @@
 """Shared fixtures for mlx-ollama tests."""
 
-import asyncio
 import json
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -14,7 +10,6 @@ from mlx_ollama.engine.model_manager import LoadedModel, ModelManager
 from mlx_ollama.engine.registry import ModelRegistry
 from mlx_ollama.engine.template_caps import TemplateCaps
 from mlx_ollama.models.store import ModelStore
-from mlx_ollama.utils.timing import TimingStats
 
 
 @pytest.fixture
@@ -32,7 +27,9 @@ def tmp_models_config(tmp_path):
 @pytest.fixture
 def registry(tmp_models_config, monkeypatch):
     """A ModelRegistry loaded from a temp config."""
-    monkeypatch.setattr("mlx_ollama.engine.registry.settings.models_config", tmp_models_config)
+    monkeypatch.setattr(
+        "mlx_ollama.engine.registry.settings.models_config", tmp_models_config
+    )
     reg = ModelRegistry()
     reg.load()
     return reg
@@ -66,7 +63,9 @@ def mock_manager(registry, mock_loaded_model, mock_store):
 @pytest.fixture
 def mock_store(registry, tmp_path, monkeypatch):
     """A ModelStore using a temp directory."""
-    monkeypatch.setattr("mlx_ollama.models.store.settings.models_dir", tmp_path / "models")
+    monkeypatch.setattr(
+        "mlx_ollama.models.store.settings.models_dir", tmp_path / "models"
+    )
     return ModelStore(registry)
 
 

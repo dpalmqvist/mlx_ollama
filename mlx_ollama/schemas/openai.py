@@ -1,7 +1,8 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 # --- Chat Completions ---
+
 
 class OpenAIChatMessage(BaseModel):
     role: str
@@ -52,6 +53,7 @@ class OpenAIChatResponse(BaseModel):
 
 # --- Completions ---
 
+
 class OpenAICompletionRequest(BaseModel):
     model: str
     prompt: str | list[str]
@@ -83,6 +85,7 @@ class OpenAICompletionResponse(BaseModel):
 
 # --- Models ---
 
+
 class OpenAIModel(BaseModel):
     id: str
     object: str = "model"
@@ -96,6 +99,7 @@ class OpenAIModelList(BaseModel):
 
 
 # --- Embeddings ---
+
 
 class OpenAIEmbeddingRequest(BaseModel):
     model: str

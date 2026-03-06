@@ -5,7 +5,6 @@ from fastapi.responses import PlainTextResponse
 
 from mlx_ollama import __version__
 from mlx_ollama.schemas.status import PsResponse, RunningModel, VersionResponse
-from mlx_ollama.schemas.models import ModelDetails
 
 router = APIRouter()
 

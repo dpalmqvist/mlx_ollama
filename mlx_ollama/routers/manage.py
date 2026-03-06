@@ -1,6 +1,5 @@
 import json
 import logging
-import re
 
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -18,6 +17,7 @@ async def pull_model(req: PullRequest, request: Request):
     store = request.app.state.model_store
 
     if req.stream:
+
         async def stream_progress():
             try:
                 async for event in store.pull(req.model):
@@ -25,18 +25,14 @@ async def pull_model(req: PullRequest, request: Request):
             except Exception as e:
                 yield json.dumps({"status": "error", "error": str(e)}) + "\n"
 
-        return StreamingResponse(
-            stream_progress(), media_type="application/x-ndjson"
-        )
+        return StreamingResponse(stream_progress(), media_type="application/x-ndjson")
     else:
         events = []
         try:
             async for event in store.pull(req.model):
                 events.append(event)
         except Exception as e:
-            return JSONResponse(
-                {"error": str(e)}, status_code=500
-            )
+            return JSONResponse({"error": str(e)}, status_code=500)
         return events[-1] if events else {"status": "success"}
 
 
@@ -57,7 +53,9 @@ async def delete_model(req: DeleteRequest, request: Request):
     deleted = store.delete(req.model)
     registry.remove(req.model)
     if not deleted:
-        return JSONResponse({"error": f"model '{req.model}' not found"}, status_code=404)
+        return JSONResponse(
+            {"error": f"model '{req.model}' not found"}, status_code=404
+        )
     return Response(status_code=200)
 
 
@@ -65,14 +63,12 @@ async def delete_model(req: DeleteRequest, request: Request):
 async def create_model(req: CreateRequest, request: Request):
     """Parse a basic Modelfile and create a new model entry."""
     registry = request.app.state.registry
-    store = request.app.state.model_store
 
     if not req.modelfile:
         return JSONResponse({"error": "modelfile is required"}, status_code=400)
 
     # Parse Modelfile
     from_model = None
-    system_prompt = None
     parameters = {}
 
     for line in req.modelfile.splitlines():
@@ -80,7 +76,7 @@ async def create_model(req: CreateRequest, request: Request):
         if line.upper().startswith("FROM "):
             from_model = line[5:].strip()
         elif line.upper().startswith("SYSTEM "):
-            system_prompt = line[7:].strip().strip('"')
+            line[7:].strip().strip('"')
         elif line.upper().startswith("PARAMETER "):
             parts = line[10:].strip().split(None, 1)
             if len(parts) == 2:
@@ -101,10 +97,12 @@ async def create_model(req: CreateRequest, request: Request):
     registry.add_alias(normalized, from_model)
 
     if req.stream:
+
         async def stream():
             yield json.dumps({"status": "reading model metadata"}) + "\n"
             yield json.dumps({"status": "creating model layer"}) + "\n"
             yield json.dumps({"status": "success"}) + "\n"
+
         return StreamingResponse(stream(), media_type="application/x-ndjson")
     return {"status": "success"}
 
