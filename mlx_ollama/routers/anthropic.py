@@ -130,6 +130,36 @@ def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
 
+_PING_SENTINEL = object()
+
+
+async def _with_keepalive_pings(aiter, interval=5.0):
+    """Yield items from aiter; yield _PING_SENTINEL if no item arrives within interval seconds."""
+    ait = aiter.__aiter__()
+    next_item_task = None
+    try:
+        while True:
+            if next_item_task is None:
+                next_item_task = asyncio.ensure_future(ait.__anext__())
+            done, _ = await asyncio.wait({next_item_task}, timeout=interval)
+            if done:
+                try:
+                    item = next_item_task.result()
+                except StopAsyncIteration:
+                    return
+                next_item_task = None
+                yield item
+            else:
+                yield _PING_SENTINEL
+    finally:
+        if next_item_task is not None and not next_item_task.done():
+            next_item_task.cancel()
+            try:
+                await next_item_task
+            except (asyncio.CancelledError, StopAsyncIteration):
+                pass
+
+
 @router.post("/v1/messages")
 async def anthropic_messages(req: AnthropicMessagesRequest, request: Request):
     logger.info("Anthropic request: model=%s stream=%s tools=%d messages=%d max_tokens=%d",
@@ -150,255 +180,257 @@ async def anthropic_messages(req: AnthropicMessagesRequest, request: Request):
         )
 
         async def stream_sse():
-            # message_start
-            yield _sse("message_start", {
-                "type": "message_start",
-                "message": {
-                    "id": msg_id,
-                    "type": "message",
-                    "role": "assistant",
-                    "content": [],
-                    "model": req.model,
-                    "stop_reason": None,
-                    "stop_sequence": None,
-                    "usage": {
-                        "input_tokens": 0, "output_tokens": 0,
-                        "cache_creation_input_tokens": 0,
-                        "cache_read_input_tokens": 0,
-                    },
-                },
-            })
-
-            if has_tools:
-                # With tools: buffer fully (needed for tag parsing), emit pings as keepalive
-                full_text = ""
-                output_tokens = 0
-                last_ping = asyncio.get_running_loop().time()
-                ping_interval = 5.0
-
-                async for chunk in result:
-                    if chunk.get("done"):
-                        stats = chunk.get("stats")
-                        if stats:
-                            output_tokens = stats.eval_count
-                        break
-                    full_text += chunk.get("text", "")
-
-                    # Send keepalive pings while buffering
-                    now = asyncio.get_running_loop().time()
-                    if now - last_ping >= ping_interval:
-                        yield _sse("ping", {"type": "ping"})
-                        last_ping = now
-
-                # Explicitly close the generator to release the inference lock
-                # immediately, rather than waiting for GC.
-                await result.aclose()
-
-                logger.info("Raw model output (%d chars): %s", len(full_text), full_text[:1000])
-
-                thinking, visible_text, tool_uses = parse_model_output(
-                    full_text, has_tools, tool_names=tool_names,
-                )
-
-                if tool_uses:
-                    logger.info("Parsed %d tool call(s): %s",
-                                len(tool_uses), [tu["name"] for tu in tool_uses])
-
-                block_idx = 0
-
-                if thinking:
-                    yield _sse("content_block_start", {
-                        "type": "content_block_start",
-                        "index": block_idx,
-                        "content_block": {"type": "thinking", "thinking": ""},
-                    })
-                    chunk_size = 1000
-                    for i in range(0, len(thinking), chunk_size):
-                        yield _sse("content_block_delta", {
-                            "type": "content_block_delta",
-                            "index": block_idx,
-                            "delta": {"type": "thinking_delta", "thinking": thinking[i:i + chunk_size]},
-                        })
-                    yield _sse("content_block_stop", {"type": "content_block_stop", "index": block_idx})
-                    block_idx += 1
-
-                yield _sse("content_block_start", {
-                    "type": "content_block_start",
-                    "index": block_idx,
-                    "content_block": {"type": "text", "text": ""},
-                })
-                if visible_text:
-                    chunk_size = 100
-                    for i in range(0, len(visible_text), chunk_size):
-                        yield _sse("content_block_delta", {
-                            "type": "content_block_delta",
-                            "index": block_idx,
-                            "delta": {"type": "text_delta", "text": visible_text[i:i + chunk_size]},
-                        })
-                yield _sse("content_block_stop", {"type": "content_block_stop", "index": block_idx})
-                block_idx += 1
-
-                for tool_use in tool_uses:
-                    yield _sse("content_block_start", {
-                        "type": "content_block_start",
-                        "index": block_idx,
-                        "content_block": {
-                            "type": "tool_use",
-                            "id": tool_use["id"],
-                            "name": tool_use["name"],
-                            "input": {},
+            try:
+                # message_start
+                yield _sse("message_start", {
+                    "type": "message_start",
+                    "message": {
+                        "id": msg_id,
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [],
+                        "model": req.model,
+                        "stop_reason": None,
+                        "stop_sequence": None,
+                        "usage": {
+                            "input_tokens": 0, "output_tokens": 0,
+                            "cache_creation_input_tokens": 0,
+                            "cache_read_input_tokens": 0,
                         },
-                    })
-                    yield _sse("content_block_delta", {
-                        "type": "content_block_delta",
+                    },
+                })
+
+                if has_tools:
+                    # With tools: buffer fully (needed for tag parsing), emit pings as keepalive
+                    full_text = ""
+                    output_tokens = 0
+
+                    async for chunk in _with_keepalive_pings(result, interval=5.0):
+                        if chunk is _PING_SENTINEL:
+                            yield _sse("ping", {"type": "ping"})
+                            continue
+                        if chunk.get("done"):
+                            stats = chunk.get("stats")
+                            if stats:
+                                output_tokens = stats.eval_count
+                            break
+                        full_text += chunk.get("text", "")
+
+                    # Explicitly close the generator to release the inference lock
+                    # immediately, rather than waiting for GC.
+                    await result.aclose()
+
+                    logger.info("Raw model output (%d chars): %s", len(full_text), full_text[:1000])
+
+                    thinking, visible_text, tool_uses = parse_model_output(
+                        full_text, has_tools, tool_names=tool_names,
+                    )
+
+                    if tool_uses:
+                        logger.info("Parsed %d tool call(s): %s",
+                                    len(tool_uses), [tu["name"] for tu in tool_uses])
+
+                    block_idx = 0
+
+                    if thinking:
+                        yield _sse("content_block_start", {
+                            "type": "content_block_start",
+                            "index": block_idx,
+                            "content_block": {"type": "thinking", "thinking": ""},
+                        })
+                        chunk_size = 1000
+                        for i in range(0, len(thinking), chunk_size):
+                            yield _sse("content_block_delta", {
+                                "type": "content_block_delta",
+                                "index": block_idx,
+                                "delta": {"type": "thinking_delta", "thinking": thinking[i:i + chunk_size]},
+                            })
+                        yield _sse("content_block_stop", {"type": "content_block_stop", "index": block_idx})
+                        block_idx += 1
+
+                    yield _sse("content_block_start", {
+                        "type": "content_block_start",
                         "index": block_idx,
-                        "delta": {"type": "input_json_delta", "partial_json": json.dumps(tool_use["input"])},
+                        "content_block": {"type": "text", "text": ""},
                     })
+                    if visible_text:
+                        chunk_size = 100
+                        for i in range(0, len(visible_text), chunk_size):
+                            yield _sse("content_block_delta", {
+                                "type": "content_block_delta",
+                                "index": block_idx,
+                                "delta": {"type": "text_delta", "text": visible_text[i:i + chunk_size]},
+                            })
                     yield _sse("content_block_stop", {"type": "content_block_stop", "index": block_idx})
                     block_idx += 1
 
-                stop_reason = "tool_use" if tool_uses else "end_turn"
+                    for tool_use in tool_uses:
+                        yield _sse("content_block_start", {
+                            "type": "content_block_start",
+                            "index": block_idx,
+                            "content_block": {
+                                "type": "tool_use",
+                                "id": tool_use["id"],
+                                "name": tool_use["name"],
+                                "input": {},
+                            },
+                        })
+                        yield _sse("content_block_delta", {
+                            "type": "content_block_delta",
+                            "index": block_idx,
+                            "delta": {"type": "input_json_delta", "partial_json": json.dumps(tool_use["input"])},
+                        })
+                        yield _sse("content_block_stop", {"type": "content_block_stop", "index": block_idx})
+                        block_idx += 1
 
-            else:
-                # Without tools: stream incrementally with thinking state machine
-                block_idx = 0
-                output_tokens = 0
-                buffer = ""
+                    stop_reason = "tool_use" if tool_uses else "end_turn"
 
-                # States: "init", "thinking", "text"
-                state = "init"
-                text_block_started = False
+                else:
+                    # Without tools: stream incrementally with thinking state machine
+                    block_idx = 0
+                    output_tokens = 0
+                    buffer = ""
 
-                async for chunk in result:
-                    if chunk.get("done"):
-                        stats = chunk.get("stats")
-                        if stats:
-                            output_tokens = stats.eval_count
-                        break
+                    # States: "init", "thinking", "text"
+                    state = "init"
+                    text_block_started = False
 
-                    token_text = chunk.get("text", "")
-                    buffer += token_text
+                    async for chunk in _with_keepalive_pings(result, interval=5.0):
+                        if chunk is _PING_SENTINEL:
+                            yield _sse("ping", {"type": "ping"})
+                            continue
+                        if chunk.get("done"):
+                            stats = chunk.get("stats")
+                            if stats:
+                                output_tokens = stats.eval_count
+                            break
 
-                    # State machine for incremental streaming
-                    while buffer:
-                        if state == "init":
-                            # Check if output starts with <think>
-                            if buffer.startswith("<think>"):
-                                state = "thinking"
-                                buffer = buffer[7:]  # consume <think>
-                                yield _sse("content_block_start", {
-                                    "type": "content_block_start",
-                                    "index": block_idx,
-                                    "content_block": {"type": "thinking", "thinking": ""},
-                                })
-                            elif len(buffer) < 7 and "<think>".startswith(buffer):
-                                # Could still be a <think> tag — wait for more tokens
-                                break
-                            else:
-                                state = "text"
-                                # Don't consume — let text state handle it
+                        token_text = chunk.get("text", "")
+                        buffer += token_text
 
-                        elif state == "thinking":
-                            # Look for </think> closing tag
-                            end_idx = buffer.find("</think>")
-                            if end_idx >= 0:
-                                # Emit thinking content up to the close tag
-                                thinking_chunk = buffer[:end_idx]
-                                if thinking_chunk:
+                        # State machine for incremental streaming
+                        while buffer:
+                            if state == "init":
+                                # Check if output starts with <think>
+                                if buffer.startswith("<think>"):
+                                    state = "thinking"
+                                    buffer = buffer[7:]  # consume <think>
+                                    yield _sse("content_block_start", {
+                                        "type": "content_block_start",
+                                        "index": block_idx,
+                                        "content_block": {"type": "thinking", "thinking": ""},
+                                    })
+                                elif len(buffer) < 7 and "<think>".startswith(buffer):
+                                    # Could still be a <think> tag — wait for more tokens
+                                    break
+                                else:
+                                    state = "text"
+                                    # Don't consume — let text state handle it
+
+                            elif state == "thinking":
+                                # Look for </think> closing tag
+                                end_idx = buffer.find("</think>")
+                                if end_idx >= 0:
+                                    # Emit thinking content up to the close tag
+                                    thinking_chunk = buffer[:end_idx]
+                                    if thinking_chunk:
+                                        yield _sse("content_block_delta", {
+                                            "type": "content_block_delta",
+                                            "index": block_idx,
+                                            "delta": {"type": "thinking_delta", "thinking": thinking_chunk},
+                                        })
+                                    yield _sse("content_block_stop", {"type": "content_block_stop", "index": block_idx})
+                                    block_idx += 1
+                                    buffer = buffer[end_idx + 8:]  # consume </think>
+                                    state = "text"
+                                elif len(buffer) > 8:
+                                    # Emit everything except the last 8 chars (might be partial </think>)
+                                    safe = buffer[:-8]
+                                    buffer = buffer[-8:]
                                     yield _sse("content_block_delta", {
                                         "type": "content_block_delta",
                                         "index": block_idx,
-                                        "delta": {"type": "thinking_delta", "thinking": thinking_chunk},
+                                        "delta": {"type": "thinking_delta", "thinking": safe},
                                     })
-                                yield _sse("content_block_stop", {"type": "content_block_stop", "index": block_idx})
-                                block_idx += 1
-                                buffer = buffer[end_idx + 8:]  # consume </think>
-                                state = "text"
-                            elif len(buffer) > 8:
-                                # Emit everything except the last 8 chars (might be partial </think>)
-                                safe = buffer[:-8]
-                                buffer = buffer[-8:]
-                                yield _sse("content_block_delta", {
-                                    "type": "content_block_delta",
-                                    "index": block_idx,
-                                    "delta": {"type": "thinking_delta", "thinking": safe},
-                                })
-                                break
-                            else:
+                                    break
+                                else:
+                                    break
+
+                            elif state == "text":
+                                if not text_block_started:
+                                    yield _sse("content_block_start", {
+                                        "type": "content_block_start",
+                                        "index": block_idx,
+                                        "content_block": {"type": "text", "text": ""},
+                                    })
+                                    text_block_started = True
+                                # Emit all buffered text
+                                if buffer:
+                                    yield _sse("content_block_delta", {
+                                        "type": "content_block_delta",
+                                        "index": block_idx,
+                                        "delta": {"type": "text_delta", "text": buffer},
+                                    })
+                                    buffer = ""
                                 break
 
-                        elif state == "text":
-                            if not text_block_started:
-                                yield _sse("content_block_start", {
-                                    "type": "content_block_start",
-                                    "index": block_idx,
-                                    "content_block": {"type": "text", "text": ""},
-                                })
-                                text_block_started = True
-                            # Emit all buffered text
-                            if buffer:
-                                yield _sse("content_block_delta", {
-                                    "type": "content_block_delta",
-                                    "index": block_idx,
-                                    "delta": {"type": "text_delta", "text": buffer},
-                                })
-                                buffer = ""
-                            break
+                    # Explicitly close the generator to release the inference lock
+                    await result.aclose()
 
-                # Explicitly close the generator to release the inference lock
+                    # Flush any remaining buffer
+                    if state == "thinking":
+                        if buffer:
+                            yield _sse("content_block_delta", {
+                                "type": "content_block_delta",
+                                "index": block_idx,
+                                "delta": {"type": "thinking_delta", "thinking": buffer},
+                            })
+                        yield _sse("content_block_stop", {"type": "content_block_stop", "index": block_idx})
+                        block_idx += 1
+                        # Model ended mid-think — still need a text block
+                        yield _sse("content_block_start", {
+                            "type": "content_block_start",
+                            "index": block_idx,
+                            "content_block": {"type": "text", "text": ""},
+                        })
+                        yield _sse("content_block_stop", {"type": "content_block_stop", "index": block_idx})
+                    elif text_block_started:
+                        yield _sse("content_block_stop", {"type": "content_block_stop", "index": block_idx})
+                    elif state == "text" and not text_block_started:
+                        # Transitioned to text but never emitted — emit empty text block
+                        yield _sse("content_block_start", {
+                            "type": "content_block_start",
+                            "index": block_idx,
+                            "content_block": {"type": "text", "text": ""},
+                        })
+                        if buffer:
+                            yield _sse("content_block_delta", {
+                                "type": "content_block_delta",
+                                "index": block_idx,
+                                "delta": {"type": "text_delta", "text": buffer},
+                            })
+                        yield _sse("content_block_stop", {"type": "content_block_stop", "index": block_idx})
+                    else:
+                        # state == "init" — no output at all, emit empty text block
+                        yield _sse("content_block_start", {
+                            "type": "content_block_start",
+                            "index": block_idx,
+                            "content_block": {"type": "text", "text": ""},
+                        })
+                        yield _sse("content_block_stop", {"type": "content_block_stop", "index": block_idx})
+
+                    stop_reason = "end_turn"
+
+                # message_delta + message_stop
+                yield _sse("message_delta", {
+                    "type": "message_delta",
+                    "delta": {"stop_reason": stop_reason, "stop_sequence": None},
+                    "usage": {"output_tokens": output_tokens},
+                })
+                yield _sse("message_stop", {"type": "message_stop"})
+            finally:
+                # Safety net: ensure generator is closed on client disconnect
                 await result.aclose()
-
-                # Flush any remaining buffer
-                if state == "thinking":
-                    if buffer:
-                        yield _sse("content_block_delta", {
-                            "type": "content_block_delta",
-                            "index": block_idx,
-                            "delta": {"type": "thinking_delta", "thinking": buffer},
-                        })
-                    yield _sse("content_block_stop", {"type": "content_block_stop", "index": block_idx})
-                    block_idx += 1
-                    # Model ended mid-think — still need a text block
-                    yield _sse("content_block_start", {
-                        "type": "content_block_start",
-                        "index": block_idx,
-                        "content_block": {"type": "text", "text": ""},
-                    })
-                    yield _sse("content_block_stop", {"type": "content_block_stop", "index": block_idx})
-                elif text_block_started:
-                    yield _sse("content_block_stop", {"type": "content_block_stop", "index": block_idx})
-                elif state == "text" and not text_block_started:
-                    # Transitioned to text but never emitted — emit empty text block
-                    yield _sse("content_block_start", {
-                        "type": "content_block_start",
-                        "index": block_idx,
-                        "content_block": {"type": "text", "text": ""},
-                    })
-                    if buffer:
-                        yield _sse("content_block_delta", {
-                            "type": "content_block_delta",
-                            "index": block_idx,
-                            "delta": {"type": "text_delta", "text": buffer},
-                        })
-                    yield _sse("content_block_stop", {"type": "content_block_stop", "index": block_idx})
-                else:
-                    # state == "init" — no output at all, emit empty text block
-                    yield _sse("content_block_start", {
-                        "type": "content_block_start",
-                        "index": block_idx,
-                        "content_block": {"type": "text", "text": ""},
-                    })
-                    yield _sse("content_block_stop", {"type": "content_block_stop", "index": block_idx})
-
-                stop_reason = "end_turn"
-
-            # message_delta + message_stop
-            yield _sse("message_delta", {
-                "type": "message_delta",
-                "delta": {"stop_reason": stop_reason, "stop_sequence": None},
-                "usage": {"output_tokens": output_tokens},
-            })
-            yield _sse("message_stop", {"type": "message_stop"})
 
         return StreamingResponse(stream_sse(), media_type="text/event-stream")
     else:

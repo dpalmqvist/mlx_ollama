@@ -1,11 +1,19 @@
 """Tests for mlx_ollama.routers.anthropic."""
 
+import asyncio
 import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from mlx_ollama.routers.anthropic import _build_options, _convert_messages, _convert_tools, _sse
+from mlx_ollama.routers.anthropic import (
+    _build_options,
+    _convert_messages,
+    _convert_tools,
+    _PING_SENTINEL,
+    _sse,
+    _with_keepalive_pings,
+)
 from mlx_ollama.schemas.anthropic import (
     AnthropicContentBlock,
     AnthropicMessage,
@@ -188,6 +196,60 @@ class TestSse:
         assert result.endswith("\n\n")
         data = json.loads(result.split("data: ")[1].strip())
         assert data["type"] == "message_start"
+
+
+class TestWithKeepalivePings:
+    @pytest.mark.asyncio
+    async def test_pings_during_delay(self):
+        """Slow async gen should produce ping sentinels while waiting."""
+        async def slow_gen():
+            await asyncio.sleep(12)
+            yield {"text": "hello", "done": False}
+            yield {"text": "", "done": True}
+
+        results = []
+        async for item in _with_keepalive_pings(slow_gen(), interval=2.0):
+            results.append(item)
+            if item is not _PING_SENTINEL:
+                if item.get("done"):
+                    break
+
+        pings = [r for r in results if r is _PING_SENTINEL]
+        assert len(pings) >= 2, f"Expected at least 2 pings during 12s delay, got {len(pings)}"
+
+    @pytest.mark.asyncio
+    async def test_no_pings_when_fast(self):
+        """Immediate yields should produce no ping sentinels."""
+        async def fast_gen():
+            yield {"text": "a", "done": False}
+            yield {"text": "b", "done": False}
+            yield {"text": "", "done": True}
+
+        results = []
+        async for item in _with_keepalive_pings(fast_gen(), interval=5.0):
+            results.append(item)
+
+        pings = [r for r in results if r is _PING_SENTINEL]
+        assert len(pings) == 0
+
+    @pytest.mark.asyncio
+    async def test_cleanup_on_early_exit(self):
+        """Verify task cancellation when breaking out early."""
+        async def infinite_gen():
+            while True:
+                await asyncio.sleep(10)
+                yield {"text": "tick"}
+
+        results = []
+        async for item in _with_keepalive_pings(infinite_gen(), interval=0.1):
+            results.append(item)
+            if len(results) >= 3:
+                break
+
+        # All items should be pings since the gen never yields fast enough
+        assert all(r is _PING_SENTINEL for r in results)
+        # Give a moment for cleanup
+        await asyncio.sleep(0.05)
 
 
 class TestAnthropicEndpoint:
