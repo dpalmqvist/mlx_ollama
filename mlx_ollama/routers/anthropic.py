@@ -190,6 +190,10 @@ async def anthropic_messages(req: AnthropicMessagesRequest, request: Request):
                         yield _sse("ping", {"type": "ping"})
                         last_ping = now
 
+                # Explicitly close the generator to release the inference lock
+                # immediately, rather than waiting for GC.
+                await result.aclose()
+
                 logger.info("Raw model output (%d chars): %s", len(full_text), full_text[:1000])
 
                 thinking, visible_text, tool_uses = parse_model_output(
@@ -340,6 +344,9 @@ async def anthropic_messages(req: AnthropicMessagesRequest, request: Request):
                                 })
                                 buffer = ""
                             break
+
+                # Explicitly close the generator to release the inference lock
+                await result.aclose()
 
                 # Flush any remaining buffer
                 if state == "thinking":

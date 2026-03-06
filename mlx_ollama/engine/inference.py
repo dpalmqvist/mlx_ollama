@@ -1,20 +1,37 @@
 import asyncio
+import contextlib
 import json
 import logging
+import time
 from collections.abc import AsyncGenerator
 from typing import Any
 
 import mlx.core as mx
 
-from mlx_ollama.engine.model_manager import LoadedModel, ModelManager
+from mlx_ollama.engine.model_manager import LoadedModel, ModelManager, parse_keep_alive
+from mlx_ollama.config import settings
 from mlx_ollama.engine.template_caps import TemplateCaps
-from mlx_ollama.utils.streaming import async_mlx_stream
+from mlx_ollama.utils.streaming import CancellableStream, async_mlx_stream
 from mlx_ollama.utils.timing import Timer, TimingStats
 
 logger = logging.getLogger(__name__)
 
 # Serialize inference to prevent concurrent Metal command buffer access
 _inference_lock = asyncio.Lock()
+
+
+@contextlib.contextmanager
+def _inference_ref(lm: LoadedModel):
+    """Track active inference on a model to prevent expiry during use."""
+    lm.active_refs += 1
+    try:
+        yield
+    finally:
+        lm.active_refs -= 1
+        # Refresh expiry so the model doesn't expire immediately after inference
+        ka = parse_keep_alive(settings.default_keep_alive)
+        if ka is not None:
+            lm.expires_at = time.time() + ka
 
 
 def _build_generate_kwargs(options: dict | None, is_vlm: bool = False) -> dict:
@@ -175,24 +192,31 @@ async def _stream_completion(
     images: list[str] | None = None,
 ) -> AsyncGenerator[dict, None]:
     async with _inference_lock:
-        mx.metal.clear_cache()
-        with Timer() as total_timer:
-            with Timer() as eval_timer:
-                async for token in async_mlx_stream(
-                    lm.model, lm.tokenizer, prompt,
-                    max_tokens=max_tokens,
-                    is_vlm=lm.is_vlm,
-                    images=images,
-                    **gen_kwargs,
-                ):
-                    yield {"text": token.text, "done": False}
-                    stats.eval_count = token.generation_tokens
-                    stats.prompt_eval_count = token.prompt_tokens
+        mx.clear_cache()
+        stream = async_mlx_stream(
+            lm.model, lm.tokenizer, prompt,
+            max_tokens=max_tokens,
+            is_vlm=lm.is_vlm,
+            images=images,
+            **gen_kwargs,
+        )
+        try:
+            with _inference_ref(lm), Timer() as total_timer:
+                with Timer() as eval_timer:
+                    async for token in stream:
+                        yield {"text": token.text, "done": False}
+                        stats.eval_count = token.generation_tokens
+                        stats.prompt_eval_count = token.prompt_tokens
 
-            stats.eval_duration = eval_timer.duration_ns
+                stats.eval_duration = eval_timer.duration_ns
 
-        stats.total_duration = total_timer.duration_ns
-        yield {"text": "", "done": True, "stats": stats}
+            stats.total_duration = total_timer.duration_ns
+            yield {"text": "", "done": True, "stats": stats}
+        finally:
+            # Shield from cancellation — we MUST wait for the Metal thread
+            # to finish before releasing _inference_lock, otherwise the next
+            # inference will hit concurrent Metal command buffer access.
+            await asyncio.shield(stream.drain_and_join())
 
 
 async def _full_completion(
@@ -204,10 +228,11 @@ async def _full_completion(
     images: list[str] | None = None,
 ) -> dict:
     async with _inference_lock:
-        mx.metal.clear_cache()
-        return await _full_completion_inner(
-            lm, prompt, max_tokens, gen_kwargs, stats, images,
-        )
+        mx.clear_cache()
+        with _inference_ref(lm):
+            return await _full_completion_inner(
+                lm, prompt, max_tokens, gen_kwargs, stats, images,
+            )
 
 
 async def _full_completion_inner(
@@ -308,46 +333,48 @@ async def generate_embeddings(
     import mlx.core as mx
 
     lm = await manager.ensure_loaded(model_name, keep_alive)
-    embeddings = []
 
-    tokenizer = lm.tokenizer
-    if hasattr(tokenizer, "tokenizer"):
-        tokenizer = tokenizer.tokenizer
+    async with _inference_lock:
+        embeddings = []
 
-    # Check if model has a static embedding layer we can use directly
-    embed_layer = None
-    model_inner = getattr(lm.model, "model", lm.model)
-    if hasattr(model_inner, "embed_tokens"):
-        embed_layer = model_inner.embed_tokens
+        tokenizer = lm.tokenizer
+        if hasattr(tokenizer, "tokenizer"):
+            tokenizer = tokenizer.tokenizer
 
-    for text in texts:
-        tokens = tokenizer.encode(text)
-        input_ids = mx.array([tokens])
+        # Check if model has a static embedding layer we can use directly
+        embed_layer = None
+        model_inner = getattr(lm.model, "model", lm.model)
+        if hasattr(model_inner, "embed_tokens"):
+            embed_layer = model_inner.embed_tokens
 
-        if embed_layer is not None:
-            # Use static token embeddings — no forward pass needed
-            hidden = embed_layer(input_ids)
-        else:
-            outputs = lm.model(input_ids)
-            if hasattr(outputs, "hidden_states") and outputs.hidden_states:
-                hidden = outputs.hidden_states[-1]
-            elif hasattr(outputs, "last_hidden_state"):
-                hidden = outputs.last_hidden_state
+        for text in texts:
+            tokens = tokenizer.encode(text)
+            input_ids = mx.array([tokens])
+
+            if embed_layer is not None:
+                # Use static token embeddings — no forward pass needed
+                hidden = embed_layer(input_ids)
             else:
-                hidden = outputs
+                outputs = lm.model(input_ids)
+                if hasattr(outputs, "hidden_states") and outputs.hidden_states:
+                    hidden = outputs.hidden_states[-1]
+                elif hasattr(outputs, "last_hidden_state"):
+                    hidden = outputs.last_hidden_state
+                else:
+                    hidden = outputs
 
-        # Robust shape handling
-        if hidden.ndim == 3:
-            # (batch, seq, dim) — mean-pool over sequence
-            embedding = mx.mean(hidden[0], axis=0)
-        elif hidden.ndim == 2:
-            # (seq, dim) — mean-pool over sequence
-            embedding = mx.mean(hidden, axis=0)
-        elif hidden.ndim == 1:
-            embedding = hidden
-        else:
-            raise ValueError(f"Unexpected embedding tensor shape: {hidden.shape}")
+            # Robust shape handling
+            if hidden.ndim == 3:
+                # (batch, seq, dim) — mean-pool over sequence
+                embedding = mx.mean(hidden[0], axis=0)
+            elif hidden.ndim == 2:
+                # (seq, dim) — mean-pool over sequence
+                embedding = mx.mean(hidden, axis=0)
+            elif hidden.ndim == 1:
+                embedding = hidden
+            else:
+                raise ValueError(f"Unexpected embedding tensor shape: {hidden.shape}")
 
-        embeddings.append(embedding.tolist())
+            embeddings.append(embedding.tolist())
 
-    return embeddings
+        return embeddings

@@ -1,5 +1,6 @@
 """Tests for mlx_ollama.engine.inference (non-GPU parts)."""
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -7,6 +8,7 @@ import pytest
 from mlx_ollama.engine.inference import (
     _build_generate_kwargs,
     _extract_images,
+    _inference_lock,
     _inject_tools_into_system,
     _apply_chat_template_text,
     generate_chat,
@@ -15,7 +17,7 @@ from mlx_ollama.engine.inference import (
 )
 from mlx_ollama.engine.model_manager import LoadedModel, ModelManager
 from mlx_ollama.engine.template_caps import TemplateCaps
-from mlx_ollama.utils.streaming import StreamToken
+from mlx_ollama.utils.streaming import CancellableStream, StreamToken
 from mlx_ollama.utils.timing import TimingStats
 
 
@@ -246,7 +248,7 @@ class TestGenerateCompletion:
     @pytest.mark.asyncio
     async def test_non_streaming(self, mock_manager):
         mock_mx = MagicMock()
-        mock_mx.metal.clear_cache = MagicMock()
+        mock_mx.clear_cache = MagicMock()
         mock_mx.core = mock_mx
 
         mock_mlx_lm = MagicMock()
@@ -266,16 +268,31 @@ class TestGenerateCompletion:
     @pytest.mark.asyncio
     async def test_streaming(self, mock_manager):
         mock_mx = MagicMock()
-        mock_mx.metal.clear_cache = MagicMock()
+        mock_mx.clear_cache = MagicMock()
 
-        async def mock_stream(*args, **kwargs):
-            yield StreamToken(text="Hello", token=1, prompt_tokens=5,
-                              generation_tokens=1, prompt_tps=100.0, generation_tps=50.0)
-            yield StreamToken(text=" world", token=2, prompt_tokens=5,
-                              generation_tokens=2, prompt_tps=100.0, generation_tps=50.0)
+        tokens = [
+            StreamToken(text="Hello", token=1, prompt_tokens=5,
+                        generation_tokens=1, prompt_tps=100.0, generation_tps=50.0),
+            StreamToken(text=" world", token=2, prompt_tokens=5,
+                        generation_tokens=2, prompt_tps=100.0, generation_tps=50.0),
+        ]
+
+        mock_stream = MagicMock(spec=CancellableStream)
+        mock_stream.drain_and_join = AsyncMock()
+        mock_stream.__aiter__ = MagicMock(return_value=iter(tokens).__iter__())
+
+        # Make it a proper async iterator
+        token_iter = iter(tokens)
+        async def anext_impl():
+            try:
+                return next(token_iter)
+            except StopIteration:
+                raise StopAsyncIteration
+        mock_stream.__aiter__ = lambda self: self
+        mock_stream.__anext__ = lambda self: anext_impl()
 
         with patch("mlx_ollama.engine.inference.mx", mock_mx):
-            with patch("mlx_ollama.engine.inference.async_mlx_stream", return_value=mock_stream()):
+            with patch("mlx_ollama.engine.inference.async_mlx_stream", return_value=mock_stream):
                 gen = await generate_completion(
                     mock_manager, "qwen3", "Hello", stream=True,
                 )
@@ -292,7 +309,7 @@ class TestGenerateChat:
     @pytest.mark.asyncio
     async def test_non_streaming(self, mock_manager):
         mock_mx = MagicMock()
-        mock_mx.metal.clear_cache = MagicMock()
+        mock_mx.clear_cache = MagicMock()
 
         mock_manager._loaded["qwen3:latest"].tokenizer.apply_chat_template = MagicMock(
             return_value="formatted prompt"
@@ -313,7 +330,7 @@ class TestGenerateChat:
     @pytest.mark.asyncio
     async def test_with_tools(self, mock_manager):
         mock_mx = MagicMock()
-        mock_mx.metal.clear_cache = MagicMock()
+        mock_mx.clear_cache = MagicMock()
 
         mock_manager._loaded["qwen3:latest"].tokenizer.apply_chat_template = MagicMock(
             return_value="formatted prompt with tools"
@@ -401,7 +418,7 @@ class TestGenerateChatVlm:
         lm.is_vlm = True
 
         mock_mx = MagicMock()
-        mock_mx.metal.clear_cache = MagicMock()
+        mock_mx.clear_cache = MagicMock()
 
         mock_mlx_vlm = MagicMock()
         mock_mlx_vlm.apply_chat_template.return_value = "vlm prompt"
@@ -483,3 +500,76 @@ class TestGenerateEmbeddings:
 
         result = await generate_embeddings(mock_manager, "qwen3", ["hello", "world"])
         assert len(result) == 2
+
+
+class TestStreamCancellationHoldsLock:
+    @pytest.mark.asyncio
+    async def test_lock_held_during_drain(self, mock_manager):
+        """Lock should stay held until drain_and_join completes."""
+        mock_mx = MagicMock()
+        mock_mx.clear_cache = MagicMock()
+
+        tokens = [
+            StreamToken(text="a", token=1, prompt_tokens=5,
+                        generation_tokens=1, prompt_tps=100.0, generation_tps=50.0),
+        ]
+
+        lock_held_during_drain = None
+
+        mock_stream = MagicMock(spec=CancellableStream)
+        token_iter = iter(tokens)
+        async def anext_impl():
+            try:
+                return next(token_iter)
+            except StopIteration:
+                raise StopAsyncIteration
+        mock_stream.__aiter__ = lambda self: self
+        mock_stream.__anext__ = lambda self: anext_impl()
+
+        async def spy_drain():
+            nonlocal lock_held_during_drain
+            lock_held_during_drain = _inference_lock.locked()
+
+        mock_stream.drain_and_join = spy_drain
+
+        with patch("mlx_ollama.engine.inference.mx", mock_mx):
+            with patch("mlx_ollama.engine.inference.async_mlx_stream", return_value=mock_stream):
+                gen = await generate_completion(
+                    mock_manager, "qwen3", "Hello", stream=True,
+                )
+                chunks = []
+                async for chunk in gen:
+                    chunks.append(chunk)
+
+        assert lock_held_during_drain is True
+
+
+class TestGenerateEmbeddingsAcquiresLock:
+    @pytest.mark.asyncio
+    async def test_embeddings_blocks_when_lock_held(self, mock_manager):
+        """generate_embeddings should wait for the inference lock."""
+        import mlx.core as mx
+
+        tok = mock_manager._loaded["qwen3:latest"].tokenizer
+        if hasattr(tok, "tokenizer"):
+            del tok.tokenizer
+        tok.encode = MagicMock(return_value=[1, 2, 3])
+
+        model = mock_manager._loaded["qwen3:latest"].model
+        model.model = MagicMock()
+        model.model.embed_tokens = MagicMock(return_value=mx.zeros((1, 3, 4)))
+
+        order = []
+
+        async with _inference_lock:
+            # Start embeddings in background — it should block
+            task = asyncio.create_task(generate_embeddings(mock_manager, "qwen3", ["hello"]))
+            await asyncio.sleep(0.05)
+            assert not task.done(), "embeddings should be blocked by lock"
+            order.append("lock_released")
+
+        # Now it should complete
+        result = await task
+        order.append("embeddings_done")
+        assert order == ["lock_released", "embeddings_done"]
+        assert len(result) == 1
