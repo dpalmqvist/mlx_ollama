@@ -171,6 +171,7 @@ All settings can be overridden with `OLMLX_`-prefixed environment variables or a
 | `OLMLX_MODELS_CONFIG` | `~/.olmlx/models.json` | Path to model mapping file |
 | `OLMLX_DEFAULT_KEEP_ALIVE` | `5m` | How long idle models stay loaded (`0` = unload immediately, `-1` = never unload) |
 | `OLMLX_MAX_LOADED_MODELS` | `1` | Max models loaded concurrently (LRU eviction when exceeded) |
+| `OLMLX_MEMORY_LIMIT_FRACTION` | `0.75` | Max fraction of system RAM for Metal GPU memory (0–1). Models exceeding this are rejected to prevent OOM crashes |
 
 ## How It Works
 
@@ -205,13 +206,15 @@ When you see `Model 'X' not found`, the model name isn't recognized. Fix it by:
    }'
    ```
 
-### Metal GPU crashes
+### Metal GPU crashes / out of memory
 
-If the server crashes during inference:
+If a model is too large for your system, olmlx will reject it at load time with a clear error message (HTTP 507) instead of crashing. The server checks Metal GPU memory usage after loading and compares it against `OLMLX_MEMORY_LIMIT_FRACTION` (default: 75% of system RAM).
 
-1. **Check available memory** — unload other GPU-heavy apps (video editors, 3D apps)
-2. **Reduce model size** — use 4-bit quantized models instead of 8-bit or 16-bit
-3. **Limit concurrent requests** — set `OLMLX_MAX_LOADED_MODELS=1`
+If you still experience crashes or want to adjust the threshold:
+
+1. **Use a smaller model** — try 4-bit quantized models instead of 8-bit or 16-bit
+2. **Increase the limit** — set `OLMLX_MEMORY_LIMIT_FRACTION=0.85` if you have headroom
+3. **Free memory** — close other GPU-heavy apps (video editors, 3D apps)
 4. **Check logs** — if running as a service, view `~/.olmlx/olmlx.log`
 
 ### Model won't unload / memory pressure
