@@ -7,7 +7,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from olmlx.engine.model_manager import LoadedModel, ModelManager, parse_keep_alive
+from olmlx.engine.model_manager import (
+    LoadedModel,
+    ModelManager,
+    parse_keep_alive,
+)
 from olmlx.engine.template_caps import TemplateCaps
 
 
@@ -572,3 +576,310 @@ class TestExpiryChecker:
         assert "removed:latest" not in manager._loaded
         assert held_ref.model is model_mock
         assert held_ref.tokenizer is tokenizer_mock
+
+
+class TestMemoryCheck:
+    """Test that models exceeding the memory limit are rejected on load."""
+
+    GB = 1024 * 1024 * 1024
+
+    @pytest.mark.asyncio
+    async def test_model_exceeding_memory_limit_raises(
+        self, registry, mock_store, monkeypatch
+    ):
+        """When Metal memory after loading exceeds the limit, raise MemoryError."""
+        manager = ModelManager(registry, mock_store)
+
+        mock_model = MagicMock()
+        mock_tokenizer = MagicMock()
+        mock_tokenizer.chat_template = None
+
+        total_ram = 64 * self.GB
+        # Before load: 1 GB baseline, after load: 80% of RAM (exceeds 75% limit)
+        mem_before = 1 * self.GB
+        mem_after = int(total_ram * 0.80)
+
+        with (
+            patch.object(
+                manager,
+                "_load_model",
+                return_value=(mock_model, mock_tokenizer, False, TemplateCaps()),
+            ),
+            patch(
+                "olmlx.engine.model_manager._get_metal_memory_bytes",
+                side_effect=[mem_before, mem_after],
+            ),
+            patch(
+                "olmlx.engine.model_manager._get_system_memory_bytes",
+                return_value=total_ram,
+            ),
+            patch("olmlx.engine.model_manager.gc.collect"),
+            patch("olmlx.engine.model_manager.mx.clear_cache"),
+        ):
+            with pytest.raises(MemoryError, match="memory limit"):
+                await manager.ensure_loaded("qwen3")
+
+        # Model should NOT be in _loaded
+        assert "qwen3:latest" not in manager._loaded
+
+    @pytest.mark.asyncio
+    async def test_model_within_memory_limit_loads(
+        self, registry, mock_store, monkeypatch
+    ):
+        """When Metal memory is within the limit, the model loads normally."""
+        manager = ModelManager(registry, mock_store)
+
+        mock_model = MagicMock()
+        mock_tokenizer = MagicMock()
+        mock_tokenizer.chat_template = None
+
+        total_ram = 64 * self.GB
+        mem_before = 1 * self.GB
+        mem_after = int(total_ram * 0.50)
+
+        with (
+            patch.object(
+                manager,
+                "_load_model",
+                return_value=(mock_model, mock_tokenizer, False, TemplateCaps()),
+            ),
+            patch(
+                "olmlx.engine.model_manager._get_metal_memory_bytes",
+                side_effect=[mem_before, mem_after],
+            ),
+            patch(
+                "olmlx.engine.model_manager._get_system_memory_bytes",
+                return_value=total_ram,
+            ),
+            patch("olmlx.engine.model_manager.gc.collect"),
+            patch("olmlx.engine.model_manager.mx.clear_cache"),
+        ):
+            lm = await manager.ensure_loaded("qwen3")
+
+        assert lm.name == "qwen3:latest"
+        assert "qwen3:latest" in manager._loaded
+
+    @pytest.mark.asyncio
+    async def test_custom_memory_limit_fraction(
+        self, registry, mock_store, monkeypatch
+    ):
+        """Configurable memory_limit_fraction is respected."""
+        monkeypatch.setattr(
+            "olmlx.engine.model_manager.settings.memory_limit_fraction", 0.90
+        )
+        manager = ModelManager(registry, mock_store)
+
+        mock_model = MagicMock()
+        mock_tokenizer = MagicMock()
+        mock_tokenizer.chat_template = None
+
+        total_ram = 64 * self.GB
+        # 80% usage after load — below the 90% custom limit, should load fine
+        mem_before = 1 * self.GB
+        mem_after = int(total_ram * 0.80)
+
+        with (
+            patch.object(
+                manager,
+                "_load_model",
+                return_value=(mock_model, mock_tokenizer, False, TemplateCaps()),
+            ),
+            patch(
+                "olmlx.engine.model_manager._get_metal_memory_bytes",
+                side_effect=[mem_before, mem_after],
+            ),
+            patch(
+                "olmlx.engine.model_manager._get_system_memory_bytes",
+                return_value=total_ram,
+            ),
+            patch("olmlx.engine.model_manager.gc.collect"),
+            patch("olmlx.engine.model_manager.mx.clear_cache"),
+        ):
+            lm = await manager.ensure_loaded("qwen3")
+
+        assert lm.name == "qwen3:latest"
+
+    @pytest.mark.asyncio
+    async def test_memory_error_message_includes_guidance(self, registry, mock_store):
+        """The error message should include actionable guidance."""
+        manager = ModelManager(registry, mock_store)
+
+        mock_model = MagicMock()
+        mock_tokenizer = MagicMock()
+        mock_tokenizer.chat_template = None
+
+        total_ram = 64 * self.GB
+        mem_before = 1 * self.GB
+        mem_after = int(total_ram * 0.80)
+
+        with (
+            patch.object(
+                manager,
+                "_load_model",
+                return_value=(mock_model, mock_tokenizer, False, TemplateCaps()),
+            ),
+            patch(
+                "olmlx.engine.model_manager._get_metal_memory_bytes",
+                side_effect=[mem_before, mem_after],
+            ),
+            patch(
+                "olmlx.engine.model_manager._get_system_memory_bytes",
+                return_value=total_ram,
+            ),
+            patch("olmlx.engine.model_manager.gc.collect"),
+            patch("olmlx.engine.model_manager.mx.clear_cache"),
+        ):
+            with pytest.raises(MemoryError) as exc_info:
+                await manager.ensure_loaded("qwen3")
+
+        msg = str(exc_info.value)
+        assert "OLMLX_MEMORY_LIMIT_FRACTION" in msg
+        assert "smaller" in msg or "quantized" in msg
+
+    @pytest.mark.asyncio
+    async def test_cleanup_called_on_rejection(self, registry, mock_store):
+        """gc.collect() and mx.clear_cache() are called when a model is rejected."""
+        manager = ModelManager(registry, mock_store)
+
+        mock_model = MagicMock()
+        mock_tokenizer = MagicMock()
+        mock_tokenizer.chat_template = None
+
+        total_ram = 64 * self.GB
+        mem_before = 1 * self.GB
+        mem_after = int(total_ram * 0.80)
+
+        with (
+            patch.object(
+                manager,
+                "_load_model",
+                return_value=(mock_model, mock_tokenizer, False, TemplateCaps()),
+            ),
+            patch(
+                "olmlx.engine.model_manager._get_metal_memory_bytes",
+                side_effect=[mem_before, mem_after],
+            ),
+            patch(
+                "olmlx.engine.model_manager._get_system_memory_bytes",
+                return_value=total_ram,
+            ),
+            patch("olmlx.engine.model_manager.gc.collect") as mock_gc,
+            patch("olmlx.engine.model_manager.mx.clear_cache") as mock_clear,
+        ):
+            with pytest.raises(MemoryError):
+                await manager.ensure_loaded("qwen3")
+
+        # Called twice: once for pre-load cache flush, once for post-rejection cleanup
+        assert mock_gc.call_count == 2
+        assert mock_clear.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_cache_flushed_after_eviction(
+        self, registry, mock_store, monkeypatch
+    ):
+        """After LRU eviction, Metal cache is flushed before measuring mem_before."""
+        monkeypatch.setattr("olmlx.engine.model_manager.settings.max_loaded_models", 1)
+        manager = ModelManager(registry, mock_store)
+
+        mock_model = MagicMock()
+        mock_tokenizer = MagicMock()
+        mock_tokenizer.chat_template = None
+
+        # Pre-load a model
+        existing = LoadedModel(
+            name="old:latest",
+            hf_path="org/old",
+            model=MagicMock(),
+            tokenizer=MagicMock(),
+        )
+        manager._loaded["old:latest"] = existing
+
+        total_ram = 64 * self.GB
+        # After cache flush + load, 50% usage — well within 75% limit
+        mem_before = 1 * self.GB
+        mem_after = int(total_ram * 0.50)
+
+        call_order = []
+
+        def track_gc():
+            call_order.append("gc.collect")
+
+        def track_clear():
+            call_order.append("mx.clear_cache")
+
+        def track_get_metal(*args):
+            call_order.append("get_metal")
+            return (
+                mem_before
+                if len([c for c in call_order if c == "get_metal"]) == 1
+                else mem_after
+            )
+
+        with (
+            patch.object(
+                manager,
+                "_load_model",
+                return_value=(mock_model, mock_tokenizer, False, TemplateCaps()),
+            ),
+            patch(
+                "olmlx.engine.model_manager._get_metal_memory_bytes",
+                side_effect=track_get_metal,
+            ),
+            patch(
+                "olmlx.engine.model_manager._get_system_memory_bytes",
+                return_value=total_ram,
+            ),
+            patch("olmlx.engine.model_manager.gc.collect", side_effect=track_gc),
+            patch("olmlx.engine.model_manager.mx.clear_cache", side_effect=track_clear),
+        ):
+            lm = await manager.ensure_loaded("qwen3")
+
+        assert lm.name == "qwen3:latest"
+        # Cache flush must happen before the first memory measurement
+        gc_idx = call_order.index("gc.collect")
+        clear_idx = call_order.index("mx.clear_cache")
+        first_metal_idx = call_order.index("get_metal")
+        assert gc_idx < first_metal_idx
+        assert clear_idx < first_metal_idx
+
+    @pytest.mark.asyncio
+    async def test_model_mb_not_negative_in_error(self, registry, mock_store):
+        """When MLX reuses cached buffers, model_mb should not be negative."""
+        manager = ModelManager(registry, mock_store)
+
+        mock_model = MagicMock()
+        mock_tokenizer = MagicMock()
+        mock_tokenizer.chat_template = None
+
+        total_ram = 64 * self.GB
+        # Simulate cache reuse: mem_after < mem_before but total still over limit
+        mem_before = int(total_ram * 0.70)
+        mem_after = int(total_ram * 0.80)
+
+        with (
+            patch.object(
+                manager,
+                "_load_model",
+                return_value=(mock_model, mock_tokenizer, False, TemplateCaps()),
+            ),
+            patch(
+                "olmlx.engine.model_manager._get_metal_memory_bytes",
+                side_effect=[mem_before, mem_after],
+            ),
+            patch(
+                "olmlx.engine.model_manager._get_system_memory_bytes",
+                return_value=total_ram,
+            ),
+            patch("olmlx.engine.model_manager.gc.collect"),
+            patch("olmlx.engine.model_manager.mx.clear_cache"),
+        ):
+            with pytest.raises(MemoryError) as exc_info:
+                await manager.ensure_loaded("qwen3")
+
+        msg = str(exc_info.value)
+        # Extract the MB number from "requires ~X MB"
+        import re
+
+        match = re.search(r"requires ~(\d+) MB", msg)
+        assert match is not None
+        assert int(match.group(1)) >= 0

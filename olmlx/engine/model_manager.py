@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import asyncio
+import gc
 import importlib
 import json
 import logging
+import os
 import re
 import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
+
+import mlx.core as mx
 
 from olmlx.config import settings
 from olmlx.engine.registry import ModelRegistry
@@ -62,6 +66,16 @@ def parse_keep_alive(value: str | int) -> float | None:
     num, unit = int(match.group(1)), match.group(2)
     multipliers = {"s": 1, "m": 60, "h": 3600}
     return float(num * multipliers[unit])
+
+
+def _get_system_memory_bytes() -> int:
+    """Return total system memory in bytes."""
+    return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+
+
+def _get_metal_memory_bytes() -> int:
+    """Return current MLX memory in bytes (active + cached Metal allocations)."""
+    return mx.get_active_memory() + mx.get_cache_memory()
 
 
 class ModelManager:
@@ -121,6 +135,11 @@ class ModelManager:
                 logger.info("Evicting model %s", oldest_name)
                 del self._loaded[oldest_name]
 
+            # Flush Metal allocator cache so that buffers from evicted models
+            # don't inflate the mem_before measurement below.
+            gc.collect()
+            mx.clear_cache()
+
             hf_path = self.registry.resolve(name)
             if hf_path is None:
                 raise ValueError(
@@ -133,9 +152,51 @@ class ModelManager:
                 self.registry.add_mapping(name, hf_path)
 
             logger.info("Loading model %s from %s", normalized, hf_path)
+            mem_before = _get_metal_memory_bytes()
             model, tokenizer, is_vlm, caps = await asyncio.to_thread(
                 self._load_model, hf_path
             )
+
+            # Check if the model fits safely in memory.  On Apple Silicon
+            # the GPU shares system RAM — if total Metal memory exceeds the
+            # configured fraction of system RAM, generation will almost
+            # certainly OOM and crash the process (Metal abort, not catchable
+            # in Python).  Reject early with a clear error instead.
+            #
+            # Note: this is a post-hoc check — the model is already loaded.
+            # If loading itself triggers an OOM the process will still crash.
+            # In practice, loading succeeds; it is the KV cache allocation
+            # during generation that causes the abort.
+            mem_after = _get_metal_memory_bytes()
+            total = _get_system_memory_bytes()
+            limit = int(total * settings.memory_limit_fraction)
+            if mem_after > limit:
+                model_mb = max(0, (mem_after - mem_before)) // (1024 * 1024)
+                total_mb = total // (1024 * 1024)
+                limit_mb = limit // (1024 * 1024)
+                # Drop references and flush Metal allocator so the memory
+                # is actually reclaimed before we raise.
+                del model, tokenizer
+                gc.collect()
+                mx.clear_cache()
+                logger.error(
+                    "Model %s uses %d MB, pushing Metal memory to %d MB "
+                    "which exceeds the limit of %d MB "
+                    "(%.0f%% of %d MB system RAM). Refusing to load.",
+                    normalized,
+                    model_mb,
+                    mem_after // (1024 * 1024),
+                    limit_mb,
+                    settings.memory_limit_fraction * 100,
+                    total_mb,
+                )
+                raise MemoryError(
+                    f"Model '{normalized}' requires ~{model_mb} MB but the memory limit "
+                    f"is {limit_mb} MB ({settings.memory_limit_fraction:.0%} of "
+                    f"{total_mb} MB system RAM). Use a smaller/more quantized model, "
+                    f"or increase OLMLX_MEMORY_LIMIT_FRACTION (current: "
+                    f"{settings.memory_limit_fraction})."
+                )
 
             ka = self._resolve_keep_alive(keep_alive)
             expires = time.time() + ka if ka is not None else None
