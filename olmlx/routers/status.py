@@ -40,6 +40,7 @@ async def ps(request: Request):
                 size=lm.size_bytes,
                 expires_at=expires,
                 size_vram=lm.size_bytes,
+                active_refs=lm.active_refs,
             )
         )
     return PsResponse(models=models)
