@@ -6,9 +6,9 @@ from collections.abc import AsyncGenerator
 from datetime import datetime, timezone
 from pathlib import Path
 
-from mlx_ollama.config import settings
-from mlx_ollama.engine.registry import ModelRegistry
-from mlx_ollama.models.manifest import ModelManifest
+from olmlx.config import settings
+from olmlx.engine.registry import ModelRegistry
+from olmlx.models.manifest import ModelManifest
 
 logger = logging.getLogger(__name__)
 

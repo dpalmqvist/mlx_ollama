@@ -6,11 +6,11 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from mlx_ollama.config import settings
-from mlx_ollama.engine.model_manager import ModelManager
-from mlx_ollama.engine.registry import ModelRegistry
-from mlx_ollama.models.store import ModelStore
-from mlx_ollama.routers import (
+from olmlx.config import settings
+from olmlx.engine.model_manager import ModelManager
+from olmlx.engine.registry import ModelRegistry
+from olmlx.models.store import ModelStore
+from olmlx.routers import (
     anthropic,
     blobs,
     chat,
@@ -22,7 +22,7 @@ from mlx_ollama.routers import (
     status,
 )
 
-logger = logging.getLogger("mlx_ollama")
+logger = logging.getLogger("olmlx")
 
 
 @asynccontextmanager
@@ -40,12 +40,12 @@ async def lifespan(app: FastAPI):
     app.state.model_manager = manager
     app.state.model_store = store
 
-    logger.info("MLX Ollama server started on %s:%d", settings.host, settings.port)
+    logger.info("olmlx server started on %s:%d", settings.host, settings.port)
     yield
 
     # Shutdown
     await manager.stop()
-    logger.info("MLX Ollama server stopped")
+    logger.info("olmlx server stopped")
 
 
 class ForceJSONMiddleware(BaseHTTPMiddleware):
@@ -85,7 +85,7 @@ def _make_error_response(
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="MLX Ollama", lifespan=lifespan)
+    app = FastAPI(title="olmlx", lifespan=lifespan)
     app.add_middleware(ForceJSONMiddleware)
 
     @app.exception_handler(ValueError)

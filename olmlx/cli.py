@@ -1,4 +1,4 @@
-"""CLI for mlx-ollama with serve and service subcommands."""
+"""CLI for olmlx with serve and service subcommands."""
 
 import argparse
 import json
@@ -10,9 +10,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-from mlx_ollama.config import settings
+from olmlx.config import settings
 
-PLIST_LABEL = "com.dpalmqvist.mlx-ollama"
+PLIST_LABEL = "com.dpalmqvist.olmlx"
 PLIST_PATH = Path.home() / "Library" / "LaunchAgents" / f"{PLIST_LABEL}.plist"
 
 DEFAULT_MODELS = {
@@ -24,7 +24,7 @@ DEFAULT_MODELS = {
 
 
 def ensure_config():
-    """Create ~/.mlx_ollama/ and seed models.json if missing."""
+    """Create ~/.olmlx/ and seed models.json if missing."""
     config_dir = settings.models_config.parent
     config_dir.mkdir(parents=True, exist_ok=True)
     if not settings.models_config.exists():
@@ -34,7 +34,7 @@ def ensure_config():
 
 
 def cmd_serve(_args):
-    """Start the mlx-ollama server."""
+    """Start the olmlx server."""
     import uvicorn
 
     ensure_config()
@@ -43,7 +43,7 @@ def cmd_serve(_args):
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
     uvicorn.run(
-        "mlx_ollama.app:create_app",
+        "olmlx.app:create_app",
         factory=True,
         host=settings.host,
         port=settings.port,
@@ -52,8 +52,8 @@ def cmd_serve(_args):
 
 
 def _find_executable() -> str:
-    """Find the mlx-ollama executable path."""
-    exe = shutil.which("mlx-ollama")
+    """Find the olmlx executable path."""
+    exe = shutil.which("olmlx")
     if exe:
         return exe
     # Fallback: use the current Python interpreter with -m
@@ -61,17 +61,17 @@ def _find_executable() -> str:
 
 
 def _build_plist() -> dict:
-    """Build a launchd plist dict for the mlx-ollama service."""
+    """Build a launchd plist dict for the olmlx service."""
     exe = _find_executable()
     if exe == sys.executable:
-        program_args = [exe, "-m", "mlx_ollama"]
+        program_args = [exe, "-m", "olmlx"]
     else:
         program_args = [exe]
 
     env_vars = {}
-    # Forward MLX_OLLAMA_ env vars if set
+    # Forward OLMLX_ env vars if set
     for key, value in os.environ.items():
-        if key.startswith("MLX_OLLAMA_"):
+        if key.startswith("OLMLX_"):
             env_vars[key] = value
     # Ensure PATH includes common tool locations
     env_vars["PATH"] = os.environ.get("PATH", "/usr/bin:/bin:/usr/local/bin")
@@ -81,8 +81,8 @@ def _build_plist() -> dict:
         "ProgramArguments": program_args,
         "RunAtLoad": True,
         "KeepAlive": True,
-        "StandardOutPath": str(Path.home() / ".mlx_ollama" / "mlx-ollama.log"),
-        "StandardErrorPath": str(Path.home() / ".mlx_ollama" / "mlx-ollama.log"),
+        "StandardOutPath": str(Path.home() / ".olmlx" / "olmlx.log"),
+        "StandardErrorPath": str(Path.home() / ".olmlx" / "olmlx.log"),
         "EnvironmentVariables": env_vars,
     }
     return plist
@@ -127,7 +127,7 @@ def cmd_service_status(_args):
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="mlx-ollama",
+        prog="olmlx",
         description="Ollama-compatible API server using Apple MLX",
     )
     sub = parser.add_subparsers(dest="command")

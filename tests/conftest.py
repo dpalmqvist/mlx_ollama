@@ -1,4 +1,4 @@
-"""Shared fixtures for mlx-ollama tests."""
+"""Shared fixtures for olmlx tests."""
 
 import json
 from unittest.mock import MagicMock
@@ -6,10 +6,10 @@ from unittest.mock import MagicMock
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from mlx_ollama.engine.model_manager import LoadedModel, ModelManager
-from mlx_ollama.engine.registry import ModelRegistry
-from mlx_ollama.engine.template_caps import TemplateCaps
-from mlx_ollama.models.store import ModelStore
+from olmlx.engine.model_manager import LoadedModel, ModelManager
+from olmlx.engine.registry import ModelRegistry
+from olmlx.engine.template_caps import TemplateCaps
+from olmlx.models.store import ModelStore
 
 
 @pytest.fixture
@@ -28,7 +28,7 @@ def tmp_models_config(tmp_path):
 def registry(tmp_models_config, monkeypatch):
     """A ModelRegistry loaded from a temp config."""
     monkeypatch.setattr(
-        "mlx_ollama.engine.registry.settings.models_config", tmp_models_config
+        "olmlx.engine.registry.settings.models_config", tmp_models_config
     )
     reg = ModelRegistry()
     reg.load()
@@ -63,16 +63,14 @@ def mock_manager(registry, mock_loaded_model, mock_store):
 @pytest.fixture
 def mock_store(registry, tmp_path, monkeypatch):
     """A ModelStore using a temp directory."""
-    monkeypatch.setattr(
-        "mlx_ollama.models.store.settings.models_dir", tmp_path / "models"
-    )
+    monkeypatch.setattr("olmlx.models.store.settings.models_dir", tmp_path / "models")
     return ModelStore(registry)
 
 
 @pytest.fixture
 async def app_client(mock_manager, mock_store, registry):
     """An async test client for the FastAPI app."""
-    from mlx_ollama.app import create_app
+    from olmlx.app import create_app
 
     app = create_app()
     app.state.registry = registry

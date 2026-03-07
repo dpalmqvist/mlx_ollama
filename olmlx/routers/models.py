@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request
 
-from mlx_ollama.schemas.models import (
+from olmlx.schemas.models import (
     ModelDetails,
     ModelInfo,
     ShowRequest,

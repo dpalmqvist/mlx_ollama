@@ -1,8 +1,8 @@
-"""Tests for mlx_ollama.utils.timing."""
+"""Tests for olmlx.utils.timing."""
 
 import time
 
-from mlx_ollama.utils.timing import Timer, TimingStats
+from olmlx.utils.timing import Timer, TimingStats
 
 
 class TestTimingStats:

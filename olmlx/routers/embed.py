@@ -1,13 +1,13 @@
 from fastapi import APIRouter, Request
 
-from mlx_ollama.engine.inference import generate_embeddings
-from mlx_ollama.schemas.embed import (
+from olmlx.engine.inference import generate_embeddings
+from olmlx.schemas.embed import (
     EmbedRequest,
     EmbedResponse,
     EmbeddingsRequest,
     EmbeddingsResponse,
 )
-from mlx_ollama.utils.timing import Timer
+from olmlx.utils.timing import Timer
 
 router = APIRouter()
 

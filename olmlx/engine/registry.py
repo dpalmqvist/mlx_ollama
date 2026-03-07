@@ -1,6 +1,6 @@
 import json
 
-from mlx_ollama.config import settings
+from olmlx.config import settings
 
 
 class ModelRegistry:

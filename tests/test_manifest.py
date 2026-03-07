@@ -1,8 +1,8 @@
-"""Tests for mlx_ollama.models.manifest."""
+"""Tests for olmlx.models.manifest."""
 
 import json
 
-from mlx_ollama.models.manifest import ModelManifest
+from olmlx.models.manifest import ModelManifest
 
 
 class TestModelManifest:

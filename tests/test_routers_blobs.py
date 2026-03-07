@@ -1,4 +1,4 @@
-"""Tests for mlx_ollama.routers.blobs."""
+"""Tests for olmlx.routers.blobs."""
 
 import hashlib
 

@@ -90,7 +90,7 @@ class OpenAIModel(BaseModel):
     id: str
     object: str = "model"
     created: int = 0
-    owned_by: str = "mlx-ollama"
+    owned_by: str = "olmlx"
 
 
 class OpenAIModelList(BaseModel):

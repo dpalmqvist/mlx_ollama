@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 
-from mlx_ollama.schemas.models import ModelDetails
+from olmlx.schemas.models import ModelDetails
 
 
 class RunningModel(BaseModel):

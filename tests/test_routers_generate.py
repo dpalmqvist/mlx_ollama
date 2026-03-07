@@ -1,10 +1,10 @@
-"""Tests for mlx_ollama.routers.generate."""
+"""Tests for olmlx.routers.generate."""
 
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from mlx_ollama.utils.timing import TimingStats
+from olmlx.utils.timing import TimingStats
 
 
 class TestGenerateRouter:
@@ -14,7 +14,7 @@ class TestGenerateRouter:
         mock_result = {"text": "Generated text", "done": True, "stats": stats}
 
         with patch(
-            "mlx_ollama.routers.generate.generate_completion", new_callable=AsyncMock
+            "olmlx.routers.generate.generate_completion", new_callable=AsyncMock
         ) as mock_gen:
             mock_gen.return_value = mock_result
             resp = await app_client.post(
@@ -42,7 +42,7 @@ class TestGenerateRouter:
             return gen()
 
         with patch(
-            "mlx_ollama.routers.generate.generate_completion", side_effect=mock_stream
+            "olmlx.routers.generate.generate_completion", side_effect=mock_stream
         ):
             resp = await app_client.post(
                 "/api/generate",
@@ -61,7 +61,7 @@ class TestGenerateRouter:
         mock_result = {"text": "result", "done": True, "stats": TimingStats()}
 
         with patch(
-            "mlx_ollama.routers.generate.generate_completion", new_callable=AsyncMock
+            "olmlx.routers.generate.generate_completion", new_callable=AsyncMock
         ) as mock_gen:
             mock_gen.return_value = mock_result
             resp = await app_client.post(
@@ -86,7 +86,7 @@ class TestGenerateRouter:
         mock_result = {"text": "result", "done": True, "stats": TimingStats()}
 
         with patch(
-            "mlx_ollama.routers.generate.generate_completion", new_callable=AsyncMock
+            "olmlx.routers.generate.generate_completion", new_callable=AsyncMock
         ) as mock_gen:
             mock_gen.return_value = mock_result
             resp = await app_client.post(

@@ -1,4 +1,4 @@
-from mlx_ollama.cli import cli_main
+from olmlx.cli import cli_main
 
 
 def main():

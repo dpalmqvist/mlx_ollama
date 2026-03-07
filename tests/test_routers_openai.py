@@ -1,10 +1,10 @@
-"""Tests for mlx_ollama.routers.openai."""
+"""Tests for olmlx.routers.openai."""
 
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from mlx_ollama.utils.timing import TimingStats
+from olmlx.utils.timing import TimingStats
 
 
 class TestOpenAIRouter:
@@ -22,7 +22,7 @@ class TestOpenAIRouter:
         mock_result = {"text": "Hello!", "done": True, "stats": stats}
 
         with patch(
-            "mlx_ollama.routers.openai.generate_chat", new_callable=AsyncMock
+            "olmlx.routers.openai.generate_chat", new_callable=AsyncMock
         ) as mock_gen:
             mock_gen.return_value = mock_result
             resp = await app_client.post(
@@ -51,7 +51,7 @@ class TestOpenAIRouter:
 
             return gen()
 
-        with patch("mlx_ollama.routers.openai.generate_chat", side_effect=mock_stream):
+        with patch("olmlx.routers.openai.generate_chat", side_effect=mock_stream):
             resp = await app_client.post(
                 "/v1/chat/completions",
                 json={
@@ -72,7 +72,7 @@ class TestOpenAIRouter:
         mock_result = {"text": "Completed text", "done": True, "stats": TimingStats()}
 
         with patch(
-            "mlx_ollama.routers.openai.generate_completion", new_callable=AsyncMock
+            "olmlx.routers.openai.generate_completion", new_callable=AsyncMock
         ) as mock_gen:
             mock_gen.return_value = mock_result
             resp = await app_client.post(
@@ -93,7 +93,7 @@ class TestOpenAIRouter:
         mock_result = {"text": "result", "done": True, "stats": TimingStats()}
 
         with patch(
-            "mlx_ollama.routers.openai.generate_completion", new_callable=AsyncMock
+            "olmlx.routers.openai.generate_completion", new_callable=AsyncMock
         ) as mock_gen:
             mock_gen.return_value = mock_result
             resp = await app_client.post(
@@ -112,7 +112,7 @@ class TestOpenAIRouter:
     @pytest.mark.asyncio
     async def test_embeddings(self, app_client):
         with patch(
-            "mlx_ollama.routers.openai.generate_embeddings", new_callable=AsyncMock
+            "olmlx.routers.openai.generate_embeddings", new_callable=AsyncMock
         ) as mock_emb:
             mock_emb.return_value = [[0.1, 0.2, 0.3]]
             resp = await app_client.post(
@@ -132,7 +132,7 @@ class TestOpenAIRouter:
     @pytest.mark.asyncio
     async def test_embeddings_list_input(self, app_client):
         with patch(
-            "mlx_ollama.routers.openai.generate_embeddings", new_callable=AsyncMock
+            "olmlx.routers.openai.generate_embeddings", new_callable=AsyncMock
         ) as mock_emb:
             mock_emb.return_value = [[0.1], [0.2]]
             resp = await app_client.post(
@@ -157,9 +157,7 @@ class TestOpenAIRouter:
 
             return gen()
 
-        with patch(
-            "mlx_ollama.routers.openai.generate_completion", side_effect=mock_stream
-        ):
+        with patch("olmlx.routers.openai.generate_completion", side_effect=mock_stream):
             resp = await app_client.post(
                 "/v1/completions",
                 json={
@@ -178,7 +176,7 @@ class TestOpenAIRouter:
         mock_result = {"text": "hi", "done": True, "stats": TimingStats()}
 
         with patch(
-            "mlx_ollama.routers.openai.generate_chat", new_callable=AsyncMock
+            "olmlx.routers.openai.generate_chat", new_callable=AsyncMock
         ) as mock_gen:
             mock_gen.return_value = mock_result
             resp = await app_client.post(

@@ -4,8 +4,8 @@ import logging
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from mlx_ollama.schemas.manage import CopyRequest, CreateRequest, DeleteRequest
-from mlx_ollama.schemas.pull import PullRequest
+from olmlx.schemas.manage import CopyRequest, CreateRequest, DeleteRequest
+from olmlx.schemas.pull import PullRequest
 
 logger = logging.getLogger(__name__)
 

@@ -1,4 +1,4 @@
-"""Tests for mlx_ollama.routers.anthropic."""
+"""Tests for olmlx.routers.anthropic."""
 
 import asyncio
 import json
@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from mlx_ollama.routers.anthropic import (
+from olmlx.routers.anthropic import (
     _build_options,
     _convert_messages,
     _convert_tools,
@@ -14,14 +14,14 @@ from mlx_ollama.routers.anthropic import (
     _sse,
     _with_keepalive_pings,
 )
-from mlx_ollama.schemas.anthropic import (
+from olmlx.schemas.anthropic import (
     AnthropicContentBlock,
     AnthropicMessage,
     AnthropicMessagesRequest,
     AnthropicTool,
     AnthropicToolInputSchema,
 )
-from mlx_ollama.utils.timing import TimingStats
+from olmlx.utils.timing import TimingStats
 
 
 class TestConvertTools:
@@ -283,7 +283,7 @@ class TestAnthropicEndpoint:
         mock_result = {"text": "Hello from MLX!", "done": True, "stats": stats}
 
         with patch(
-            "mlx_ollama.routers.anthropic.generate_chat", new_callable=AsyncMock
+            "olmlx.routers.anthropic.generate_chat", new_callable=AsyncMock
         ) as mock_gen:
             mock_gen.return_value = mock_result
             resp = await app_client.post(
@@ -315,7 +315,7 @@ class TestAnthropicEndpoint:
         }
 
         with patch(
-            "mlx_ollama.routers.anthropic.generate_chat", new_callable=AsyncMock
+            "olmlx.routers.anthropic.generate_chat", new_callable=AsyncMock
         ) as mock_gen:
             mock_gen.return_value = mock_result
             resp = await app_client.post(
@@ -343,7 +343,7 @@ class TestAnthropicEndpoint:
         }
 
         with patch(
-            "mlx_ollama.routers.anthropic.generate_chat", new_callable=AsyncMock
+            "olmlx.routers.anthropic.generate_chat", new_callable=AsyncMock
         ) as mock_gen:
             mock_gen.return_value = mock_result
             resp = await app_client.post(
@@ -378,7 +378,7 @@ class TestAnthropicEndpoint:
         mock_result = {"text": "", "done": True, "stats": stats}
 
         with patch(
-            "mlx_ollama.routers.anthropic.generate_chat", new_callable=AsyncMock
+            "olmlx.routers.anthropic.generate_chat", new_callable=AsyncMock
         ) as mock_gen:
             mock_gen.return_value = mock_result
             resp = await app_client.post(
@@ -406,9 +406,7 @@ class TestAnthropicEndpoint:
 
             return gen()
 
-        with patch(
-            "mlx_ollama.routers.anthropic.generate_chat", side_effect=mock_stream
-        ):
+        with patch("olmlx.routers.anthropic.generate_chat", side_effect=mock_stream):
             resp = await app_client.post(
                 "/v1/messages",
                 json={
@@ -443,9 +441,7 @@ class TestAnthropicEndpoint:
 
             return gen()
 
-        with patch(
-            "mlx_ollama.routers.anthropic.generate_chat", side_effect=mock_stream
-        ):
+        with patch("olmlx.routers.anthropic.generate_chat", side_effect=mock_stream):
             resp = await app_client.post(
                 "/v1/messages",
                 json={
@@ -473,9 +469,7 @@ class TestAnthropicEndpoint:
 
             return gen()
 
-        with patch(
-            "mlx_ollama.routers.anthropic.generate_chat", side_effect=mock_stream
-        ):
+        with patch("olmlx.routers.anthropic.generate_chat", side_effect=mock_stream):
             resp = await app_client.post(
                 "/v1/messages",
                 json={
@@ -510,9 +504,7 @@ class TestAnthropicEndpoint:
 
             return gen()
 
-        with patch(
-            "mlx_ollama.routers.anthropic.generate_chat", side_effect=mock_stream
-        ):
+        with patch("olmlx.routers.anthropic.generate_chat", side_effect=mock_stream):
             resp = await app_client.post(
                 "/v1/messages",
                 json={
@@ -540,9 +532,7 @@ class TestAnthropicEndpoint:
 
             return gen()
 
-        with patch(
-            "mlx_ollama.routers.anthropic.generate_chat", side_effect=mock_stream
-        ):
+        with patch("olmlx.routers.anthropic.generate_chat", side_effect=mock_stream):
             resp = await app_client.post(
                 "/v1/messages",
                 json={
@@ -568,9 +558,7 @@ class TestAnthropicEndpoint:
 
             return gen()
 
-        with patch(
-            "mlx_ollama.routers.anthropic.generate_chat", side_effect=mock_stream
-        ):
+        with patch("olmlx.routers.anthropic.generate_chat", side_effect=mock_stream):
             resp = await app_client.post(
                 "/v1/messages",
                 json={
@@ -600,9 +588,7 @@ class TestAnthropicEndpoint:
 
             return gen()
 
-        with patch(
-            "mlx_ollama.routers.anthropic.generate_chat", side_effect=mock_stream
-        ):
+        with patch("olmlx.routers.anthropic.generate_chat", side_effect=mock_stream):
             resp = await app_client.post(
                 "/v1/messages",
                 json={
@@ -634,9 +620,7 @@ class TestAnthropicEndpoint:
 
             return gen()
 
-        with patch(
-            "mlx_ollama.routers.anthropic.generate_chat", side_effect=mock_stream
-        ):
+        with patch("olmlx.routers.anthropic.generate_chat", side_effect=mock_stream):
             resp = await app_client.post(
                 "/v1/messages",
                 json={
@@ -674,9 +658,7 @@ class TestAnthropicEndpoint:
 
             return gen()
 
-        with patch(
-            "mlx_ollama.routers.anthropic.generate_chat", side_effect=mock_stream
-        ):
+        with patch("olmlx.routers.anthropic.generate_chat", side_effect=mock_stream):
             resp = await app_client.post(
                 "/v1/messages",
                 json={
@@ -708,9 +690,7 @@ class TestAnthropicEndpoint:
 
             return gen()
 
-        with patch(
-            "mlx_ollama.routers.anthropic.generate_chat", side_effect=mock_stream
-        ):
+        with patch("olmlx.routers.anthropic.generate_chat", side_effect=mock_stream):
             resp = await app_client.post(
                 "/v1/messages",
                 json={
@@ -746,9 +726,7 @@ class TestAnthropicEndpoint:
 
             return gen()
 
-        with patch(
-            "mlx_ollama.routers.anthropic.generate_chat", side_effect=mock_stream
-        ):
+        with patch("olmlx.routers.anthropic.generate_chat", side_effect=mock_stream):
             resp = await app_client.post(
                 "/v1/messages",
                 json={
@@ -789,9 +767,7 @@ class TestAnthropicEndpoint:
 
             return gen()
 
-        with patch(
-            "mlx_ollama.routers.anthropic.generate_chat", side_effect=mock_stream
-        ):
+        with patch("olmlx.routers.anthropic.generate_chat", side_effect=mock_stream):
             resp = await app_client.post(
                 "/v1/messages",
                 json={
@@ -813,7 +789,7 @@ class TestAnthropicEndpoint:
         mock_result = {"text": "I am helpful", "done": True, "stats": stats}
 
         with patch(
-            "mlx_ollama.routers.anthropic.generate_chat", new_callable=AsyncMock
+            "olmlx.routers.anthropic.generate_chat", new_callable=AsyncMock
         ) as mock_gen:
             mock_gen.return_value = mock_result
             resp = await app_client.post(

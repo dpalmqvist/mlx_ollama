@@ -1,4 +1,4 @@
-# MLX Ollama
+# olmlx
 
 Drop-in Ollama API replacement powered by Apple's [MLX](https://github.com/ml-explore/mlx) framework. Get faster inference on Mac M-series hardware while using any tool that speaks the Ollama REST API.
 
@@ -17,17 +17,17 @@ Drop-in Ollama API replacement powered by Apple's [MLX](https://github.com/ml-ex
 uv tool install git+ssh://git@github.com/motsognirr/olmlx.git
 
 # Start the server
-mlx-ollama
+olmlx
 ```
 
-On first run, `~/.mlx_ollama/models.json` is created with example model mappings.
+On first run, `~/.olmlx/models.json` is created with example model mappings.
 
 ### Option 2: From source
 
 ```bash
 git clone <repo-url> && cd mlx-for-claude
 uv sync --no-editable
-uv run mlx-ollama
+uv run olmlx
 ```
 
 The server starts on `http://localhost:11434` — the same default port as Ollama.
@@ -36,20 +36,20 @@ The server starts on `http://localhost:11434` — the same default port as Ollam
 
 ```bash
 # Install as a launchd service — starts on login, restarts on crash
-mlx-ollama service install
+olmlx service install
 
 # Check status
-mlx-ollama service status
+olmlx service status
 
 # Remove the service
-mlx-ollama service uninstall
+olmlx service uninstall
 ```
 
-The service writes logs to `~/.mlx_ollama/mlx-ollama.log`.
+The service writes logs to `~/.olmlx/olmlx.log`.
 
 ## Model Configuration
 
-Edit `~/.mlx_ollama/models.json` to map Ollama-style model names to HuggingFace repos. MLX-format models from [mlx-community](https://huggingface.co/mlx-community) work best:
+Edit `~/.olmlx/models.json` to map Ollama-style model names to HuggingFace repos. MLX-format models from [mlx-community](https://huggingface.co/mlx-community) work best:
 
 ```json
 {
@@ -161,16 +161,16 @@ This endpoint allows using the server as a backend for tools that speak the Anth
 
 ## Configuration
 
-All settings can be overridden with `MLX_OLLAMA_`-prefixed environment variables or a `.env` file in the project root:
+All settings can be overridden with `OLMLX_`-prefixed environment variables or a `.env` file in the project root:
 
 | Variable | Default | Description |
 |---|---|---|
-| `MLX_OLLAMA_HOST` | `0.0.0.0` | Bind address |
-| `MLX_OLLAMA_PORT` | `11434` | Port |
-| `MLX_OLLAMA_MODELS_DIR` | `~/.mlx_ollama/models` | Where downloaded models are stored |
-| `MLX_OLLAMA_MODELS_CONFIG` | `~/.mlx_ollama/models.json` | Path to model mapping file |
-| `MLX_OLLAMA_DEFAULT_KEEP_ALIVE` | `5m` | How long idle models stay loaded (`0` = unload immediately, `-1` = never unload) |
-| `MLX_OLLAMA_MAX_LOADED_MODELS` | `1` | Max models loaded concurrently (LRU eviction when exceeded) |
+| `OLMLX_HOST` | `0.0.0.0` | Bind address |
+| `OLMLX_PORT` | `11434` | Port |
+| `OLMLX_MODELS_DIR` | `~/.olmlx/models` | Where downloaded models are stored |
+| `OLMLX_MODELS_CONFIG` | `~/.olmlx/models.json` | Path to model mapping file |
+| `OLMLX_DEFAULT_KEEP_ALIVE` | `5m` | How long idle models stay loaded (`0` = unload immediately, `-1` = never unload) |
+| `OLMLX_MAX_LOADED_MODELS` | `1` | Max models loaded concurrently (LRU eviction when exceeded) |
 
 ## How It Works
 
