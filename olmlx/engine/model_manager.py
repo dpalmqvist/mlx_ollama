@@ -135,6 +135,11 @@ class ModelManager:
                 logger.info("Evicting model %s", oldest_name)
                 del self._loaded[oldest_name]
 
+            # Flush Metal allocator cache so that buffers from evicted models
+            # don't inflate the mem_before measurement below.
+            gc.collect()
+            mx.clear_cache()
+
             hf_path = self.registry.resolve(name)
             if hf_path is None:
                 raise ValueError(
@@ -166,7 +171,7 @@ class ModelManager:
             total = _get_system_memory_bytes()
             limit = int(total * settings.memory_limit_fraction)
             if mem_after > limit:
-                model_mb = (mem_after - mem_before) // (1024 * 1024)
+                model_mb = max(0, (mem_after - mem_before)) // (1024 * 1024)
                 total_mb = total // (1024 * 1024)
                 limit_mb = limit // (1024 * 1024)
                 # Drop references and flush Metal allocator so the memory
