@@ -139,7 +139,9 @@ async def abort_generation(req: AbortRequest, request: Request):
     output for tool parsing. The generation will complete but the client
     can simply disconnect to stop receiving chunks.
     """
-    logger.info("Abort requested for model %s (no-op, client should disconnect)", req.model)
+    logger.info(
+        "Abort requested for model %s (no-op, client should disconnect)", req.model
+    )
     return {"status": "aborted"}
 
 

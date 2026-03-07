@@ -69,20 +69,18 @@ async def get_metrics():
         if metrics.total_requests > 0
         else 0
     )
-    tokens_per_sec = (
-        metrics.total_tokens_generated / uptime if uptime > 0 else 0
-    )
+    tokens_per_sec = metrics.total_tokens_generated / uptime if uptime > 0 else 0
 
     metric_lines = [
-        f'olmlx_requests_total {metrics.total_requests}',
-        f'olmlx_tokens_generated_total {metrics.total_tokens_generated}',
-        f'olmlx_generation_time_seconds_sum {metrics.total_generation_time}',
-        f'olmlx_generation_time_seconds_count {metrics.total_requests}',
-        f'olmlx_model_loads_total {metrics.model_load_count}',
-        f'olmlx_model_unloads_total {metrics.model_unload_count}',
-        f'olmlx_uptime_seconds {uptime:.2f}',
-        f'olmlx_avg_generation_time_seconds {avg_gen_time:.4f}',
-        f'olmlx_tokens_per_second {tokens_per_sec:.2f}',
+        f"olmlx_requests_total {metrics.total_requests}",
+        f"olmlx_tokens_generated_total {metrics.total_tokens_generated}",
+        f"olmlx_generation_time_seconds_sum {metrics.total_generation_time}",
+        f"olmlx_generation_time_seconds_count {metrics.total_requests}",
+        f"olmlx_model_loads_total {metrics.model_load_count}",
+        f"olmlx_model_unloads_total {metrics.model_unload_count}",
+        f"olmlx_uptime_seconds {uptime:.2f}",
+        f"olmlx_avg_generation_time_seconds {avg_gen_time:.4f}",
+        f"olmlx_tokens_per_second {tokens_per_sec:.2f}",
     ]
 
     return PlainTextResponse("\n".join(metric_lines) + "\n")
