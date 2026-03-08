@@ -808,3 +808,203 @@ class TestAnthropicEndpoint:
         messages = call_args[0][2]  # messages arg
         assert messages[0]["role"] == "system"
         assert "helpful" in messages[0]["content"]
+
+
+class TestCountTokens:
+    @pytest.mark.asyncio
+    async def test_simple_message(self, app_client, mock_loaded_model):
+        mock_loaded_model.tokenizer.apply_chat_template.return_value = [1, 2, 3, 4, 5]
+        resp = await app_client.post(
+            "/v1/messages/count_tokens",
+            json={
+                "model": "qwen3",
+                "messages": [{"role": "user", "content": "hello"}],
+                "max_tokens": 100,
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["input_tokens"] == 5
+
+    @pytest.mark.asyncio
+    async def test_with_system_message(self, app_client, mock_loaded_model):
+        mock_loaded_model.tokenizer.apply_chat_template.return_value = [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+        ]
+        resp = await app_client.post(
+            "/v1/messages/count_tokens",
+            json={
+                "model": "qwen3",
+                "messages": [{"role": "user", "content": "hi"}],
+                "system": "You are helpful.",
+                "max_tokens": 100,
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["input_tokens"] == 7
+
+    @pytest.mark.asyncio
+    async def test_with_tools(self, app_client, mock_loaded_model):
+        mock_loaded_model.tokenizer.apply_chat_template.return_value = list(range(20))
+        resp = await app_client.post(
+            "/v1/messages/count_tokens",
+            json={
+                "model": "qwen3",
+                "messages": [{"role": "user", "content": "search for test"}],
+                "max_tokens": 100,
+                "tools": [
+                    {
+                        "name": "search",
+                        "description": "Search",
+                        "input_schema": {
+                            "type": "object",
+                            "properties": {"q": {"type": "string"}},
+                        },
+                    }
+                ],
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["input_tokens"] == 20
+        # Verify tools kwarg was passed to apply_chat_template
+        call_kwargs = mock_loaded_model.tokenizer.apply_chat_template.call_args[1]
+        assert "tools" in call_kwargs
+
+    @pytest.mark.asyncio
+    async def test_tokenize_true_passed(self, app_client, mock_loaded_model):
+        mock_loaded_model.tokenizer.apply_chat_template.return_value = [1, 2, 3]
+        await app_client.post(
+            "/v1/messages/count_tokens",
+            json={
+                "model": "qwen3",
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 100,
+            },
+        )
+        call_kwargs = mock_loaded_model.tokenizer.apply_chat_template.call_args[1]
+        assert call_kwargs["tokenize"] is True
+        assert call_kwargs["add_generation_prompt"] is True
+
+    @pytest.mark.asyncio
+    async def test_beta_query_param(self, app_client, mock_loaded_model):
+        mock_loaded_model.tokenizer.apply_chat_template.return_value = [1, 2, 3]
+        resp = await app_client.post(
+            "/v1/messages/count_tokens?beta=true",
+            json={
+                "model": "qwen3",
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 100,
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.json()["input_tokens"] == 3
+
+    @pytest.mark.asyncio
+    async def test_model_not_found(self, app_client):
+        resp = await app_client.post(
+            "/v1/messages/count_tokens",
+            json={
+                "model": "nonexistent",
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 100,
+            },
+        )
+        assert resp.status_code == 400
+        data = resp.json()
+        assert data["type"] == "error"
+
+    @pytest.mark.asyncio
+    async def test_dict_return_type(self, app_client, mock_loaded_model):
+        """apply_chat_template may return dict with input_ids key."""
+        mock_loaded_model.tokenizer.apply_chat_template.return_value = {
+            "input_ids": [1, 2, 3, 4]
+        }
+        resp = await app_client.post(
+            "/v1/messages/count_tokens",
+            json={
+                "model": "qwen3",
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 100,
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.json()["input_tokens"] == 4
+
+    @pytest.mark.asyncio
+    async def test_dict_with_nested_input_ids(self, app_client, mock_loaded_model):
+        """apply_chat_template may return dict with batched input_ids: [[1,2,3]]."""
+        mock_loaded_model.tokenizer.apply_chat_template.return_value = {
+            "input_ids": [[1, 2, 3, 4, 5]]
+        }
+        resp = await app_client.post(
+            "/v1/messages/count_tokens",
+            json={
+                "model": "qwen3",
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 100,
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.json()["input_tokens"] == 5
+
+    @pytest.mark.asyncio
+    async def test_nested_list_return_type(self, app_client, mock_loaded_model):
+        """apply_chat_template may return list[list[int]]."""
+        mock_loaded_model.tokenizer.apply_chat_template.return_value = [
+            [1, 2, 3, 4, 5, 6]
+        ]
+        resp = await app_client.post(
+            "/v1/messages/count_tokens",
+            json={
+                "model": "qwen3",
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 100,
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.json()["input_tokens"] == 6
+
+    @pytest.mark.asyncio
+    async def test_dict_without_input_ids_errors(self, app_client, mock_loaded_model):
+        """apply_chat_template returning dict without input_ids should error, not silently return 0."""
+        mock_loaded_model.tokenizer.apply_chat_template.return_value = {
+            "token_ids": [1, 2, 3]
+        }
+        resp = await app_client.post(
+            "/v1/messages/count_tokens",
+            json={
+                "model": "qwen3",
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 100,
+            },
+        )
+        assert resp.status_code == 500
+
+    @pytest.mark.asyncio
+    async def test_vlm_text_tokenizer_unwrap(self, app_client, mock_loaded_model):
+        """VLM models should use the inner .tokenizer for token counting."""
+        from unittest.mock import MagicMock
+
+        inner_tokenizer = MagicMock()
+        inner_tokenizer.apply_chat_template.return_value = [1, 2, 3, 4, 5, 6, 7]
+        mock_loaded_model.is_vlm = True
+        mock_loaded_model.tokenizer.tokenizer = inner_tokenizer
+        resp = await app_client.post(
+            "/v1/messages/count_tokens",
+            json={
+                "model": "qwen3",
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 100,
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.json()["input_tokens"] == 7
+        inner_tokenizer.apply_chat_template.assert_called_once()

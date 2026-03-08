@@ -6,12 +6,13 @@ import uuid
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
-from olmlx.engine.inference import generate_chat
+from olmlx.engine.inference import count_chat_tokens, generate_chat
 from olmlx.engine.tool_parser import _make_tool_use_id, parse_model_output
 from olmlx.schemas.anthropic import (
     AnthropicContentBlock,
     AnthropicMessagesRequest,
     AnthropicMessagesResponse,
+    AnthropicTokenCountResponse,
     AnthropicUsage,
 )
 
@@ -473,6 +474,36 @@ async def _stream_thinking_state_machine(result):
         )
 
     yield {"stop_reason": "end_turn", "output_tokens": output_tokens}
+
+
+@router.post("/v1/messages/count_tokens")
+async def anthropic_count_tokens(req: AnthropicMessagesRequest, request: Request):
+    logger.info(
+        "Anthropic count_tokens: model=%s messages=%d tools=%d",
+        req.model,
+        len(req.messages),
+        len(req.tools or []),
+    )
+    manager = request.app.state.model_manager
+    lm = await manager.ensure_loaded(req.model)
+
+    messages = _convert_messages(req)
+    tools = _convert_tools(req)
+
+    lm.active_refs += 1
+    try:
+        loop = asyncio.get_running_loop()
+        token_count = await loop.run_in_executor(
+            None,
+            count_chat_tokens,
+            lm.text_tokenizer,
+            messages,
+            tools,
+            lm.template_caps,
+        )
+    finally:
+        lm.active_refs -= 1
+    return AnthropicTokenCountResponse(input_tokens=token_count)
 
 
 @router.post("/v1/messages")

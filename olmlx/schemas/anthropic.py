@@ -60,6 +60,10 @@ class AnthropicUsage(BaseModel):
     cache_read_input_tokens: int = 0
 
 
+class AnthropicTokenCountResponse(BaseModel):
+    input_tokens: int
+
+
 class AnthropicMessagesResponse(BaseModel):
     id: str
     type: str = "message"
