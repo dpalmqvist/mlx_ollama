@@ -158,7 +158,11 @@ def cmd_models_list(_args):
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
-    models = store.list_local()
+    try:
+        models = store.list_local()
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
     if not models:
         print("No models downloaded.")
         return
@@ -182,7 +186,11 @@ def cmd_models_show(args):
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
-    manifest = store.show(args.model_name)
+    try:
+        manifest = store.show(args.model_name)
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
     if manifest is None:
         print(f"Model '{args.model_name}' not found locally.", file=sys.stderr)
         sys.exit(1)
@@ -239,7 +247,7 @@ def cmd_models_delete(args):
             return
     try:
         deleted = store.delete(args.model_name)
-    except OSError as e:
+    except Exception as e:
         print(f"Error deleting model '{args.model_name}': {e}", file=sys.stderr)
         sys.exit(1)
     if deleted:

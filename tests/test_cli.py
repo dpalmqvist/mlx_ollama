@@ -413,6 +413,14 @@ class TestModelsListCmd:
         out = capsys.readouterr().out
         assert "No models" in out
 
+    def test_handles_corrupt_manifest(self, capsys, mock_store, _patch_store):
+        """Corrupt manifest in list_local should produce clean error, not traceback."""
+        mock_store.list_local.side_effect = ValueError("Field 'size' should be int")
+        with pytest.raises(SystemExit) as exc_info:
+            cmd_models_list(None)
+        assert exc_info.value.code == 1
+        assert "size" in capsys.readouterr().err
+
 
 class TestModelsShowCmd:
     def test_show_model(self, capsys, mock_store, _patch_store):
@@ -431,6 +439,15 @@ class TestModelsShowCmd:
         assert "qwen2.5:3b" in out
         assert "mlx-community/Qwen2.5-3B-Instruct-4bit" in out
         assert "qwen2" in out
+
+    def test_show_handles_corrupt_manifest(self, capsys, mock_store, _patch_store):
+        """Corrupt manifest should produce clean error, not traceback."""
+        mock_store.show.side_effect = ValueError("Field 'size' should be int")
+        args = MagicMock(model_name="qwen2.5:3b")
+        with pytest.raises(SystemExit) as exc_info:
+            cmd_models_show(args)
+        assert exc_info.value.code == 1
+        assert "size" in capsys.readouterr().err
 
     def test_show_not_found_exits_nonzero(self, capsys, mock_store, _patch_store):
         mock_store.show.return_value = None
@@ -608,6 +625,15 @@ class TestModelsDeleteCmd:
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
         assert "permission denied" in captured.err.lower()
+
+    def test_delete_handles_non_os_error(self, capsys, mock_store, _patch_store):
+        """Non-OSError from store.delete should also produce clean error."""
+        mock_store.delete.side_effect = ValueError("Invalid model dir")
+        args = MagicMock(model_name="qwen2.5:3b", yes=True)
+        with pytest.raises(SystemExit) as exc_info:
+            cmd_models_delete(args)
+        assert exc_info.value.code == 1
+        assert "Invalid model dir" in capsys.readouterr().err
 
 
 class TestConfigShowCmd:
