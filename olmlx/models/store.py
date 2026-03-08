@@ -138,7 +138,11 @@ class ModelStore:
         except BaseException:
             import shutil
 
-            shutil.rmtree(local_dir, ignore_errors=True)
+            try:
+                shutil.rmtree(local_dir)
+            except OSError:
+                logger.warning("Failed to clean up partial download at %s", local_dir, exc_info=True)
+            raise
             raise
 
         yield {"status": "verifying"}
