@@ -129,27 +129,29 @@ def _inject_tools_into_system(messages: list[dict], tools: list[dict]) -> list[d
     return messages
 
 
-def _apply_chat_template_text(
+def _apply_chat_template(
     tokenizer: Any,
     messages: list[dict],
     tools: list[dict] | None = None,
     caps: TemplateCaps | None = None,
-) -> str:
-    """Apply chat template for text-only models (mlx-lm).
+    *,
+    tokenize: bool = False,
+) -> Any:
+    """Core chat template application.
 
     Uses TemplateCaps to decide which kwargs to pass, avoiding blind try/except.
+    Returns str when tokenize=False, token list/dict when tokenize=True.
     """
     if caps is None:
         caps = TemplateCaps()
 
-    kwargs: dict[str, Any] = {"tokenize": False, "add_generation_prompt": True}
+    kwargs: dict[str, Any] = {"tokenize": tokenize, "add_generation_prompt": True}
 
     if tools and caps.supports_tools:
         kwargs["tools"] = tools
         if caps.supports_enable_thinking:
             kwargs["enable_thinking"] = False
     elif tools and not caps.supports_tools:
-        # Template doesn't support tools natively — inject into system message
         logger.info(
             "Template lacks tool support, injecting tool descriptions into system message"
         )
@@ -176,6 +178,16 @@ def _apply_chat_template_text(
         raise RuntimeError(f"Chat template failed: {exc}") from exc
 
 
+def _apply_chat_template_text(
+    tokenizer: Any,
+    messages: list[dict],
+    tools: list[dict] | None = None,
+    caps: TemplateCaps | None = None,
+) -> str:
+    """Apply chat template for text-only models (mlx-lm), returning prompt text."""
+    return _apply_chat_template(tokenizer, messages, tools, caps, tokenize=False)
+
+
 def _apply_chat_template_vlm(
     processor: Any,
     model: Any,
@@ -200,6 +212,33 @@ def _extract_images(messages: list[dict]) -> list[str] | None:
         if msg.get("images"):
             images.extend(msg["images"])
     return images if images else None
+
+
+def count_chat_tokens(
+    tokenizer: Any,
+    messages: list[dict],
+    tools: list[dict] | None = None,
+    caps: TemplateCaps | None = None,
+) -> int:
+    """Count input tokens by applying the chat template with tokenize=True.
+
+    No GPU inference needed — CPU-only tokenization.
+    """
+    result = _apply_chat_template(tokenizer, messages, tools, caps, tokenize=True)
+
+    # Handle varied return types from apply_chat_template
+    if isinstance(result, dict):
+        tokens = result.get("input_ids", [])
+    elif isinstance(result, list) and result and isinstance(result[0], list):
+        tokens = result[0]
+    elif isinstance(result, list):
+        tokens = result
+    else:
+        raise TypeError(
+            f"Unexpected return type from apply_chat_template: {type(result)}"
+        )
+
+    return len(tokens)
 
 
 async def generate_completion(
@@ -401,13 +440,8 @@ async def generate_chat(
     else:
         # Use text template path when tools are needed, even for VLM-loaded models,
         # because _apply_chat_template_vlm doesn't support tool definitions.
-        # For VLM-loaded models, try to get the underlying tokenizer which has
-        # the proper chat template for tool calling.
-        tokenizer = lm.tokenizer
-        if lm.is_vlm and hasattr(tokenizer, "tokenizer"):
-            tokenizer = tokenizer.tokenizer
         prompt = _apply_chat_template_text(
-            tokenizer, messages, tools, caps=lm.template_caps
+            lm.text_tokenizer, messages, tools, caps=lm.template_caps
         )
         if tools:
             logger.info("Chat prompt with %d tools", len(tools))
@@ -434,9 +468,7 @@ async def generate_embeddings(
     async with _inference_locked():
         embeddings = []
 
-        tokenizer = lm.tokenizer
-        if hasattr(tokenizer, "tokenizer"):
-            tokenizer = tokenizer.tokenizer
+        tokenizer = lm.text_tokenizer
 
         # Check if model has a static embedding layer we can use directly
         embed_layer = None

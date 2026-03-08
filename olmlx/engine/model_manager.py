@@ -48,6 +48,14 @@ class LoadedModel:
     size_bytes: int = 0
     active_refs: int = 0
 
+    @property
+    def text_tokenizer(self) -> Any:
+        """Return the underlying text tokenizer, unwrapping VLM processor if needed."""
+        tok = self.tokenizer
+        if self.is_vlm and hasattr(tok, "tokenizer"):
+            return tok.tokenizer
+        return tok
+
 
 def parse_keep_alive(value: str | int) -> float | None:
     """Parse keep_alive to seconds. Returns None for never-expire (-1)."""
