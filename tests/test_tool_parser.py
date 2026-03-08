@@ -9,6 +9,7 @@ from olmlx.engine.tool_parser import (
     _try_llama,
     _try_mistral,
     _try_qwen,
+    _try_xml_func,
     parse_model_output,
 )
 
@@ -197,6 +198,91 @@ class TestTryBareJson:
         text = '{"name": "func", "arguments": {invalid}}'
         tool_uses, remaining = _try_bare_json(text)
         assert len(tool_uses) == 0
+
+
+class TestTryXmlFunc:
+    def test_single_tool_call(self):
+        text = "<function=get_weather><parameter=city>NYC</parameter></function>"
+        tool_uses, remaining = _try_xml_func(text)
+        assert len(tool_uses) == 1
+        assert tool_uses[0]["name"] == "get_weather"
+        assert tool_uses[0]["input"] == {"city": "NYC"}
+        assert remaining.strip() == ""
+
+    def test_multiple_tool_calls(self):
+        text = (
+            "<function=read_file><parameter=path>/tmp/a.txt</parameter></function>"
+            "<function=read_file><parameter=path>/tmp/b.txt</parameter></function>"
+        )
+        tool_uses, remaining = _try_xml_func(text)
+        assert len(tool_uses) == 2
+        assert tool_uses[0]["input"] == {"path": "/tmp/a.txt"}
+        assert tool_uses[1]["input"] == {"path": "/tmp/b.txt"}
+
+    def test_with_thinking_and_surrounding_text(self):
+        text = (
+            "I'll read the file for you.\n"
+            "<function=read_file><parameter=path>/tmp/test.py</parameter></function>\n"
+            "Let me know if you need more."
+        )
+        tool_uses, remaining = _try_xml_func(text)
+        assert len(tool_uses) == 1
+        assert tool_uses[0]["name"] == "read_file"
+        assert "I'll read the file for you." in remaining
+        assert "Let me know if you need more." in remaining
+
+    def test_multiline_parameter_value(self):
+        file_content = "def hello():\n    print('hello')\n    return True"
+        text = (
+            f"<function=write_file>"
+            f"<parameter=path>/tmp/hello.py</parameter>"
+            f"<parameter=content>{file_content}</parameter>"
+            f"</function>"
+        )
+        tool_uses, remaining = _try_xml_func(text)
+        assert len(tool_uses) == 1
+        assert tool_uses[0]["name"] == "write_file"
+        assert tool_uses[0]["input"]["path"] == "/tmp/hello.py"
+        assert tool_uses[0]["input"]["content"] == file_content
+
+    def test_json_parameter_value(self):
+        text = "<function=search><parameter=query>test</parameter><parameter=limit>10</parameter></function>"
+        tool_uses, remaining = _try_xml_func(text)
+        assert len(tool_uses) == 1
+        assert tool_uses[0]["input"]["query"] == "test"
+        assert tool_uses[0]["input"]["limit"] == 10  # parsed as JSON int
+
+    def test_no_match(self):
+        tool_uses, remaining = _try_xml_func("just normal text")
+        assert len(tool_uses) == 0
+        assert remaining == "just normal text"
+
+    def test_visible_text_preserved(self):
+        text = "Before <function=f><parameter=x>1</parameter></function> After"
+        tool_uses, remaining = _try_xml_func(text)
+        assert len(tool_uses) == 1
+        assert "Before" in remaining
+        assert "After" in remaining
+        assert "<function" not in remaining
+
+
+class TestParseModelOutputXmlFunc:
+    def test_standalone_xml_func_via_parse_model_output(self):
+        text = "<function=get_weather><parameter=city>Tokyo</parameter></function>"
+        thinking, visible, tools = parse_model_output(text, has_tools=True)
+        assert len(tools) == 1
+        assert tools[0]["name"] == "get_weather"
+        assert tools[0]["input"] == {"city": "Tokyo"}
+
+    def test_thinking_with_standalone_xml_func(self):
+        text = (
+            "<think>Let me check the weather</think>"
+            "<function=get_weather><parameter=city>Berlin</parameter></function>"
+        )
+        thinking, visible, tools = parse_model_output(text, has_tools=True)
+        assert thinking == "Let me check the weather"
+        assert len(tools) == 1
+        assert tools[0]["name"] == "get_weather"
 
 
 class TestBareJsonMultiline:

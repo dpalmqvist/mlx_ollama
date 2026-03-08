@@ -2,7 +2,8 @@
 
 Supported formats:
 - Qwen: <tool_call>{"name": ..., "arguments": ...}</tool_call>
-- XML-style: <function=Name><parameter=key>value</parameter></function>
+  - Also handles XML-style inside <tool_call>: <function=Name><parameter=key>value</parameter></function>
+- Standalone XML: <function=Name><parameter=key>value</parameter></function> (without <tool_call> wrapper)
 - Mistral: [TOOL_CALLS] [{"name": ..., "arguments": ...}]
 - Llama 3.x: <|python_tag|>{"name": ..., "parameters": ...}
 - DeepSeek: <|tool_calls_begin|>...<|tool_calls_end|>
@@ -206,6 +207,32 @@ def _extract_json_object(text: str, start: int) -> str | None:
     return None
 
 
+def _try_xml_func(text: str) -> tuple[list[dict], str]:
+    """Parse standalone <function=Name>...</function> blocks (without <tool_call> wrapper)."""
+    tool_uses = []
+    for match in _FUNC_TAG_RE.finditer(text):
+        name = match.group(1).strip()
+        params = {}
+        for pm in _PARAM_TAG_RE.finditer(match.group(2)):
+            pval = pm.group(2).strip()
+            try:
+                pval = json.loads(pval)
+            except (json.JSONDecodeError, ValueError):
+                pass
+            params[pm.group(1).strip()] = pval
+        tool_uses.append(
+            {
+                "type": "tool_use",
+                "id": _make_tool_use_id(),
+                "name": name,
+                "input": params,
+            }
+        )
+    if tool_uses:
+        text = _FUNC_TAG_RE.sub("", text)
+    return tool_uses, text
+
+
 def _try_bare_json(text: str) -> tuple[list[dict], str]:
     """Parse bare JSON tool calls (must be on own line or at text start)."""
     tool_uses = []
@@ -253,7 +280,14 @@ def parse_model_output(
 
     tool_uses: list[dict] = []
     if has_tools:
-        parsers = [_try_qwen, _try_mistral, _try_llama, _try_deepseek, _try_bare_json]
+        parsers = [
+            _try_qwen,
+            _try_mistral,
+            _try_llama,
+            _try_deepseek,
+            _try_xml_func,
+            _try_bare_json,
+        ]
 
         for parser in parsers:
             tool_uses, text = parser(text)
