@@ -9,6 +9,7 @@ from olmlx.engine.tool_parser import (
     _try_llama,
     _try_mistral,
     _try_qwen,
+    _try_xml_func,
     parse_model_output,
 )
 
@@ -64,7 +65,7 @@ class TestTryQwen:
         assert len(tool_uses) == 1
         assert tool_uses[0]["name"] == "get_weather"
         assert tool_uses[0]["input"] == {"city": "NYC"}
-        assert remaining.strip() == ""
+        assert "_span" in tool_uses[0]
 
     def test_multiple_tool_calls(self):
         text = (
@@ -100,6 +101,27 @@ class TestTryQwen:
         text = "<tool_call>not json</tool_call>"
         tool_uses, remaining = _try_qwen(text)
         assert len(tool_uses) == 0  # can't parse as JSON or XML
+
+    def test_empty_name_in_xml_style(self):
+        text = (
+            "<tool_call><function= ><parameter=x>1</parameter></function></tool_call>"
+        )
+        tool_uses, remaining = _try_qwen(text)
+        assert len(tool_uses) == 0
+
+    def test_multiple_xml_functions_in_one_tool_call(self):
+        text = (
+            "<tool_call>"
+            "<function=read_file><parameter=path>a.py</parameter></function>"
+            "<function=read_file><parameter=path>b.py</parameter></function>"
+            "</tool_call>"
+        )
+        tool_uses, remaining = _try_qwen(text)
+        assert len(tool_uses) == 2
+        assert tool_uses[0]["name"] == "read_file"
+        assert tool_uses[0]["input"] == {"path": "a.py"}
+        assert tool_uses[1]["name"] == "read_file"
+        assert tool_uses[1]["input"] == {"path": "b.py"}
 
 
 class TestTryMistral:
@@ -199,6 +221,145 @@ class TestTryBareJson:
         assert len(tool_uses) == 0
 
 
+class TestTryXmlFunc:
+    def test_single_tool_call(self):
+        text = "<function=get_weather><parameter=city>NYC</parameter></function>"
+        tool_uses, remaining = _try_xml_func(text)
+        assert len(tool_uses) == 1
+        assert tool_uses[0]["name"] == "get_weather"
+        assert tool_uses[0]["input"] == {"city": "NYC"}
+        assert "_span" in tool_uses[0]
+
+    def test_multiple_tool_calls(self):
+        text = (
+            "<function=read_file><parameter=path>/tmp/a.txt</parameter></function>"
+            "<function=read_file><parameter=path>/tmp/b.txt</parameter></function>"
+        )
+        tool_uses, remaining = _try_xml_func(text)
+        assert len(tool_uses) == 2
+        assert tool_uses[0]["input"] == {"path": "/tmp/a.txt"}
+        assert tool_uses[1]["input"] == {"path": "/tmp/b.txt"}
+
+    def test_multiline_parameter_value(self):
+        file_content = "def hello():\n    print('hello')\n    return True"
+        text = (
+            f"<function=write_file>"
+            f"<parameter=path>/tmp/hello.py</parameter>"
+            f"<parameter=content>{file_content}</parameter>"
+            f"</function>"
+        )
+        tool_uses, remaining = _try_xml_func(text)
+        assert len(tool_uses) == 1
+        assert tool_uses[0]["name"] == "write_file"
+        assert tool_uses[0]["input"]["path"] == "/tmp/hello.py"
+        assert tool_uses[0]["input"]["content"] == file_content
+
+    def test_json_parameter_value(self):
+        text = "<function=search><parameter=query>test</parameter><parameter=limit>10</parameter></function>"
+        tool_uses, remaining = _try_xml_func(text)
+        assert len(tool_uses) == 1
+        assert tool_uses[0]["input"]["query"] == "test"
+        assert tool_uses[0]["input"]["limit"] == 10  # parsed as JSON int
+
+    def test_empty_name_skipped(self):
+        text = "<function= ><parameter=x>1</parameter></function>"
+        tool_uses, remaining = _try_xml_func(text)
+        assert len(tool_uses) == 0
+
+    def test_no_match(self):
+        tool_uses, remaining = _try_xml_func("just normal text")
+        assert len(tool_uses) == 0
+        assert remaining == "just normal text"
+
+    def test_span_tracking(self):
+        text = "Before <function=f><parameter=x>1</parameter></function> After"
+        tool_uses, remaining = _try_xml_func(text)
+        assert len(tool_uses) == 1
+        # Parsers no longer strip text; they track spans for parse_model_output
+        start, end = tool_uses[0]["_span"]
+        assert text[start:end] == "<function=f><parameter=x>1</parameter></function>"
+
+    def test_closing_tag_in_param_value_truncates(self):
+        """Known limitation: </parameter> in a parameter value causes truncation.
+
+        The lazy regex (.*?) stops at the first </parameter>, so content
+        containing this substring is silently truncated. A proper fix would
+        require a state-machine parser. This test documents the current behavior.
+        """
+        text = (
+            "<function=write_file>"
+            "<parameter=content>x = '</parameter> still here'</parameter>"
+            "</function>"
+        )
+        tool_uses, remaining = _try_xml_func(text)
+        assert len(tool_uses) == 1
+        # Value is truncated at the first </parameter>
+        assert tool_uses[0]["input"]["content"] == "x = '"
+
+    def test_matches_in_prose(self):
+        """Known limitation: <function=Name> in prose is matched as a tool call.
+
+        _FUNC_TAG_RE is intentionally broad — the format only appears in model
+        output when tools are enabled, and models using this format emit it as
+        actual tool calls, not in explanatory prose. If false positives become
+        an issue, the regex could be anchored to line boundaries.
+        """
+        text = "You can call <function=get_weather><parameter=city>NYC</parameter></function> like this."
+        tool_uses, _ = _try_xml_func(text)
+        # Currently matches — this is accepted behavior
+        assert len(tool_uses) == 1
+
+
+class TestParseModelOutputXmlFunc:
+    def test_does_not_corrupt_orphaned_tool_call_wrappers(self):
+        """When text mixes an unparseable <tool_call>GARBAGE</tool_call> block
+        with a standalone <function> block, only the standalone block is removed.
+
+        Verified via parse_model_output because parsers no longer strip text —
+        they annotate spans for parse_model_output to handle.
+        """
+        text = "<tool_call>GARBAGE</tool_call><function=my_tool><parameter=x>1</parameter></function>"
+        _, visible, tools = parse_model_output(text, has_tools=True)
+        assert len(tools) == 1
+        assert tools[0]["name"] == "my_tool"
+        # The orphaned <tool_call> skeleton must remain in visible text
+        assert "<tool_call>GARBAGE</tool_call>" in visible
+        # The <function> tag must be stripped
+        assert "<function=" not in visible
+
+    def test_standalone_xml_func_via_parse_model_output(self):
+        text = "<function=get_weather><parameter=city>Tokyo</parameter></function>"
+        thinking, visible, tools = parse_model_output(text, has_tools=True)
+        assert len(tools) == 1
+        assert tools[0]["name"] == "get_weather"
+        assert tools[0]["input"] == {"city": "Tokyo"}
+        assert "_span" not in tools[0]  # internal field must be cleaned up
+        assert visible == ""
+
+    def test_surrounding_text_preserved(self):
+        text = (
+            "I'll read the file for you.\n"
+            "<function=read_file><parameter=path>/tmp/test.py</parameter></function>\n"
+            "Let me know if you need more."
+        )
+        _, visible, tools = parse_model_output(text, has_tools=True)
+        assert len(tools) == 1
+        assert tools[0]["name"] == "read_file"
+        assert "I'll read the file for you." in visible
+        assert "Let me know if you need more." in visible
+        assert "<function=" not in visible
+
+    def test_thinking_with_standalone_xml_func(self):
+        text = (
+            "<think>Let me check the weather</think>"
+            "<function=get_weather><parameter=city>Berlin</parameter></function>"
+        )
+        thinking, visible, tools = parse_model_output(text, has_tools=True)
+        assert thinking == "Let me check the weather"
+        assert len(tools) == 1
+        assert tools[0]["name"] == "get_weather"
+
+
 class TestBareJsonMultiline:
     def test_bare_json_multiline(self):
         text = (
@@ -274,16 +435,47 @@ class TestParseModelOutput:
         assert len(tools) == 0
         assert "<tool_call>" in visible
 
-    def test_tool_name_validation(self):
+    def test_tool_name_filtering(self):
         text = '<tool_call>{"name": "unknown_func", "arguments": {}}</tool_call>'
         thinking, visible, tools = parse_model_output(
             text,
             has_tools=True,
             tool_names={"search", "get_weather"},
         )
-        # Still parses, but logs a warning
+        # Unknown tool names are filtered out; original text is restored
+        assert len(tools) == 0
+        assert "unknown_func" in visible
+
+    def test_tool_name_filtering_keeps_valid(self):
+        text = (
+            '<tool_call>{"name": "search", "arguments": {"q": "test"}}</tool_call>'
+            '<tool_call>{"name": "unknown", "arguments": {}}</tool_call>'
+        )
+        thinking, visible, tools = parse_model_output(
+            text,
+            has_tools=True,
+            tool_names={"search", "get_weather"},
+        )
         assert len(tools) == 1
-        assert tools[0]["name"] == "unknown_func"
+        assert tools[0]["name"] == "search"
+        # Dropped call's raw text is preserved in visible_text
+        assert "unknown" in visible
+
+    def test_tool_name_filtering_mistral_shared_span(self):
+        """Mistral calls share one span — block is stripped if any call is kept.
+
+        For formats where all calls share one span (Mistral/DeepSeek), the
+        entire block is removed when at least one call passes the filter.
+        The dropped call's raw text is unavoidably lost.
+        """
+        text = '[TOOL_CALLS] [{"name": "search", "arguments": {}}, {"name": "bad_tool", "arguments": {}}]'
+        _, visible, tools = parse_model_output(
+            text, has_tools=True, tool_names={"search"}
+        )
+        assert len(tools) == 1
+        assert tools[0]["name"] == "search"
+        # Shared span is stripped because at least one call was kept
+        assert visible == ""
 
     def test_qwen_format_priority(self):
         """Qwen format should be tried first and win."""

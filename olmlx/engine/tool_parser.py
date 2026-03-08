@@ -2,7 +2,8 @@
 
 Supported formats:
 - Qwen: <tool_call>{"name": ..., "arguments": ...}</tool_call>
-- XML-style: <function=Name><parameter=key>value</parameter></function>
+  - Also handles XML-style inside <tool_call>: <function=Name><parameter=key>value</parameter></function>
+- Standalone XML: <function=Name><parameter=key>value</parameter></function> (without <tool_call> wrapper)
 - Mistral: [TOOL_CALLS] [{"name": ..., "arguments": ...}]
 - Llama 3.x: <|python_tag|>{"name": ..., "parameters": ...}
 - DeepSeek: <|tool_calls_begin|>...<|tool_calls_end|>
@@ -71,45 +72,61 @@ def _parse_json_call(data: dict) -> dict | None:
     }
 
 
+def _parse_func_tag(func_match: re.Match) -> dict | None:
+    """Parse a <function=Name>...</function> match into a tool_use dict (without _span).
+
+    Returns None if the function name is empty.
+    """
+    name = func_match.group(1).strip()
+    if not name:
+        return None
+    params = {}
+    for pm in _PARAM_TAG_RE.finditer(func_match.group(2)):
+        pval = pm.group(2).strip()
+        try:
+            pval = json.loads(pval)
+        except (json.JSONDecodeError, ValueError):
+            pass
+        params[pm.group(1).strip()] = pval
+    return {
+        "type": "tool_use",
+        "id": _make_tool_use_id(),
+        "name": name,
+        "input": params,
+    }
+
+
 def _try_qwen(text: str) -> tuple[list[dict], str]:
     """Parse Qwen-style <tool_call>...</tool_call> blocks."""
     tool_uses = []
     for match in _TOOL_CALL_RE.finditer(text):
+        span = (match.start(), match.end())
         inner = match.group(1)
         # Try JSON
         try:
             call = json.loads(inner)
             result = _parse_json_call(call)
             if result:
+                result["_span"] = span
                 tool_uses.append(result)
                 continue
         except (json.JSONDecodeError, AttributeError):
             pass
         # Try XML-style: <function=Name><parameter=key>value</parameter></function>
-        func_match = _FUNC_TAG_RE.search(inner)
-        if func_match:
-            name = func_match.group(1).strip()
-            params = {}
-            for pm in _PARAM_TAG_RE.finditer(func_match.group(2)):
-                pval = pm.group(2).strip()
-                try:
-                    pval = json.loads(pval)
-                except (json.JSONDecodeError, ValueError):
-                    pass
-                params[pm.group(1).strip()] = pval
-            tool_uses.append(
-                {
-                    "type": "tool_use",
-                    "id": _make_tool_use_id(),
-                    "name": name,
-                    "input": params,
-                }
-            )
+        func_matches = list(_FUNC_TAG_RE.finditer(inner))
+        if func_matches:
+            for func_match in func_matches:
+                result = _parse_func_tag(func_match)
+                if result:
+                    result["_span"] = span
+                    tool_uses.append(result)
+                else:
+                    logger.warning(
+                        "Skipping <function> tag with empty name inside <tool_call>"
+                    )
         else:
             logger.warning("Failed to parse <tool_call> block: %r", inner[:500])
 
-    if tool_uses:
-        text = _TOOL_CALL_RE.sub("", text)
     return tool_uses, text
 
 
@@ -119,14 +136,14 @@ def _try_mistral(text: str) -> tuple[list[dict], str]:
     match = _MISTRAL_TOOL_RE.search(text)
     if not match:
         return [], text
+    span = (match.start(), match.end())
     try:
         calls = json.loads(match.group(1))
         for call in calls:
             result = _parse_json_call(call)
             if result:
+                result["_span"] = span
                 tool_uses.append(result)
-        if tool_uses:
-            text = _MISTRAL_TOOL_RE.sub("", text)
     except (json.JSONDecodeError, AttributeError) as e:
         logger.warning("Failed to parse [TOOL_CALLS] block: %s", e)
     return tool_uses, text
@@ -140,13 +157,12 @@ def _try_llama(text: str) -> tuple[list[dict], str]:
             call = json.loads(match.group(1))
             result = _parse_json_call(call)
             if result:
+                result["_span"] = (match.start(), match.end())
                 tool_uses.append(result)
         except (json.JSONDecodeError, AttributeError):
             logger.warning(
                 "Failed to parse <|python_tag|> block: %r", match.group(1)[:500]
             )
-    if tool_uses:
-        text = _LLAMA_TOOL_RE.sub("", text)
     return tool_uses, text
 
 
@@ -156,6 +172,7 @@ def _try_deepseek(text: str) -> tuple[list[dict], str]:
     ds_match = _DEEPSEEK_TOOL_RE.search(text)
     if not ds_match:
         return [], text
+    span = (ds_match.start(), ds_match.end())
     inner = ds_match.group(1)
     for call_match in _DEEPSEEK_CALL_RE.finditer(inner):
         name = call_match.group(1).strip()
@@ -170,10 +187,9 @@ def _try_deepseek(text: str) -> tuple[list[dict], str]:
                 "id": _make_tool_use_id(),
                 "name": name,
                 "input": arguments,
+                "_span": span,
             }
         )
-    if tool_uses:
-        text = _DEEPSEEK_TOOL_RE.sub("", text)
     return tool_uses, text
 
 
@@ -206,10 +222,28 @@ def _extract_json_object(text: str, start: int) -> str | None:
     return None
 
 
+def _try_xml_func(text: str) -> tuple[list[dict], str]:
+    """Parse standalone <function=Name>...</function> blocks (without <tool_call> wrapper).
+
+    Note: _FUNC_TAG_RE matches anywhere in text, including inside prose. This is
+    accepted because models using this format (Qwen 3.5) emit it only as actual
+    tool calls, not in explanatory text. If false positives become an issue,
+    the regex could be anchored to line boundaries.
+    """
+    tool_uses = []
+    for match in _FUNC_TAG_RE.finditer(text):
+        result = _parse_func_tag(match)
+        if result:
+            result["_span"] = (match.start(), match.end())
+            tool_uses.append(result)
+        else:
+            logger.warning("Skipping <function> tag with empty name")
+    return tool_uses, text
+
+
 def _try_bare_json(text: str) -> tuple[list[dict], str]:
     """Parse bare JSON tool calls (must be on own line or at text start)."""
     tool_uses = []
-    spans = []
     for match in _BARE_JSON_START_RE.finditer(text):
         brace_pos = match.start(1)
         obj_str = _extract_json_object(text, brace_pos)
@@ -219,14 +253,10 @@ def _try_bare_json(text: str) -> tuple[list[dict], str]:
             call = json.loads(obj_str)
             result = _parse_json_call(call)
             if result:
+                result["_span"] = (brace_pos, brace_pos + len(obj_str))
                 tool_uses.append(result)
-                spans.append((brace_pos, brace_pos + len(obj_str)))
         except (json.JSONDecodeError, AttributeError):
             continue
-    if tool_uses:
-        # Remove matched spans from text (in reverse order to preserve indices)
-        for start, end in reversed(spans):
-            text = text[:start] + text[end:]
     return tool_uses, text
 
 
@@ -240,8 +270,8 @@ def parse_model_output(
     Args:
         text: Raw model output text.
         has_tools: Whether tools were provided in the request.
-        tool_names: Set of valid tool names for validation. If provided, parsed
-            tool calls with unknown names will generate a warning.
+        tool_names: Set of valid tool names. If provided, parsed tool calls
+            with unknown names are dropped and a warning is logged.
     """
     thinking = ""
 
@@ -253,22 +283,65 @@ def parse_model_output(
 
     tool_uses: list[dict] = []
     if has_tools:
-        parsers = [_try_qwen, _try_mistral, _try_llama, _try_deepseek, _try_bare_json]
+        parsers = [
+            _try_qwen,
+            _try_mistral,
+            _try_llama,
+            _try_deepseek,
+            _try_xml_func,
+            _try_bare_json,
+        ]
 
         for parser in parsers:
             tool_uses, text = parser(text)
             if tool_uses:
                 break
 
-        # Validate tool names if provided
+        # Filter out tool calls with unknown names
         if tool_uses and tool_names:
+            kept = []
+            dropped = []
             for tu in tool_uses:
-                if tu["name"] not in tool_names:
+                if tu["name"] in tool_names:
+                    kept.append(tu)
+                else:
+                    dropped.append(tu)
                     logger.warning(
-                        "Parsed tool call '%s' not in provided tool set: %s",
+                        "Dropping parsed tool call '%s' — not in provided tool set: %s",
                         tu["name"],
                         tool_names,
                     )
+            if dropped:
+                logger.warning(
+                    "Filtered %d of %d parsed tool call(s) with unknown names",
+                    len(dropped),
+                    len(tool_uses),
+                )
+            tool_uses = kept
+
+            # For shared-span formats (Mistral/DeepSeek), a dropped call's
+            # raw text is unavoidably lost when a sibling call is kept (the
+            # whole block is stripped).
+            kept_span_set = {tu.get("_span") for tu in kept if "_span" in tu}
+            for tu in dropped:
+                if tu.get("_span") in kept_span_set:
+                    logger.warning(
+                        "Raw text for dropped call '%s' is lost — shares a span "
+                        "with a kept call (Mistral/DeepSeek shared-block format)",
+                        tu["name"],
+                    )
+
+        # Strip matched spans from text for kept tool calls.
+        # For formats where multiple calls share one span (Mistral/DeepSeek),
+        # the span is stripped if any call was kept — the dropped call's raw
+        # text is unavoidably lost since it's embedded in the same block.
+        kept_spans: set[tuple[int, int]] = set()
+        for tu in tool_uses:
+            span = tu.pop("_span", None)
+            if span is not None:
+                kept_spans.add(span)
+        for start, end in sorted(kept_spans, reverse=True):
+            text = text[:start] + text[end:]
 
     visible_text = text.strip()
     return thinking, visible_text, tool_uses
