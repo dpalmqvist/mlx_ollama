@@ -113,16 +113,17 @@ def _try_qwen(text: str) -> tuple[list[dict], str]:
         except (json.JSONDecodeError, AttributeError):
             pass
         # Try XML-style: <function=Name><parameter=key>value</parameter></function>
-        func_match = _FUNC_TAG_RE.search(inner)
-        if func_match:
-            result = _parse_func_tag(func_match)
-            if result:
-                result["_span"] = span
-                tool_uses.append(result)
-            else:
-                logger.warning(
-                    "Skipping <function> tag with empty name inside <tool_call>"
-                )
+        func_matches = list(_FUNC_TAG_RE.finditer(inner))
+        if func_matches:
+            for func_match in func_matches:
+                result = _parse_func_tag(func_match)
+                if result:
+                    result["_span"] = span
+                    tool_uses.append(result)
+                else:
+                    logger.warning(
+                        "Skipping <function> tag with empty name inside <tool_call>"
+                    )
         else:
             logger.warning("Failed to parse <tool_call> block: %r", inner[:500])
 
@@ -320,12 +321,11 @@ def parse_model_output(
 
             # For shared-span formats (Mistral/DeepSeek), a dropped call's
             # raw text is unavoidably lost when a sibling call is kept (the
-            # whole block is stripped). Log this at debug level so it's
-            # visible in traces.
+            # whole block is stripped).
             kept_span_set = {tu.get("_span") for tu in kept if "_span" in tu}
             for tu in dropped:
                 if tu.get("_span") in kept_span_set:
-                    logger.debug(
+                    logger.warning(
                         "Raw text for dropped call '%s' is lost — shares a span "
                         "with a kept call (Mistral/DeepSeek shared-block format)",
                         tu["name"],

@@ -109,6 +109,20 @@ class TestTryQwen:
         tool_uses, remaining = _try_qwen(text)
         assert len(tool_uses) == 0
 
+    def test_multiple_xml_functions_in_one_tool_call(self):
+        text = (
+            "<tool_call>"
+            "<function=read_file><parameter=path>a.py</parameter></function>"
+            "<function=read_file><parameter=path>b.py</parameter></function>"
+            "</tool_call>"
+        )
+        tool_uses, remaining = _try_qwen(text)
+        assert len(tool_uses) == 2
+        assert tool_uses[0]["name"] == "read_file"
+        assert tool_uses[0]["input"] == {"path": "a.py"}
+        assert tool_uses[1]["name"] == "read_file"
+        assert tool_uses[1]["input"] == {"path": "b.py"}
+
 
 class TestTryMistral:
     def test_single_tool_call(self):
