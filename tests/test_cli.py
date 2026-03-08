@@ -4,6 +4,7 @@ import json
 import plistlib
 from unittest.mock import MagicMock
 
+import pytest
 
 from olmlx.cli import (
     DEFAULT_MODELS,
@@ -11,11 +12,17 @@ from olmlx.cli import (
     _build_plist,
     build_parser,
     cli_main,
+    cmd_config_show,
+    cmd_models_delete,
+    cmd_models_list,
+    cmd_models_pull,
+    cmd_models_show,
     cmd_service_install,
     cmd_service_status,
     cmd_service_uninstall,
     ensure_config,
 )
+from olmlx.models.manifest import ModelManifest
 
 
 class TestEnsureConfig:
@@ -175,3 +182,194 @@ class TestCliMain:
         monkeypatch.setattr("olmlx.cli.cmd_service_install", mock_install)
         cli_main()
         mock_install.assert_called_once()
+
+    def test_models_list_calls_handler(self, monkeypatch):
+        monkeypatch.setattr("sys.argv", ["olmlx", "models", "list"])
+        mock_fn = MagicMock()
+        monkeypatch.setattr("olmlx.cli.cmd_models_list", mock_fn)
+        cli_main()
+        mock_fn.assert_called_once()
+
+    def test_models_pull_calls_handler(self, monkeypatch):
+        monkeypatch.setattr("sys.argv", ["olmlx", "models", "pull", "qwen2.5:3b"])
+        mock_fn = MagicMock()
+        monkeypatch.setattr("olmlx.cli.cmd_models_pull", mock_fn)
+        cli_main()
+        mock_fn.assert_called_once()
+
+    def test_models_show_calls_handler(self, monkeypatch):
+        monkeypatch.setattr("sys.argv", ["olmlx", "models", "show", "qwen2.5:3b"])
+        mock_fn = MagicMock()
+        monkeypatch.setattr("olmlx.cli.cmd_models_show", mock_fn)
+        cli_main()
+        mock_fn.assert_called_once()
+
+    def test_models_delete_calls_handler(self, monkeypatch):
+        monkeypatch.setattr("sys.argv", ["olmlx", "models", "delete", "qwen2.5:3b"])
+        mock_fn = MagicMock()
+        monkeypatch.setattr("olmlx.cli.cmd_models_delete", mock_fn)
+        cli_main()
+        mock_fn.assert_called_once()
+
+    def test_config_show_calls_handler(self, monkeypatch):
+        monkeypatch.setattr("sys.argv", ["olmlx", "config", "show"])
+        mock_fn = MagicMock()
+        monkeypatch.setattr("olmlx.cli.cmd_config_show", mock_fn)
+        cli_main()
+        mock_fn.assert_called_once()
+
+
+@pytest.fixture
+def mock_store():
+    """Create a mock ModelStore for CLI tests."""
+    store = MagicMock()
+    return store
+
+
+@pytest.fixture
+def _patch_store(monkeypatch, mock_store):
+    """Patch _create_store to return mock_store."""
+    monkeypatch.setattr("olmlx.cli._create_store", lambda: mock_store)
+
+
+class TestModelsListCmd:
+    def test_lists_models(self, capsys, mock_store, _patch_store):
+        mock_store.list_local.return_value = [
+            ModelManifest(
+                name="qwen2.5:3b",
+                hf_path="mlx-community/Qwen2.5-3B-Instruct-4bit",
+                size=2_000_000_000,
+                parameter_size="3B",
+                quantization_level="4-bit",
+            ),
+            ModelManifest(
+                name="llama3.2:latest",
+                hf_path="mlx-community/Llama-3.2-3B-Instruct-4bit",
+                size=1_500_000_000,
+            ),
+        ]
+        cmd_models_list(None)
+        out = capsys.readouterr().out
+        assert "qwen2.5:3b" in out
+        assert "llama3.2:latest" in out
+        assert "2.0 GB" in out
+        assert "1.5 GB" in out
+
+    def test_lists_no_models(self, capsys, mock_store, _patch_store):
+        mock_store.list_local.return_value = []
+        cmd_models_list(None)
+        out = capsys.readouterr().out
+        assert "No models" in out
+
+
+class TestModelsShowCmd:
+    def test_show_model(self, capsys, mock_store, _patch_store):
+        mock_store.show.return_value = ModelManifest(
+            name="qwen2.5:3b",
+            hf_path="mlx-community/Qwen2.5-3B-Instruct-4bit",
+            size=2_000_000_000,
+            family="qwen2",
+            parameter_size="3B",
+            quantization_level="4-bit",
+            format="mlx",
+        )
+        args = MagicMock(model_name="qwen2.5:3b")
+        cmd_models_show(args)
+        out = capsys.readouterr().out
+        assert "qwen2.5:3b" in out
+        assert "mlx-community/Qwen2.5-3B-Instruct-4bit" in out
+        assert "qwen2" in out
+
+    def test_show_not_found(self, capsys, mock_store, _patch_store):
+        mock_store.show.return_value = None
+        args = MagicMock(model_name="nonexistent")
+        cmd_models_show(args)
+        out = capsys.readouterr().out
+        assert "not found" in out.lower()
+
+
+class TestModelsPullCmd:
+    def test_pull_model(self, capsys, mock_store, _patch_store):
+        async def fake_pull(name):
+            yield {"status": "pulling manifest"}
+            yield {"status": "downloading mlx-community/Qwen2.5-3B-Instruct-4bit"}
+            yield {"status": "success"}
+
+        mock_store.pull = fake_pull
+        args = MagicMock(model_name="qwen2.5:3b")
+        cmd_models_pull(args)
+        out = capsys.readouterr().out
+        assert "pulling manifest" in out
+        assert "success" in out
+
+    def test_pull_model_not_found(self, capsys, mock_store, _patch_store):
+        async def fake_pull(name):
+            raise ValueError(f"Model '{name}' not found in config")
+            # Make it an async generator
+            yield  # pragma: no cover
+
+        mock_store.pull = fake_pull
+        args = MagicMock(model_name="nonexistent")
+        cmd_models_pull(args)
+        out = capsys.readouterr().out
+        assert "not found" in out.lower()
+
+
+class TestModelsDeleteCmd:
+    def test_delete_model(self, capsys, mock_store, _patch_store):
+        mock_store.delete.return_value = True
+        args = MagicMock(model_name="qwen2.5:3b")
+        cmd_models_delete(args)
+        out = capsys.readouterr().out
+        assert "deleted" in out.lower()
+
+    def test_delete_not_found(self, capsys, mock_store, _patch_store):
+        mock_store.delete.return_value = False
+        args = MagicMock(model_name="nonexistent")
+        cmd_models_delete(args)
+        out = capsys.readouterr().out
+        assert "not found" in out.lower()
+
+
+class TestConfigShowCmd:
+    def test_shows_config(self, capsys):
+        cmd_config_show(None)
+        out = capsys.readouterr().out
+        assert "host" in out.lower()
+        assert "port" in out.lower()
+        assert "models dir" in out.lower()
+
+
+class TestBuildParserModels:
+    def test_models_list(self):
+        parser = build_parser()
+        args = parser.parse_args(["models", "list"])
+        assert args.command == "models"
+        assert args.models_command == "list"
+
+    def test_models_pull(self):
+        parser = build_parser()
+        args = parser.parse_args(["models", "pull", "qwen2.5:3b"])
+        assert args.command == "models"
+        assert args.models_command == "pull"
+        assert args.model_name == "qwen2.5:3b"
+
+    def test_models_show(self):
+        parser = build_parser()
+        args = parser.parse_args(["models", "show", "qwen2.5:3b"])
+        assert args.command == "models"
+        assert args.models_command == "show"
+        assert args.model_name == "qwen2.5:3b"
+
+    def test_models_delete(self):
+        parser = build_parser()
+        args = parser.parse_args(["models", "delete", "qwen2.5:3b"])
+        assert args.command == "models"
+        assert args.models_command == "delete"
+        assert args.model_name == "qwen2.5:3b"
+
+    def test_config_show(self):
+        parser = build_parser()
+        args = parser.parse_args(["config", "show"])
+        assert args.command == "config"
+        assert args.config_command == "show"
