@@ -298,6 +298,7 @@ def parse_model_output(
 
         # Filter out tool calls with unknown names
         if tool_uses and tool_names:
+            all_parsed = list(tool_uses)  # retain for cross-span debug logging
             kept = []
             for tu in tool_uses:
                 if tu["name"] in tool_names:
@@ -315,6 +316,19 @@ def parse_model_output(
                     len(tool_uses),
                 )
             tool_uses = kept
+
+            # For shared-span formats (Mistral/DeepSeek), a dropped call's
+            # raw text is unavoidably lost when a sibling call is kept (the
+            # whole block is stripped). Log this at debug level so it's
+            # visible in traces.
+            kept_span_set = {tu.get("_span") for tu in tool_uses if "_span" in tu}
+            for tu in all_parsed:
+                if tu not in tool_uses and tu.get("_span") in kept_span_set:
+                    logger.debug(
+                        "Raw text for dropped call '%s' is lost — shares a span "
+                        "with a kept call (Mistral/DeepSeek shared-block format)",
+                        tu["name"],
+                    )
 
         # Strip matched spans from text for kept tool calls.
         # For formats where multiple calls share one span (Mistral/DeepSeek),
