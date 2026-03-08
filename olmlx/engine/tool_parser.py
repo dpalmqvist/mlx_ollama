@@ -213,7 +213,13 @@ def _extract_json_object(text: str, start: int) -> str | None:
 
 
 def _try_xml_func(text: str) -> tuple[list[dict], str]:
-    """Parse standalone <function=Name>...</function> blocks (without <tool_call> wrapper)."""
+    """Parse standalone <function=Name>...</function> blocks (without <tool_call> wrapper).
+
+    Note: _FUNC_TAG_RE matches anywhere in text, including inside prose. This is
+    accepted because models using this format (Qwen 3.5) emit it only as actual
+    tool calls, not in explanatory text. If false positives become an issue,
+    the regex could be anchored to line boundaries.
+    """
     tool_uses = []
     for match in _FUNC_TAG_RE.finditer(text):
         name = match.group(1).strip()

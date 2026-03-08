@@ -282,18 +282,37 @@ class TestTryXmlFunc:
         # Value is truncated at the first </parameter>
         assert tool_uses[0]["input"]["content"] == "x = '"
 
-    def test_does_not_corrupt_orphaned_tool_call_wrappers(self):
-        """When text mixes an unparseable <tool_call>GARBAGE</tool_call> block
-        with a standalone <function> block, only the standalone block is removed."""
-        text = "<tool_call>GARBAGE</tool_call><function=my_tool><parameter=x>1</parameter></function>"
-        tool_uses, remaining = _try_xml_func(text)
+    def test_matches_in_prose(self):
+        """Known limitation: <function=Name> in prose is matched as a tool call.
+
+        _FUNC_TAG_RE is intentionally broad — the format only appears in model
+        output when tools are enabled, and models using this format emit it as
+        actual tool calls, not in explanatory prose. If false positives become
+        an issue, the regex could be anchored to line boundaries.
+        """
+        text = "You can call <function=get_weather><parameter=city>NYC</parameter></function> like this."
+        tool_uses, _ = _try_xml_func(text)
+        # Currently matches — this is accepted behavior
         assert len(tool_uses) == 1
-        assert tool_uses[0]["name"] == "my_tool"
-        # The orphaned <tool_call> skeleton must remain intact
-        assert "<tool_call>GARBAGE</tool_call>" in remaining
 
 
 class TestParseModelOutputXmlFunc:
+    def test_does_not_corrupt_orphaned_tool_call_wrappers(self):
+        """When text mixes an unparseable <tool_call>GARBAGE</tool_call> block
+        with a standalone <function> block, only the standalone block is removed.
+
+        Verified via parse_model_output because parsers no longer strip text —
+        they annotate spans for parse_model_output to handle.
+        """
+        text = "<tool_call>GARBAGE</tool_call><function=my_tool><parameter=x>1</parameter></function>"
+        _, visible, tools = parse_model_output(text, has_tools=True)
+        assert len(tools) == 1
+        assert tools[0]["name"] == "my_tool"
+        # The orphaned <tool_call> skeleton must remain in visible text
+        assert "<tool_call>GARBAGE</tool_call>" in visible
+        # The <function> tag must be stripped
+        assert "<function=" not in visible
+
     def test_standalone_xml_func_via_parse_model_output(self):
         text = "<function=get_weather><parameter=city>Tokyo</parameter></function>"
         thinking, visible, tools = parse_model_output(text, has_tools=True)
