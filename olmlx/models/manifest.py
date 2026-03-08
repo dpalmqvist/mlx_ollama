@@ -3,6 +3,8 @@ import json
 import hashlib
 from dataclasses import dataclass, asdict
 from pathlib import Path
+
+
 @dataclass
 class ModelManifest:
     name: str
@@ -50,7 +52,11 @@ class ModelManifest:
         for field in dataclasses.fields(cls):
             k = field.name
             if k in data and data[k] is not None:
-                if field.type in (str, int) and not isinstance(data[k], bool) and not isinstance(data[k], field.type):
+                if (
+                    field.type in (str, int)
+                    and not isinstance(data[k], bool)
+                    and not isinstance(data[k], field.type)
+                ):
                     raise ValueError(
                         f"Field '{k}' should be {field.type.__name__}, "
                         f"got {type(data[k]).__name__} in {path}"
