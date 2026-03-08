@@ -222,7 +222,9 @@ def count_chat_tokens(
 ) -> int:
     """Count input tokens by applying the chat template with tokenize=True.
 
-    No GPU inference needed — CPU-only tokenization.
+    No GPU inference needed — CPU-only tokenization.  Uses
+    add_generation_prompt=True so the count includes the assistant-turn
+    opener tokens, matching what the model actually receives at inference.
     """
     result = _apply_chat_template(tokenizer, messages, tools, caps, tokenize=True)
 

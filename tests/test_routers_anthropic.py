@@ -987,3 +987,24 @@ class TestCountTokens:
             },
         )
         assert resp.status_code == 500
+
+    @pytest.mark.asyncio
+    async def test_vlm_text_tokenizer_unwrap(self, app_client, mock_loaded_model):
+        """VLM models should use the inner .tokenizer for token counting."""
+        from unittest.mock import MagicMock
+
+        inner_tokenizer = MagicMock()
+        inner_tokenizer.apply_chat_template.return_value = [1, 2, 3, 4, 5, 6, 7]
+        mock_loaded_model.is_vlm = True
+        mock_loaded_model.tokenizer.tokenizer = inner_tokenizer
+        resp = await app_client.post(
+            "/v1/messages/count_tokens",
+            json={
+                "model": "qwen3",
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 100,
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.json()["input_tokens"] == 7
+        inner_tokenizer.apply_chat_template.assert_called_once()

@@ -485,7 +485,7 @@ async def anthropic_count_tokens(req: AnthropicMessagesRequest, request: Request
         len(req.tools or []),
     )
     manager = request.app.state.model_manager
-    lm = await manager.ensure_loaded(req.model)
+    lm = await manager.ensure_loaded(req.model, keep_alive="0")
 
     messages = _convert_messages(req)
     tools = _convert_tools(req)

@@ -50,7 +50,11 @@ class LoadedModel:
 
     @property
     def text_tokenizer(self) -> Any:
-        """Return the underlying text tokenizer, unwrapping VLM processor if needed."""
+        """Return the underlying text tokenizer, unwrapping VLM processor if needed.
+
+        mlx-vlm's load() returns a processor whose .tokenizer attribute is
+        the actual HuggingFace tokenizer with the chat template.
+        """
         tok = self.tokenizer
         if self.is_vlm and hasattr(tok, "tokenizer"):
             return tok.tokenizer
