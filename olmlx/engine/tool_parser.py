@@ -72,6 +72,30 @@ def _parse_json_call(data: dict) -> dict | None:
     }
 
 
+def _parse_func_tag(func_match: re.Match) -> dict | None:
+    """Parse a <function=Name>...</function> match into a tool_use dict (without _span).
+
+    Returns None if the function name is empty.
+    """
+    name = func_match.group(1).strip()
+    if not name:
+        return None
+    params = {}
+    for pm in _PARAM_TAG_RE.finditer(func_match.group(2)):
+        pval = pm.group(2).strip()
+        try:
+            pval = json.loads(pval)
+        except (json.JSONDecodeError, ValueError):
+            pass
+        params[pm.group(1).strip()] = pval
+    return {
+        "type": "tool_use",
+        "id": _make_tool_use_id(),
+        "name": name,
+        "input": params,
+    }
+
+
 def _try_qwen(text: str) -> tuple[list[dict], str]:
     """Parse Qwen-style <tool_call>...</tool_call> blocks."""
     tool_uses = []
@@ -91,29 +115,14 @@ def _try_qwen(text: str) -> tuple[list[dict], str]:
         # Try XML-style: <function=Name><parameter=key>value</parameter></function>
         func_match = _FUNC_TAG_RE.search(inner)
         if func_match:
-            name = func_match.group(1).strip()
-            if not name:
+            result = _parse_func_tag(func_match)
+            if result:
+                result["_span"] = span
+                tool_uses.append(result)
+            else:
                 logger.warning(
                     "Skipping <function> tag with empty name inside <tool_call>"
                 )
-                continue
-            params = {}
-            for pm in _PARAM_TAG_RE.finditer(func_match.group(2)):
-                pval = pm.group(2).strip()
-                try:
-                    pval = json.loads(pval)
-                except (json.JSONDecodeError, ValueError):
-                    pass
-                params[pm.group(1).strip()] = pval
-            tool_uses.append(
-                {
-                    "type": "tool_use",
-                    "id": _make_tool_use_id(),
-                    "name": name,
-                    "input": params,
-                    "_span": span,
-                }
-            )
         else:
             logger.warning("Failed to parse <tool_call> block: %r", inner[:500])
 
@@ -222,27 +231,12 @@ def _try_xml_func(text: str) -> tuple[list[dict], str]:
     """
     tool_uses = []
     for match in _FUNC_TAG_RE.finditer(text):
-        name = match.group(1).strip()
-        if not name:
+        result = _parse_func_tag(match)
+        if result:
+            result["_span"] = (match.start(), match.end())
+            tool_uses.append(result)
+        else:
             logger.warning("Skipping <function> tag with empty name")
-            continue
-        params = {}
-        for pm in _PARAM_TAG_RE.finditer(match.group(2)):
-            pval = pm.group(2).strip()
-            try:
-                pval = json.loads(pval)
-            except (json.JSONDecodeError, ValueError):
-                pass
-            params[pm.group(1).strip()] = pval
-        tool_uses.append(
-            {
-                "type": "tool_use",
-                "id": _make_tool_use_id(),
-                "name": name,
-                "input": params,
-                "_span": (match.start(), match.end()),
-            }
-        )
     return tool_uses, text
 
 
@@ -304,21 +298,22 @@ def parse_model_output(
 
         # Filter out tool calls with unknown names
         if tool_uses and tool_names:
-            all_parsed = list(tool_uses)  # retain for cross-span debug logging
             kept = []
+            dropped = []
             for tu in tool_uses:
                 if tu["name"] in tool_names:
                     kept.append(tu)
                 else:
+                    dropped.append(tu)
                     logger.warning(
                         "Dropping parsed tool call '%s' — not in provided tool set: %s",
                         tu["name"],
                         tool_names,
                     )
-            if len(kept) < len(tool_uses):
+            if dropped:
                 logger.warning(
                     "Filtered %d of %d parsed tool call(s) with unknown names",
-                    len(tool_uses) - len(kept),
+                    len(dropped),
                     len(tool_uses),
                 )
             tool_uses = kept
@@ -327,9 +322,9 @@ def parse_model_output(
             # raw text is unavoidably lost when a sibling call is kept (the
             # whole block is stripped). Log this at debug level so it's
             # visible in traces.
-            kept_span_set = {tu.get("_span") for tu in tool_uses if "_span" in tu}
-            for tu in all_parsed:
-                if tu not in tool_uses and tu.get("_span") in kept_span_set:
+            kept_span_set = {tu.get("_span") for tu in kept if "_span" in tu}
+            for tu in dropped:
+                if tu.get("_span") in kept_span_set:
                     logger.debug(
                         "Raw text for dropped call '%s' is lost — shares a span "
                         "with a kept call (Mistral/DeepSeek shared-block format)",
