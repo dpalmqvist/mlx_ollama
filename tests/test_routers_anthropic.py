@@ -939,6 +939,23 @@ class TestCountTokens:
         assert resp.json()["input_tokens"] == 4
 
     @pytest.mark.asyncio
+    async def test_dict_with_nested_input_ids(self, app_client, mock_loaded_model):
+        """apply_chat_template may return dict with batched input_ids: [[1,2,3]]."""
+        mock_loaded_model.tokenizer.apply_chat_template.return_value = {
+            "input_ids": [[1, 2, 3, 4, 5]]
+        }
+        resp = await app_client.post(
+            "/v1/messages/count_tokens",
+            json={
+                "model": "qwen3",
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 100,
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.json()["input_tokens"] == 5
+
+    @pytest.mark.asyncio
     async def test_nested_list_return_type(self, app_client, mock_loaded_model):
         """apply_chat_template may return list[list[int]]."""
         mock_loaded_model.tokenizer.apply_chat_template.return_value = [

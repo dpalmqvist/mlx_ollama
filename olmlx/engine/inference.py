@@ -233,6 +233,8 @@ def count_chat_tokens(
             raise TypeError(
                 f"apply_chat_template returned dict without 'input_ids': keys={list(result.keys())}"
             )
+        if isinstance(tokens, list) and tokens and isinstance(tokens[0], list):
+            tokens = tokens[0]
     elif isinstance(result, list) and result and isinstance(result[0], list):
         tokens = result[0]
     elif isinstance(result, list):
