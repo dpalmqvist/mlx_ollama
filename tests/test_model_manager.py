@@ -41,25 +41,10 @@ class TestParseKeepAlive:
     def test_float(self):
         assert parse_keep_alive(30.5) == 30.5
 
-    def test_invalid_format(self, caplog):
+    @pytest.mark.parametrize("value", ["invalid", "1d", "abc123", ""])
+    def test_invalid_format_warns_and_defaults(self, value, caplog):
         with caplog.at_level(logging.WARNING, logger="olmlx.engine.model_manager"):
-            assert parse_keep_alive("invalid") == 300.0  # default
-        assert "Invalid keep_alive format" in caplog.text
-        assert "'invalid'" in caplog.text
-
-    def test_invalid_format_1d(self, caplog):
-        with caplog.at_level(logging.WARNING, logger="olmlx.engine.model_manager"):
-            assert parse_keep_alive("1d") == 300.0
-        assert "Invalid keep_alive format" in caplog.text
-
-    def test_invalid_format_abc123(self, caplog):
-        with caplog.at_level(logging.WARNING, logger="olmlx.engine.model_manager"):
-            assert parse_keep_alive("abc123") == 300.0
-        assert "Invalid keep_alive format" in caplog.text
-
-    def test_invalid_format_empty(self, caplog):
-        with caplog.at_level(logging.WARNING, logger="olmlx.engine.model_manager"):
-            assert parse_keep_alive("") == 300.0
+            assert parse_keep_alive(value) == 300.0  # default
         assert "Invalid keep_alive format" in caplog.text
 
     def test_zero_integer(self):

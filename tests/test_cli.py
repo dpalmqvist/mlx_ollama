@@ -109,10 +109,7 @@ class TestServiceInstall:
         assert exc_info.value.code == 1
         assert plist_path.exists()  # plist was written before the failure
         captured = capsys.readouterr()
-        assert (
-            "could not be loaded" in captured.err.lower()
-            or "could not be loaded" in captured.out.lower()
-        )
+        assert "could not be loaded" in captured.err.lower()
 
 
 class TestServiceUninstall:
@@ -585,10 +582,7 @@ class TestModelsPullCmd:
         out = capsys.readouterr().out
         assert "pulling manifest" in out
         assert "success" in out
-        # No blank lines
-        for line in out.split("\n"):
-            assert line == "" or line.strip() != "" or line == out.split("\n")[-1]
-        # More directly: no line should be just whitespace (except trailing)
+        # No blank lines in output
         lines = out.rstrip("\n").split("\n")
         for line in lines:
             assert line.strip() != "", f"Unexpected blank line in output: {lines!r}"

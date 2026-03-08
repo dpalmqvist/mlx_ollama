@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Request
-from starlette.responses import JSONResponse
+from fastapi.responses import JSONResponse
 
 from olmlx.schemas.models import (
     ModelDetails,
