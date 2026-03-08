@@ -213,6 +213,9 @@ def _try_xml_func(text: str) -> tuple[list[dict], str]:
     spans = []
     for match in _FUNC_TAG_RE.finditer(text):
         name = match.group(1).strip()
+        if not name:
+            logger.warning("Skipping <function> tag with empty name")
+            continue
         params = {}
         for pm in _PARAM_TAG_RE.finditer(match.group(2)):
             pval = pm.group(2).strip()
@@ -270,8 +273,8 @@ def parse_model_output(
     Args:
         text: Raw model output text.
         has_tools: Whether tools were provided in the request.
-        tool_names: Set of valid tool names for validation. If provided, parsed
-            tool calls with unknown names will generate a warning.
+        tool_names: Set of valid tool names. If provided, parsed tool calls
+            with unknown names are dropped and a warning is logged.
     """
     thinking = ""
 
@@ -292,6 +295,7 @@ def parse_model_output(
             _try_bare_json,
         ]
 
+        text_before_parsing = text
         for parser in parsers:
             tool_uses, text = parser(text)
             if tool_uses:
@@ -309,6 +313,14 @@ def parse_model_output(
                         tu["name"],
                         tool_names,
                     )
+            if not filtered:
+                # All calls were filtered — restore original text so model
+                # output isn't silently lost
+                logger.warning(
+                    "All %d parsed tool call(s) had unknown names and were dropped",
+                    len(tool_uses),
+                )
+                text = text_before_parsing
             tool_uses = filtered
 
     visible_text = text.strip()

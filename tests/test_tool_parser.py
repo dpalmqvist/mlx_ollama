@@ -252,6 +252,11 @@ class TestTryXmlFunc:
         assert tool_uses[0]["input"]["query"] == "test"
         assert tool_uses[0]["input"]["limit"] == 10  # parsed as JSON int
 
+    def test_empty_name_skipped(self):
+        text = "<function= ><parameter=x>1</parameter></function>"
+        tool_uses, remaining = _try_xml_func(text)
+        assert len(tool_uses) == 0
+
     def test_no_match(self):
         tool_uses, remaining = _try_xml_func("just normal text")
         assert len(tool_uses) == 0
@@ -266,8 +271,8 @@ class TestTryXmlFunc:
         assert "<function" not in remaining
 
     def test_does_not_corrupt_orphaned_tool_call_wrappers(self):
-        """When <tool_call> wrappers remain from a failed _try_qwen parse,
-        _try_xml_func must not strip <function> tags from inside them."""
+        """When text mixes an unparseable <tool_call>GARBAGE</tool_call> block
+        with a standalone <function> block, only the standalone block is removed."""
         text = "<tool_call>GARBAGE</tool_call><function=my_tool><parameter=x>1</parameter></function>"
         tool_uses, remaining = _try_xml_func(text)
         assert len(tool_uses) == 1
@@ -377,8 +382,9 @@ class TestParseModelOutput:
             has_tools=True,
             tool_names={"search", "get_weather"},
         )
-        # Unknown tool names are filtered out
+        # Unknown tool names are filtered out; original text is restored
         assert len(tools) == 0
+        assert "unknown_func" in visible
 
     def test_tool_name_filtering_keeps_valid(self):
         text = (
