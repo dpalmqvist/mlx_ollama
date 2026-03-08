@@ -210,6 +210,7 @@ def _extract_json_object(text: str, start: int) -> str | None:
 def _try_xml_func(text: str) -> tuple[list[dict], str]:
     """Parse standalone <function=Name>...</function> blocks (without <tool_call> wrapper)."""
     tool_uses = []
+    spans = []
     for match in _FUNC_TAG_RE.finditer(text):
         name = match.group(1).strip()
         params = {}
@@ -228,8 +229,10 @@ def _try_xml_func(text: str) -> tuple[list[dict], str]:
                 "input": params,
             }
         )
+        spans.append((match.start(), match.end()))
     if tool_uses:
-        text = _FUNC_TAG_RE.sub("", text)
+        for start, end in reversed(spans):
+            text = text[:start] + text[end:]
     return tool_uses, text
 
 
@@ -294,15 +297,19 @@ def parse_model_output(
             if tool_uses:
                 break
 
-        # Validate tool names if provided
+        # Filter out tool calls with unknown names
         if tool_uses and tool_names:
+            filtered = []
             for tu in tool_uses:
-                if tu["name"] not in tool_names:
+                if tu["name"] in tool_names:
+                    filtered.append(tu)
+                else:
                     logger.warning(
-                        "Parsed tool call '%s' not in provided tool set: %s",
+                        "Dropping parsed tool call '%s' — not in provided tool set: %s",
                         tu["name"],
                         tool_names,
                     )
+            tool_uses = filtered
 
     visible_text = text.strip()
     return thinking, visible_text, tool_uses

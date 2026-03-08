@@ -265,6 +265,16 @@ class TestTryXmlFunc:
         assert "After" in remaining
         assert "<function" not in remaining
 
+    def test_does_not_corrupt_orphaned_tool_call_wrappers(self):
+        """When <tool_call> wrappers remain from a failed _try_qwen parse,
+        _try_xml_func must not strip <function> tags from inside them."""
+        text = "<tool_call>GARBAGE</tool_call><function=my_tool><parameter=x>1</parameter></function>"
+        tool_uses, remaining = _try_xml_func(text)
+        assert len(tool_uses) == 1
+        assert tool_uses[0]["name"] == "my_tool"
+        # The orphaned <tool_call> skeleton must remain intact
+        assert "<tool_call>GARBAGE</tool_call>" in remaining
+
 
 class TestParseModelOutputXmlFunc:
     def test_standalone_xml_func_via_parse_model_output(self):
@@ -360,16 +370,28 @@ class TestParseModelOutput:
         assert len(tools) == 0
         assert "<tool_call>" in visible
 
-    def test_tool_name_validation(self):
+    def test_tool_name_filtering(self):
         text = '<tool_call>{"name": "unknown_func", "arguments": {}}</tool_call>'
         thinking, visible, tools = parse_model_output(
             text,
             has_tools=True,
             tool_names={"search", "get_weather"},
         )
-        # Still parses, but logs a warning
+        # Unknown tool names are filtered out
+        assert len(tools) == 0
+
+    def test_tool_name_filtering_keeps_valid(self):
+        text = (
+            '<tool_call>{"name": "search", "arguments": {"q": "test"}}</tool_call>'
+            '<tool_call>{"name": "unknown", "arguments": {}}</tool_call>'
+        )
+        thinking, visible, tools = parse_model_output(
+            text,
+            has_tools=True,
+            tool_names={"search", "get_weather"},
+        )
         assert len(tools) == 1
-        assert tools[0]["name"] == "unknown_func"
+        assert tools[0]["name"] == "search"
 
     def test_qwen_format_priority(self):
         """Qwen format should be tried first and win."""
