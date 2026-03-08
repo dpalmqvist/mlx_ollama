@@ -65,7 +65,7 @@ class TestTryQwen:
         assert len(tool_uses) == 1
         assert tool_uses[0]["name"] == "get_weather"
         assert tool_uses[0]["input"] == {"city": "NYC"}
-        assert remaining.strip() == ""
+        assert "_span" in tool_uses[0]
 
     def test_multiple_tool_calls(self):
         text = (
@@ -207,7 +207,7 @@ class TestTryXmlFunc:
         assert len(tool_uses) == 1
         assert tool_uses[0]["name"] == "get_weather"
         assert tool_uses[0]["input"] == {"city": "NYC"}
-        assert remaining.strip() == ""
+        assert "_span" in tool_uses[0]
 
     def test_multiple_tool_calls(self):
         text = (
@@ -262,13 +262,30 @@ class TestTryXmlFunc:
         assert len(tool_uses) == 0
         assert remaining == "just normal text"
 
-    def test_visible_text_preserved(self):
+    def test_span_tracking(self):
         text = "Before <function=f><parameter=x>1</parameter></function> After"
         tool_uses, remaining = _try_xml_func(text)
         assert len(tool_uses) == 1
-        assert "Before" in remaining
-        assert "After" in remaining
-        assert "<function" not in remaining
+        # Parsers no longer strip text; they track spans for parse_model_output
+        start, end = tool_uses[0]["_span"]
+        assert text[start:end] == "<function=f><parameter=x>1</parameter></function>"
+
+    def test_closing_tag_in_param_value_truncates(self):
+        """Known limitation: </parameter> in a parameter value causes truncation.
+
+        The lazy regex (.*?) stops at the first </parameter>, so content
+        containing this substring is silently truncated. A proper fix would
+        require a state-machine parser. This test documents the current behavior.
+        """
+        text = (
+            "<function=write_file>"
+            "<parameter=content>x = '</parameter> still here'</parameter>"
+            "</function>"
+        )
+        tool_uses, remaining = _try_xml_func(text)
+        assert len(tool_uses) == 1
+        # Value is truncated at the first </parameter>
+        assert tool_uses[0]["input"]["content"] == "x = '"
 
     def test_does_not_corrupt_orphaned_tool_call_wrappers(self):
         """When text mixes an unparseable <tool_call>GARBAGE</tool_call> block
@@ -288,6 +305,8 @@ class TestParseModelOutputXmlFunc:
         assert len(tools) == 1
         assert tools[0]["name"] == "get_weather"
         assert tools[0]["input"] == {"city": "Tokyo"}
+        assert "_span" not in tools[0]  # internal field must be cleaned up
+        assert visible == ""
 
     def test_thinking_with_standalone_xml_func(self):
         text = (
@@ -398,6 +417,8 @@ class TestParseModelOutput:
         )
         assert len(tools) == 1
         assert tools[0]["name"] == "search"
+        # Dropped call's raw text is preserved in visible_text
+        assert "unknown" in visible
 
     def test_qwen_format_priority(self):
         """Qwen format should be tried first and win."""

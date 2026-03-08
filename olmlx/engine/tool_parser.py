@@ -76,12 +76,14 @@ def _try_qwen(text: str) -> tuple[list[dict], str]:
     """Parse Qwen-style <tool_call>...</tool_call> blocks."""
     tool_uses = []
     for match in _TOOL_CALL_RE.finditer(text):
+        span = (match.start(), match.end())
         inner = match.group(1)
         # Try JSON
         try:
             call = json.loads(inner)
             result = _parse_json_call(call)
             if result:
+                result["_span"] = span
                 tool_uses.append(result)
                 continue
         except (json.JSONDecodeError, AttributeError):
@@ -104,13 +106,12 @@ def _try_qwen(text: str) -> tuple[list[dict], str]:
                     "id": _make_tool_use_id(),
                     "name": name,
                     "input": params,
+                    "_span": span,
                 }
             )
         else:
             logger.warning("Failed to parse <tool_call> block: %r", inner[:500])
 
-    if tool_uses:
-        text = _TOOL_CALL_RE.sub("", text)
     return tool_uses, text
 
 
@@ -120,14 +121,14 @@ def _try_mistral(text: str) -> tuple[list[dict], str]:
     match = _MISTRAL_TOOL_RE.search(text)
     if not match:
         return [], text
+    span = (match.start(), match.end())
     try:
         calls = json.loads(match.group(1))
         for call in calls:
             result = _parse_json_call(call)
             if result:
+                result["_span"] = span
                 tool_uses.append(result)
-        if tool_uses:
-            text = _MISTRAL_TOOL_RE.sub("", text)
     except (json.JSONDecodeError, AttributeError) as e:
         logger.warning("Failed to parse [TOOL_CALLS] block: %s", e)
     return tool_uses, text
@@ -141,13 +142,12 @@ def _try_llama(text: str) -> tuple[list[dict], str]:
             call = json.loads(match.group(1))
             result = _parse_json_call(call)
             if result:
+                result["_span"] = (match.start(), match.end())
                 tool_uses.append(result)
         except (json.JSONDecodeError, AttributeError):
             logger.warning(
                 "Failed to parse <|python_tag|> block: %r", match.group(1)[:500]
             )
-    if tool_uses:
-        text = _LLAMA_TOOL_RE.sub("", text)
     return tool_uses, text
 
 
@@ -157,6 +157,7 @@ def _try_deepseek(text: str) -> tuple[list[dict], str]:
     ds_match = _DEEPSEEK_TOOL_RE.search(text)
     if not ds_match:
         return [], text
+    span = (ds_match.start(), ds_match.end())
     inner = ds_match.group(1)
     for call_match in _DEEPSEEK_CALL_RE.finditer(inner):
         name = call_match.group(1).strip()
@@ -171,10 +172,9 @@ def _try_deepseek(text: str) -> tuple[list[dict], str]:
                 "id": _make_tool_use_id(),
                 "name": name,
                 "input": arguments,
+                "_span": span,
             }
         )
-    if tool_uses:
-        text = _DEEPSEEK_TOOL_RE.sub("", text)
     return tool_uses, text
 
 
@@ -210,7 +210,6 @@ def _extract_json_object(text: str, start: int) -> str | None:
 def _try_xml_func(text: str) -> tuple[list[dict], str]:
     """Parse standalone <function=Name>...</function> blocks (without <tool_call> wrapper)."""
     tool_uses = []
-    spans = []
     for match in _FUNC_TAG_RE.finditer(text):
         name = match.group(1).strip()
         if not name:
@@ -230,19 +229,15 @@ def _try_xml_func(text: str) -> tuple[list[dict], str]:
                 "id": _make_tool_use_id(),
                 "name": name,
                 "input": params,
+                "_span": (match.start(), match.end()),
             }
         )
-        spans.append((match.start(), match.end()))
-    if tool_uses:
-        for start, end in reversed(spans):
-            text = text[:start] + text[end:]
     return tool_uses, text
 
 
 def _try_bare_json(text: str) -> tuple[list[dict], str]:
     """Parse bare JSON tool calls (must be on own line or at text start)."""
     tool_uses = []
-    spans = []
     for match in _BARE_JSON_START_RE.finditer(text):
         brace_pos = match.start(1)
         obj_str = _extract_json_object(text, brace_pos)
@@ -252,14 +247,10 @@ def _try_bare_json(text: str) -> tuple[list[dict], str]:
             call = json.loads(obj_str)
             result = _parse_json_call(call)
             if result:
+                result["_span"] = (brace_pos, brace_pos + len(obj_str))
                 tool_uses.append(result)
-                spans.append((brace_pos, brace_pos + len(obj_str)))
         except (json.JSONDecodeError, AttributeError):
             continue
-    if tool_uses:
-        # Remove matched spans from text (in reverse order to preserve indices)
-        for start, end in reversed(spans):
-            text = text[:start] + text[end:]
     return tool_uses, text
 
 
@@ -295,7 +286,6 @@ def parse_model_output(
             _try_bare_json,
         ]
 
-        text_before_parsing = text
         for parser in parsers:
             tool_uses, text = parser(text)
             if tool_uses:
@@ -303,25 +293,32 @@ def parse_model_output(
 
         # Filter out tool calls with unknown names
         if tool_uses and tool_names:
-            filtered = []
+            kept = []
             for tu in tool_uses:
                 if tu["name"] in tool_names:
-                    filtered.append(tu)
+                    kept.append(tu)
                 else:
                     logger.warning(
                         "Dropping parsed tool call '%s' — not in provided tool set: %s",
                         tu["name"],
                         tool_names,
                     )
-            if not filtered:
-                # All calls were filtered — restore original text so model
-                # output isn't silently lost
+            if len(kept) < len(tool_uses):
                 logger.warning(
-                    "All %d parsed tool call(s) had unknown names and were dropped",
+                    "Filtered %d of %d parsed tool call(s) with unknown names",
+                    len(tool_uses) - len(kept),
                     len(tool_uses),
                 )
-                text = text_before_parsing
-            tool_uses = filtered
+            tool_uses = kept
+
+        # Strip matched spans from text for kept tool calls only.
+        # Spans are collected from tool_use dicts (set by each parser) and
+        # deduplicated (Mistral/DeepSeek share one span across multiple calls).
+        spans = sorted(
+            {tu.pop("_span") for tu in tool_uses if "_span" in tu}, reverse=True
+        )
+        for start, end in spans:
+            text = text[:start] + text[end:]
 
     visible_text = text.strip()
     return thinking, visible_text, tool_uses
