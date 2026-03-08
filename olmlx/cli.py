@@ -158,10 +158,10 @@ def cmd_models_list(_args):
     # Header
     print(f"{'NAME':<30} {'SIZE':<12} {'PARAMS':<10} {'QUANT':<10} {'HF PATH'}")
     print("-" * 90)
-    for m in sorted(models, key=lambda x: x.name):
-        name = (m.name or "")[:29]
-        params = (m.parameter_size or "")[:9]
-        quant = (m.quantization_level or "")[:9]
+    for m in sorted(models, key=lambda x: x.name or ""):
+        name = (m.name or "")[:30]
+        params = (m.parameter_size or "")[:10]
+        quant = (m.quantization_level or "")[:10]
         print(
             f"{name:<30} {_format_size(m.size):<12} "
             f"{params:<10} {quant:<10} {m.hf_path}"
@@ -205,7 +205,11 @@ def cmd_models_delete(args):
     """Delete a locally downloaded model."""
     store = _create_store()
     if not args.yes:
-        confirm = input(f"Delete model '{args.model_name}'? [y/N] ")
+        try:
+            confirm = input(f"Delete model '{args.model_name}'? [y/N] ")
+        except EOFError:
+            print("Aborted.")
+            return
         if confirm.strip().lower() != "y":
             print("Aborted.")
             return

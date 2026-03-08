@@ -302,6 +302,24 @@ class TestModelsListCmd:
         assert "x" * 15 not in data_line
         assert "y" * 15 not in data_line
 
+    def test_exact_column_width_not_truncated(self, capsys, mock_store, _patch_store):
+        """A name exactly at column width (30) should not be truncated."""
+        name_30 = "a" * 30
+        mock_store.list_local.return_value = [
+            ModelManifest(
+                name=name_30,
+                hf_path="some/model",
+                size=1_000_000,
+                parameter_size="1234567890",
+                quantization_level="1234567890",
+            ),
+        ]
+        cmd_models_list(None)
+        out = capsys.readouterr().out
+        data_line = out.strip().split("\n")[2]
+        assert name_30 in data_line
+        assert "1234567890" in data_line
+
     def test_handles_none_string_fields(self, capsys, mock_store, _patch_store):
         """Manifests with None for string fields should not crash."""
         m = ModelManifest(
@@ -315,6 +333,16 @@ class TestModelsListCmd:
         cmd_models_list(None)
         out = capsys.readouterr().out
         assert "test:latest" in out
+
+    def test_handles_none_name(self, capsys, mock_store, _patch_store):
+        """Manifests with None name should not crash the sort."""
+        m = ModelManifest(name="valid:latest", hf_path="some/model", size=100)
+        m2 = ModelManifest(name="other:latest", hf_path="some/model2", size=200)
+        m2.name = None
+        mock_store.list_local.return_value = [m, m2]
+        cmd_models_list(None)
+        out = capsys.readouterr().out
+        assert "valid:latest" in out
 
     def test_lists_no_models(self, capsys, mock_store, _patch_store):
         mock_store.list_local.return_value = []
@@ -461,6 +489,19 @@ class TestModelsDeleteCmd:
 
     def test_delete_aborts_on_no(self, capsys, monkeypatch, mock_store, _patch_store):
         monkeypatch.setattr("builtins.input", lambda _: "n")
+        args = MagicMock(model_name="qwen2.5:3b", yes=False)
+        cmd_models_delete(args)
+        out = capsys.readouterr().out
+        assert "aborted" in out.lower()
+        mock_store.delete.assert_not_called()
+
+    def test_delete_aborts_on_eof(self, capsys, monkeypatch, mock_store, _patch_store):
+        """Closed stdin (piped/CI) should abort cleanly, not crash."""
+
+        def raise_eof(_):
+            raise EOFError
+
+        monkeypatch.setattr("builtins.input", raise_eof)
         args = MagicMock(model_name="qwen2.5:3b", yes=False)
         cmd_models_delete(args)
         out = capsys.readouterr().out

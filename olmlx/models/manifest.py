@@ -1,5 +1,7 @@
+import dataclasses
 import json
 import hashlib
+import typing
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
@@ -29,9 +31,12 @@ class ModelManifest:
         with open(path) as f:
             data = json.load(f)
         # Coerce None to field defaults for str fields
+        hints = typing.get_type_hints(cls)
         for k, field in cls.__dataclass_fields__.items():
-            if k in data and data[k] is None and field.default == "":
-                data[k] = ""
+            if k in data and data[k] is None and hints.get(k) is str:
+                data[k] = (
+                    field.default if field.default is not dataclasses.MISSING else ""
+                )
         return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
 
     @staticmethod
