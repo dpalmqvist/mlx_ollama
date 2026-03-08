@@ -99,6 +99,14 @@ class TestIsDownloaded:
         (local_dir / "config.json").write_text("{}")
         assert mock_store.is_downloaded("org/model") is True
 
+    def test_false_when_downloading_marker_present(self, mock_store):
+        """A directory with .downloading marker is not considered downloaded."""
+        local_dir = mock_store.local_path("org/model")
+        local_dir.mkdir(parents=True)
+        (local_dir / "config.json").write_text("{}")
+        (local_dir / ".downloading").touch()
+        assert mock_store.is_downloaded("org/model") is False
+
 
 class TestModelStore:
     def test_list_local_empty(self, mock_store):
@@ -237,6 +245,38 @@ class TestModelStore:
                 events.append(event)
 
         assert any(e["status"] == "success" for e in events)
+
+    @pytest.mark.asyncio
+    async def test_pull_cleans_up_on_download_failure(self, mock_store, tmp_path):
+        """If snapshot_download fails, partial directory is removed."""
+        from unittest.mock import patch
+
+        with patch(
+            "huggingface_hub.snapshot_download",
+            side_effect=Exception("network error"),
+        ):
+            with pytest.raises(Exception, match="network error"):
+                async for _ in mock_store.pull("qwen3"):
+                    pass
+
+        # The partial directory should have been cleaned up
+        local_dir = mock_store.local_path("Qwen/Qwen3-8B-MLX")
+        assert not local_dir.exists()
+
+    @pytest.mark.asyncio
+    async def test_pull_removes_downloading_marker_on_success(
+        self, mock_store, tmp_path
+    ):
+        """On successful download, .downloading marker is removed."""
+        from unittest.mock import patch
+
+        with patch("huggingface_hub.snapshot_download"):
+            async for _ in mock_store.pull("qwen3"):
+                pass
+
+        local_dir = mock_store.local_path("Qwen/Qwen3-8B-MLX")
+        assert local_dir.exists()
+        assert not (local_dir / ".downloading").exists()
 
     @pytest.mark.asyncio
     async def test_pull_unknown_model(self, mock_store, registry):

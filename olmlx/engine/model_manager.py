@@ -180,59 +180,63 @@ class ModelManager:
             # If loading itself triggers an OOM the process will still crash.
             # In practice, loading succeeds; it is the KV cache allocation
             # during generation that causes the abort.
-            mem_after = _get_metal_memory_bytes()
-            total = _get_system_memory_bytes()
-            limit = int(total * settings.memory_limit_fraction)
-            if mem_after > limit:
-                model_mb = max(0, (mem_after - mem_before)) // (1024 * 1024)
-                total_mb = total // (1024 * 1024)
-                limit_mb = limit // (1024 * 1024)
+            try:
+                mem_after = _get_metal_memory_bytes()
+                total = _get_system_memory_bytes()
+                limit = int(total * settings.memory_limit_fraction)
+                if mem_after > limit:
+                    model_mb = max(0, (mem_after - mem_before)) // (1024 * 1024)
+                    total_mb = total // (1024 * 1024)
+                    limit_mb = limit // (1024 * 1024)
+                    logger.error(
+                        "Model %s uses %d MB, pushing Metal memory to %d MB "
+                        "which exceeds the limit of %d MB "
+                        "(%.0f%% of %d MB system RAM). Refusing to load.",
+                        normalized,
+                        model_mb,
+                        mem_after // (1024 * 1024),
+                        limit_mb,
+                        settings.memory_limit_fraction * 100,
+                        total_mb,
+                    )
+                    raise MemoryError(
+                        f"Model '{normalized}' requires ~{model_mb} MB but the memory limit "
+                        f"is {limit_mb} MB ({settings.memory_limit_fraction:.0%} of "
+                        f"{total_mb} MB system RAM). Use a smaller/more quantized model, "
+                        f"or increase OLMLX_MEMORY_LIMIT_FRACTION (current: "
+                        f"{settings.memory_limit_fraction})."
+                    )
+
+                # Memory check passed — register the model
+                ka = self._resolve_keep_alive(keep_alive)
+                expires = time.time() + ka if ka is not None else None
+
+                logger.info(
+                    "Model %s caps: tools=%s, thinking=%s, thinking_tags=%s",
+                    normalized,
+                    caps.supports_tools,
+                    caps.supports_enable_thinking,
+                    caps.has_thinking_tags,
+                )
+
+                lm = LoadedModel(
+                    name=normalized,
+                    hf_path=hf_path,
+                    model=model,
+                    tokenizer=tokenizer,
+                    is_vlm=is_vlm,
+                    template_caps=caps,
+                    expires_at=expires,
+                )
+                self._loaded[normalized] = lm
+                return lm
+            except BaseException:
                 # Drop references and flush Metal allocator so the memory
                 # is actually reclaimed before we raise.
                 del model, tokenizer
                 gc.collect()
                 mx.clear_cache()
-                logger.error(
-                    "Model %s uses %d MB, pushing Metal memory to %d MB "
-                    "which exceeds the limit of %d MB "
-                    "(%.0f%% of %d MB system RAM). Refusing to load.",
-                    normalized,
-                    model_mb,
-                    mem_after // (1024 * 1024),
-                    limit_mb,
-                    settings.memory_limit_fraction * 100,
-                    total_mb,
-                )
-                raise MemoryError(
-                    f"Model '{normalized}' requires ~{model_mb} MB but the memory limit "
-                    f"is {limit_mb} MB ({settings.memory_limit_fraction:.0%} of "
-                    f"{total_mb} MB system RAM). Use a smaller/more quantized model, "
-                    f"or increase OLMLX_MEMORY_LIMIT_FRACTION (current: "
-                    f"{settings.memory_limit_fraction})."
-                )
-
-            ka = self._resolve_keep_alive(keep_alive)
-            expires = time.time() + ka if ka is not None else None
-
-            logger.info(
-                "Model %s caps: tools=%s, thinking=%s, thinking_tags=%s",
-                normalized,
-                caps.supports_tools,
-                caps.supports_enable_thinking,
-                caps.has_thinking_tags,
-            )
-
-            lm = LoadedModel(
-                name=normalized,
-                hf_path=hf_path,
-                model=model,
-                tokenizer=tokenizer,
-                is_vlm=is_vlm,
-                template_caps=caps,
-                expires_at=expires,
-            )
-            self._loaded[normalized] = lm
-            return lm
+                raise
 
     def get_loaded(self) -> list[LoadedModel]:
         return list(self._loaded.values())
@@ -366,11 +370,20 @@ class ModelManager:
         if self.store is not None:
             local_dir = self.store.local_path(hf_path)
             if not self.store.is_downloaded(hf_path):
+                import shutil
+
                 from huggingface_hub import snapshot_download
 
                 logger.info("Downloading %s to %s", hf_path, local_dir)
                 local_dir.mkdir(parents=True, exist_ok=True)
-                snapshot_download(repo_id=hf_path, local_dir=str(local_dir))
+                marker = local_dir / ".downloading"
+                marker.touch()
+                try:
+                    snapshot_download(repo_id=hf_path, local_dir=str(local_dir))
+                    marker.unlink(missing_ok=True)
+                except BaseException:
+                    shutil.rmtree(local_dir, ignore_errors=True)
+                    raise
             load_path = str(local_dir)
 
         kind = self._detect_model_kind(hf_path)

@@ -77,7 +77,10 @@ class ModelStore:
 
     def is_downloaded(self, hf_path: str) -> bool:
         """Check if a model is already downloaded locally."""
-        return (self.local_path(hf_path) / "config.json").exists()
+        local = self.local_path(hf_path)
+        return (local / "config.json").exists() and not (
+            local / ".downloading"
+        ).exists()
 
     def _resolve_model_dir(self, name: str) -> Path | None:
         """Resolve a model name to its local directory, trying HF-path-based naming first."""
@@ -123,11 +126,20 @@ class ModelStore:
 
         yield {"status": f"downloading {hf_path}"}
 
-        await asyncio.to_thread(
-            snapshot_download,
-            repo_id=hf_path,
-            local_dir=str(local_dir),
-        )
+        marker = local_dir / ".downloading"
+        marker.touch()
+        try:
+            await asyncio.to_thread(
+                snapshot_download,
+                repo_id=hf_path,
+                local_dir=str(local_dir),
+            )
+            marker.unlink(missing_ok=True)
+        except BaseException:
+            import shutil
+
+            shutil.rmtree(local_dir, ignore_errors=True)
+            raise
 
         yield {"status": "verifying"}
 
