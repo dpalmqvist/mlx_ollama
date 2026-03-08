@@ -195,7 +195,7 @@ def cmd_models_pull(args):
             async for status in store.pull(args.model_name):
                 print(status.get("status", ""), flush=True)
         except Exception as e:
-            print(f"Error: {e}", flush=True)
+            print(f"Error: {e}", file=sys.stderr, flush=True)
             sys.exit(1)
 
     asyncio.run(_pull())

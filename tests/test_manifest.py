@@ -111,3 +111,15 @@ class TestModelManifest:
         path.write_text(json.dumps(data))
         with pytest.raises(ValueError, match="hf_path"):
             ModelManifest.load(path)
+
+    def test_load_coerces_null_int_fields(self, tmp_path):
+        """Null values for int fields (e.g. size) should be coerced to their default."""
+        path = tmp_path / "manifest.json"
+        data = {
+            "name": "test:latest",
+            "hf_path": "test/model",
+            "size": None,
+        }
+        path.write_text(json.dumps(data))
+        m = ModelManifest.load(path)
+        assert m.size == 0

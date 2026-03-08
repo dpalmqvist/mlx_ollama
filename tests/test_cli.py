@@ -404,8 +404,7 @@ class TestModelsPullCmd:
         with pytest.raises(SystemExit) as exc_info:
             cmd_models_pull(args)
         assert exc_info.value.code == 1
-        out = capsys.readouterr().out
-        assert "not found" in out.lower()
+        assert "not found" in capsys.readouterr().err.lower()
 
     def test_pull_handles_os_error_exits_nonzero(
         self, capsys, mock_store, _patch_store
@@ -419,8 +418,7 @@ class TestModelsPullCmd:
         with pytest.raises(SystemExit) as exc_info:
             cmd_models_pull(args)
         assert exc_info.value.code == 1
-        out = capsys.readouterr().out
-        assert "Disk full" in out
+        assert "Disk full" in capsys.readouterr().err
 
     def test_pull_handles_generic_exception_exits_nonzero(
         self, capsys, mock_store, _patch_store
@@ -435,8 +433,23 @@ class TestModelsPullCmd:
         with pytest.raises(SystemExit) as exc_info:
             cmd_models_pull(args)
         assert exc_info.value.code == 1
-        out = capsys.readouterr().out
-        assert "Something unexpected" in out
+        assert "Something unexpected" in capsys.readouterr().err
+
+    def test_pull_error_goes_to_stderr(self, mock_store, _patch_store, capsys):
+        """Error output should go to stderr, not stdout."""
+
+        async def fake_pull(name):
+            if False:
+                yield {}
+            raise ValueError("Model not found")
+
+        mock_store.pull = fake_pull
+        args = MagicMock(model_name="nonexistent")
+        with pytest.raises(SystemExit):
+            cmd_models_pull(args)
+        captured = capsys.readouterr()
+        assert "Model not found" in captured.err
+        assert "Model not found" not in captured.out
 
     def test_pull_flushes_output(self, mock_store, _patch_store, monkeypatch):
         """Status lines should be flushed immediately for piped output."""
