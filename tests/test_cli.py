@@ -508,6 +508,16 @@ class TestModelsDeleteCmd:
         assert "aborted" in out.lower()
         mock_store.delete.assert_not_called()
 
+    def test_delete_handles_os_error(self, capsys, mock_store, _patch_store):
+        """OSError from shutil.rmtree should produce clean error, not traceback."""
+        mock_store.delete.side_effect = OSError("Permission denied")
+        args = MagicMock(model_name="qwen2.5:3b", yes=True)
+        with pytest.raises(SystemExit) as exc_info:
+            cmd_models_delete(args)
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "permission denied" in captured.err.lower()
+
 
 class TestConfigShowCmd:
     def test_shows_config(self, capsys):

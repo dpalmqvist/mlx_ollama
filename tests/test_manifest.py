@@ -91,14 +91,23 @@ class TestModelManifest:
         assert m.family == ""
         assert m.format == "mlx"
 
-    def test_load_coerces_null_required_fields(self, tmp_path):
-        """Null values for required str fields (name, hf_path) should be coerced."""
+    def test_load_raises_on_null_required_fields(self, tmp_path):
+        """Null values for required str fields (name, hf_path) should raise ValueError."""
+        import pytest
+
         path = tmp_path / "manifest.json"
         data = {
             "name": None,
+            "hf_path": "test/model",
+        }
+        path.write_text(json.dumps(data))
+        with pytest.raises(ValueError, match="name"):
+            ModelManifest.load(path)
+
+        data = {
+            "name": "test:latest",
             "hf_path": None,
         }
         path.write_text(json.dumps(data))
-        m = ModelManifest.load(path)
-        assert m.name == ""
-        assert m.hf_path == ""
+        with pytest.raises(ValueError, match="hf_path"):
+            ModelManifest.load(path)

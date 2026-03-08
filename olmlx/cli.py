@@ -213,7 +213,12 @@ def cmd_models_delete(args):
         if confirm.strip().lower() != "y":
             print("Aborted.")
             return
-    if store.delete(args.model_name):
+    try:
+        deleted = store.delete(args.model_name)
+    except OSError as e:
+        print(f"Error deleting model '{args.model_name}': {e}", file=sys.stderr)
+        sys.exit(1)
+    if deleted:
         print(f"Model '{args.model_name}' deleted.")
     else:
         print(f"Model '{args.model_name}' not found locally.")
