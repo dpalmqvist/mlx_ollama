@@ -874,6 +874,54 @@ class TestModelLoadTimeout:
             with pytest.raises(ModelLoadTimeoutError):
                 await manager.ensure_loaded("qwen3")
 
+    @pytest.mark.asyncio
+    async def test_memory_error_with_timeout_frees_load_task(
+        self, registry, mock_store, monkeypatch
+    ):
+        """MemoryError after successful load with timeout frees model weights.
+
+        When timeout is set, load_task holds the result tuple.  The except
+        handler must del load_task before gc.collect so the Metal buffers
+        are actually reclaimable.
+        """
+        monkeypatch.setattr(
+            "olmlx.engine.model_manager.settings.model_load_timeout", 10.0
+        )
+        manager = ModelManager(registry, mock_store)
+
+        mock_model = MagicMock()
+        mock_tokenizer = MagicMock()
+        mock_tokenizer.chat_template = None
+
+        total_ram = 64 * self.GB
+        # mem_after exceeds limit to trigger MemoryError
+        mem_after = int(total_ram * 0.90)
+
+        with (
+            patch.object(
+                manager,
+                "_load_model",
+                return_value=(mock_model, mock_tokenizer, False, TemplateCaps()),
+            ),
+            patch(
+                "olmlx.engine.model_manager._get_metal_memory_bytes",
+                side_effect=[1 * self.GB, mem_after],
+            ),
+            patch(
+                "olmlx.engine.model_manager._get_system_memory_bytes",
+                return_value=total_ram,
+            ),
+            patch("olmlx.engine.model_manager.gc.collect") as mock_gc,
+            patch("olmlx.engine.model_manager.mx.clear_cache") as mock_clear,
+        ):
+            with pytest.raises(MemoryError):
+                await manager.ensure_loaded("qwen3")
+
+            # gc/clear should have been called for cleanup
+            assert mock_gc.call_count >= 1
+            assert mock_clear.call_count >= 1
+            assert "qwen3:latest" not in manager._loaded
+
 
 class TestTryLmThenVlmFallback:
     """Test that _try_lm_then_vlm only falls back on expected exceptions."""

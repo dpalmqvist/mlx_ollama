@@ -238,7 +238,7 @@ class ModelManager:
                 # Initialize before try so the except handler can always
                 # clean up, whether _load_model or the post-load check fails.
                 model = tokenizer = None
-                lm = None
+                load_task = lm = None
                 try:
                     coro = asyncio.to_thread(self._load_model, hf_path)
                     timeout = settings.model_load_timeout
@@ -340,6 +340,10 @@ class ModelManager:
                     # only bother deleting if they hold actual GPU resources.
                     if model is not None:
                         del model, tokenizer
+                    # Release load_task's stored result tuple so the model
+                    # weights can actually be freed by gc.collect below.
+                    if load_task is not None:
+                        del load_task
                     # Skip immediate cache flush when a deferred cleanup is
                     # pending — the background thread is still running and
                     # mx.clear_cache() is not safe to call concurrently with
