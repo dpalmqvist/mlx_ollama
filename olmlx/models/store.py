@@ -136,7 +136,7 @@ class ModelStore:
                 repo_id=hf_path,
                 local_dir=str(local_dir),
             )
-        except Exception:
+        except BaseException:
             try:
                 shutil.rmtree(local_dir)
             except OSError:
