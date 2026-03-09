@@ -230,16 +230,23 @@ class ModelManager:
                             model, tokenizer, is_vlm, caps = await asyncio.wait_for(
                                 asyncio.shield(load_task), timeout=timeout
                             )
-                        except asyncio.TimeoutError:
+                        except (asyncio.TimeoutError, asyncio.CancelledError) as exc:
                             # The background thread continues running — Python
                             # cannot interrupt native threads.  Schedule GPU
                             # cleanup for when it finishes to prevent Metal
                             # memory leaks from orphaned model weights.
+                            # This handles both explicit timeouts AND external
+                            # cancellations (e.g. client disconnect), since
+                            # asyncio.shield protects load_task from being
+                            # cancelled but CancelledError still propagates
+                            # to the caller.
                             self._schedule_deferred_cleanup(load_task, normalized)
-                            raise ModelLoadTimeoutError(
-                                f"Loading model '{normalized}' timed out after {timeout}s. "
-                                f"Increase OLMLX_MODEL_LOAD_TIMEOUT or unset it to disable."
-                            )
+                            if isinstance(exc, asyncio.TimeoutError):
+                                raise ModelLoadTimeoutError(
+                                    f"Loading model '{normalized}' timed out after {timeout}s. "
+                                    f"Increase OLMLX_MODEL_LOAD_TIMEOUT or unset it to disable."
+                                )
+                            raise
                     else:
                         model, tokenizer, is_vlm, caps = await coro
 
@@ -343,12 +350,11 @@ class ModelManager:
             try:
                 await load_task
             except asyncio.CancelledError:
-                # Cancel load_task to prevent "exception never retrieved"
-                # warnings.  The background thread keeps running (Python
-                # can't interrupt native threads) but the task is marked
-                # done so asyncio won't complain at shutdown.
+                # The background thread keeps running (Python can't
+                # interrupt native threads).  Don't call load_task.cancel()
+                # — it can't stop the thread, and the task's result/exception
+                # will be drained by stop() via _pending_load_tasks.
                 cancelled = True
-                load_task.cancel()
                 raise
             except BaseException:
                 pass
@@ -362,15 +368,17 @@ class ModelManager:
                 #
                 # Skip gc/clear when cancelled — the background thread is
                 # still active and mx.clear_cache() is not safe to call
-                # concurrently with Metal allocations.  stop() clears the
-                # entries separately.
+                # concurrently with Metal allocations.
                 try:
                     if not cancelled:
                         gc.collect()
                         mx.clear_cache()
                 finally:
                     self._pending_cleanups.pop(model_name, None)
-                    self._pending_load_tasks.pop(model_name, None)
+                    # Only pop load_task when not cancelled — stop()
+                    # needs the reference to drain orphaned threads.
+                    if not cancelled:
+                        self._pending_load_tasks.pop(model_name, None)
             logger.info(
                 "Deferred GPU cleanup after timeout of '%s' completed", model_name
             )
