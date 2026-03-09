@@ -174,18 +174,29 @@ class ModelManager:
             try:
                 coro = asyncio.to_thread(self._load_model, hf_path)
                 timeout = settings.model_load_timeout
-                try:
-                    if timeout is not None:
+                if timeout is not None:
+                    load_task = asyncio.ensure_future(coro)
+                    try:
                         model, tokenizer, is_vlm, caps = await asyncio.wait_for(
-                            coro, timeout=timeout
+                            asyncio.shield(load_task), timeout=timeout
                         )
-                    else:
-                        model, tokenizer, is_vlm, caps = await coro
-                except asyncio.TimeoutError:
-                    raise TimeoutError(
-                        f"Loading model '{normalized}' timed out after {timeout}s. "
-                        f"Increase OLMLX_MODEL_LOAD_TIMEOUT or unset it to disable."
-                    )
+                    except asyncio.TimeoutError:
+                        # The background thread continues running — Python
+                        # cannot interrupt native threads.  Schedule GPU
+                        # cleanup for when it finishes to prevent Metal
+                        # memory leaks from orphaned model weights.
+                        self._schedule_deferred_cleanup(load_task, normalized)
+                        # Re-raise as builtin TimeoutError (not
+                        # asyncio.TimeoutError) so the FastAPI exception
+                        # handler fires.  On Python <=3.10 these are
+                        # distinct types; on 3.11+ they are aliases but the
+                        # explicit re-raise adds a descriptive message.
+                        raise TimeoutError(
+                            f"Loading model '{normalized}' timed out after {timeout}s. "
+                            f"Increase OLMLX_MODEL_LOAD_TIMEOUT or unset it to disable."
+                        )
+                else:
+                    model, tokenizer, is_vlm, caps = await coro
 
                 # Check if the model fits safely in memory.  On Apple Silicon
                 # the GPU shares system RAM — if total Metal memory exceeds the
@@ -262,6 +273,30 @@ class ModelManager:
                 gc.collect()
                 mx.clear_cache()
                 raise
+
+    def _schedule_deferred_cleanup(
+        self, load_task: asyncio.Task, model_name: str
+    ) -> None:
+        """Schedule GPU cleanup for when a timed-out load thread finishes.
+
+        asyncio.to_thread() threads cannot be interrupted, so after a timeout
+        the thread continues running and may allocate GPU memory.  This method
+        schedules a fire-and-forget task that waits for the thread to complete,
+        then flushes the Metal allocator to reclaim the memory.
+        """
+
+        async def _cleanup() -> None:
+            try:
+                await load_task
+            except Exception:
+                pass
+            gc.collect()
+            mx.clear_cache()
+            logger.info(
+                "Deferred GPU cleanup after timeout of '%s' completed", model_name
+            )
+
+        asyncio.create_task(_cleanup())
 
     def get_loaded(self) -> list[LoadedModel]:
         return list(self._loaded.values())

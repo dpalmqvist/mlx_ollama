@@ -590,6 +590,43 @@ class TestModelLoadTimeout:
         assert mock_clear.call_count == 2
         assert "qwen3:latest" not in manager._loaded
 
+    @pytest.mark.asyncio
+    async def test_deferred_cleanup_after_timeout(
+        self, registry, mock_store, monkeypatch
+    ):
+        """After timeout, a deferred task cleans up GPU memory when the thread finishes."""
+        monkeypatch.setattr(
+            "olmlx.engine.model_manager.settings.model_load_timeout", 0.1
+        )
+        manager = ModelManager(registry, mock_store)
+
+        def slow_load(hf_path):
+            time.sleep(0.3)  # Short enough to finish during the test
+            return (MagicMock(), MagicMock(), False, TemplateCaps())
+
+        with (
+            patch.object(manager, "_load_model", side_effect=slow_load),
+            patch(
+                "olmlx.engine.model_manager._get_metal_memory_bytes",
+                return_value=1 * self.GB,
+            ),
+            patch("olmlx.engine.model_manager.gc.collect") as mock_gc,
+            patch("olmlx.engine.model_manager.mx.clear_cache") as mock_clear,
+        ):
+            with pytest.raises(TimeoutError):
+                await manager.ensure_loaded("qwen3")
+
+            # Immediate cleanup: pre-load flush + post-timeout = 2 each
+            assert mock_gc.call_count == 2
+            assert mock_clear.call_count == 2
+
+            # Wait for background thread to finish and deferred cleanup to run
+            await asyncio.sleep(0.5)
+
+            # Deferred cleanup adds one more call each
+            assert mock_gc.call_count == 3
+            assert mock_clear.call_count == 3
+
 
 class TestTryLmThenVlmFallback:
     """Test that _try_lm_then_vlm only falls back on expected exceptions."""
