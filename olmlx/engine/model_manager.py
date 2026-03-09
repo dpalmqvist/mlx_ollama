@@ -324,14 +324,15 @@ class ModelManager:
         async def _cleanup() -> None:
             try:
                 await load_task
-            except Exception:
+            except BaseException:
                 pass
-            gc.collect()
-            mx.clear_cache()
-            self._pending_cleanups.pop(model_name, None)
-            logger.info(
-                "Deferred GPU cleanup after timeout of '%s' completed", model_name
-            )
+            finally:
+                gc.collect()
+                mx.clear_cache()
+                self._pending_cleanups.pop(model_name, None)
+                logger.info(
+                    "Deferred GPU cleanup after timeout of '%s' completed", model_name
+                )
 
         self._pending_cleanups[model_name] = asyncio.create_task(_cleanup())
 

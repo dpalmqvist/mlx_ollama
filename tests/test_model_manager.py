@@ -634,8 +634,10 @@ class TestModelLoadTimeout:
             assert mock_gc.call_count == 1
             assert mock_clear.call_count == 1
 
-            # Wait for background thread to finish and deferred cleanup to run
-            await asyncio.sleep(0.5)
+            # Await the cleanup task directly (deterministic, no sleep needed)
+            cleanup_task = manager._pending_cleanups.get("qwen3:latest")
+            assert cleanup_task is not None
+            await cleanup_task
 
             # Deferred cleanup adds one more call each
             assert mock_gc.call_count == 2
