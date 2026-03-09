@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import time
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -432,6 +433,33 @@ class TestLoadModel:
 
         local_dir = mock_store.local_path("test/path")
         assert not (local_dir / ".downloading").exists()
+
+    def test_load_succeeds_when_marker_unlink_raises_oserror(
+        self, registry, mock_store
+    ):
+        """If marker.unlink() raises a non-ENOENT OSError, _load_model still succeeds."""
+        manager = self._make_manager(registry, mock_store)
+
+        mock_model = MagicMock()
+        mock_tokenizer = MagicMock()
+        mock_tokenizer.chat_template = None
+        mock_mlx_lm = MagicMock()
+        mock_mlx_lm.load.return_value = (mock_model, mock_tokenizer)
+
+        original_unlink = Path.unlink
+
+        def unlink_that_fails_on_downloading(self_path, **kwargs):
+            if self_path.name == ".downloading":
+                raise OSError("permission denied")
+            return original_unlink(self_path, **kwargs)
+
+        with patch.object(manager, "_detect_model_kind", return_value="text"):
+            with patch("huggingface_hub.snapshot_download"):
+                with patch.dict("sys.modules", {"mlx_lm": mock_mlx_lm}):
+                    with patch.object(Path, "unlink", unlink_that_fails_on_downloading):
+                        model, tok, is_vlm, caps = manager._load_model("test/path")
+
+        assert model is mock_model
 
 
 class TestTryLmThenVlmFallback:

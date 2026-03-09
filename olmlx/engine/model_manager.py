@@ -244,6 +244,9 @@ class ModelManager:
                 if lm is not None:
                     self._loaded.pop(normalized, None)
                     del lm
+                # When _load_model fails, model/tokenizer are still None —
+                # del just unbinds the names.  gc.collect + clear_cache below
+                # are what actually flush partial Metal allocations.
                 del model, tokenizer
                 gc.collect()
                 mx.clear_cache()
@@ -391,7 +394,14 @@ class ModelManager:
                 # snapshot_download resume on retry.  The .downloading
                 # marker keeps is_downloaded() safe.
                 snapshot_download(repo_id=hf_path, local_dir=str(local_dir))
-                marker.unlink(missing_ok=True)
+                try:
+                    marker.unlink(missing_ok=True)
+                except OSError:
+                    logger.warning(
+                        "Failed to remove .downloading marker %s; "
+                        "model may appear not downloaded",
+                        marker,
+                    )
             load_path = str(local_dir)
 
         kind = self._detect_model_kind(hf_path)

@@ -1,6 +1,7 @@
 """Tests for olmlx.models.store."""
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -282,6 +283,30 @@ class TestModelStore:
         local_dir = mock_store.local_path("Qwen/Qwen3-8B-MLX")
         assert local_dir.exists()
         assert not (local_dir / ".downloading").exists()
+
+    @pytest.mark.asyncio
+    async def test_pull_succeeds_when_marker_unlink_raises_oserror(
+        self, mock_store, tmp_path
+    ):
+        """If marker.unlink() raises a non-ENOENT OSError, pull still succeeds."""
+        from unittest.mock import patch
+
+        original_unlink = Path.unlink
+
+        def unlink_that_fails_on_downloading(self_path, **kwargs):
+            if self_path.name == ".downloading":
+                raise OSError("permission denied")
+            return original_unlink(self_path, **kwargs)
+
+        with (
+            patch("huggingface_hub.snapshot_download"),
+            patch.object(Path, "unlink", unlink_that_fails_on_downloading),
+        ):
+            events = []
+            async for event in mock_store.pull("qwen3"):
+                events.append(event)
+
+        assert any(e["status"] == "success" for e in events)
 
     @pytest.mark.asyncio
     async def test_pull_unknown_model(self, mock_store, registry):

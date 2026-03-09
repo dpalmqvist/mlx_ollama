@@ -137,7 +137,13 @@ class ModelStore:
             repo_id=hf_path,
             local_dir=str(local_dir),
         )
-        marker.unlink(missing_ok=True)
+        try:
+            marker.unlink(missing_ok=True)
+        except OSError:
+            logger.warning(
+                "Failed to remove .downloading marker %s; model may appear not downloaded",
+                marker,
+            )
 
         yield {"status": "verifying"}
 
