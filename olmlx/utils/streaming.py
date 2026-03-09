@@ -189,19 +189,27 @@ class CancellableStream:
 
         if self._thread is not None:
             remaining = deadline - time.monotonic()
-            if remaining > 0:
+            join_attempted = remaining > 0
+            if join_attempted:
                 try:
                     await asyncio.to_thread(self._thread.join, remaining)
                 except (asyncio.CancelledError, Exception):
                     pass
             if self._thread.is_alive():
-                logger.error(
-                    "drain_and_join: thread still alive after %.1fs timeout — "
-                    "potential GPU resource leak. The background inference thread "
-                    "could not be stopped, which may cause Metal errors on the "
-                    "next inference.",
-                    timeout,
-                )
+                if join_attempted:
+                    logger.error(
+                        "drain_and_join: thread still alive after %.1fs timeout — "
+                        "potential GPU resource leak. The background inference thread "
+                        "could not be stopped, which may cause Metal errors on the "
+                        "next inference.",
+                        timeout,
+                    )
+                else:
+                    logger.error(
+                        "drain_and_join: drain loop exhausted %.1fs budget, join skipped "
+                        "— thread still alive, potential GPU resource leak.",
+                        timeout,
+                    )
 
     def __aiter__(self):
         return self

@@ -801,3 +801,7 @@ class TestStreamCompletionFallbackJoinLogging:
                         chunks.append(chunk)
 
         assert any("thread still alive" in record.message for record in caplog.records)
+        # Critical invariant: lock must always be released, even on fallback timeout
+        assert not _inference_lock.locked(), (
+            "_inference_lock must be released even when fallback join times out"
+        )

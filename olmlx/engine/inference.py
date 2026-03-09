@@ -332,12 +332,15 @@ async def _stream_completion(
             # Shield was interrupted — async fallback join (avoids blocking
             # the event loop, unlike a synchronous thread.join).
             if stream._thread is not None and stream._thread.is_alive():
-                await asyncio.to_thread(stream._thread.join, 10)
-                if stream._thread.is_alive():
-                    logger.error(
-                        "Fallback thread join timed out after 10s — "
-                        "thread still alive, potential GPU resource leak"
-                    )
+                try:
+                    await asyncio.to_thread(stream._thread.join, 10)
+                except (asyncio.CancelledError, Exception):
+                    pass
+            if stream._thread is not None and stream._thread.is_alive():
+                logger.error(
+                    "Fallback thread join timed out after 10s — "
+                    "thread still alive, potential GPU resource leak"
+                )
         finally:
             # Sync default stream after drain to ensure cleanup is complete
             # before releasing the lock.
