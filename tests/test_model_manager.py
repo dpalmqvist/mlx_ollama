@@ -598,9 +598,10 @@ class TestModelLoadTimeout:
             with pytest.raises(TimeoutError):
                 await manager.ensure_loaded("qwen3")
 
-        # Pre-load flush + post-timeout cleanup = 2 calls each
-        assert mock_gc.call_count == 2
-        assert mock_clear.call_count == 2
+        # Only pre-load flush — the BaseException handler skips gc/clear
+        # when a deferred cleanup is pending (background thread still running).
+        assert mock_gc.call_count == 1
+        assert mock_clear.call_count == 1
         assert "qwen3:latest" not in manager._loaded
 
     @pytest.mark.asyncio
@@ -629,16 +630,16 @@ class TestModelLoadTimeout:
             with pytest.raises(TimeoutError):
                 await manager.ensure_loaded("qwen3")
 
-            # Immediate cleanup: pre-load flush + post-timeout = 2 each
-            assert mock_gc.call_count == 2
-            assert mock_clear.call_count == 2
+            # Only pre-load flush (BaseException handler skips when deferred)
+            assert mock_gc.call_count == 1
+            assert mock_clear.call_count == 1
 
             # Wait for background thread to finish and deferred cleanup to run
             await asyncio.sleep(0.5)
 
             # Deferred cleanup adds one more call each
-            assert mock_gc.call_count == 3
-            assert mock_clear.call_count == 3
+            assert mock_gc.call_count == 2
+            assert mock_clear.call_count == 2
 
     @pytest.mark.asyncio
     async def test_retry_after_timeout_waits_for_cleanup(
@@ -752,11 +753,15 @@ class TestModelLoadTimeout:
             llama_elapsed = time.time() - start
 
             qwen_lm = await qwen_task
+            qwen_elapsed = time.time() - start
 
             assert llama_lm.name == "llama3:8b"
             assert qwen_lm.name == "qwen3:latest"
             # llama3 should not have waited for qwen3's ~0.8s cleanup
-            assert llama_elapsed < 0.5
+            assert llama_elapsed < qwen_elapsed * 0.7, (
+                f"llama3 took {llama_elapsed:.3f}s, qwen3 took {qwen_elapsed:.3f}s — "
+                "looks like llama3 was blocked waiting for qwen3's cleanup"
+            )
 
 
 class TestTryLmThenVlmFallback:

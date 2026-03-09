@@ -133,167 +133,180 @@ class ModelManager:
         """Ensure a model is loaded and return it."""
         normalized = self.registry.normalize_name(name)
 
-        # If a previous load timed out and the background thread is still
-        # running, wait for its deferred cleanup to finish BEFORE acquiring
-        # the lock — the cleanup may take minutes (waiting for a background
-        # download thread), and holding the lock would block all model ops.
-        cleanup = self._pending_cleanups.get(normalized)
-        if cleanup is not None:
-            logger.info(
-                "Waiting for deferred cleanup of '%s' before retry",
-                normalized,
-            )
-            await cleanup
-
-        async with self._lock:
-            if normalized in self._loaded:
-                lm = self._loaded[normalized]
-                # Refresh expiry
-                ka = self._resolve_keep_alive(keep_alive)
-                if ka is not None:
-                    lm.expires_at = time.time() + ka
-                else:
-                    lm.expires_at = None
-                return lm
-
-            # Evict LRU if at capacity (skip models with active inference)
-            while len(self._loaded) >= settings.max_loaded_models:
-                evictable = {
-                    k: v for k, v in self._loaded.items() if v.active_refs == 0
-                }
-                if not evictable:
-                    raise RuntimeError(
-                        "All loaded models are in use, cannot evict to load a new model"
-                    )
-                oldest_name = min(evictable, key=lambda k: evictable[k].loaded_at)
-                logger.info("Evicting model %s", oldest_name)
-                del self._loaded[oldest_name]
-
-            # Flush Metal allocator cache so that buffers from evicted models
-            # don't inflate the mem_before measurement below.
-            gc.collect()
-            mx.clear_cache()
-
-            hf_path = self.registry.resolve(name)
-            if hf_path is None:
-                raise ValueError(
-                    f"Model '{name}' not found. "
-                    f"Add it to {settings.models_config} or use a HuggingFace path like 'mlx-community/Qwen2.5-3B-Instruct-4bit'"
-                )
-
-            # Auto-register direct HF paths so future requests find them
-            if "/" in name:
-                self.registry.add_mapping(name, hf_path)
-
-            logger.info("Loading model %s from %s", normalized, hf_path)
-            mem_before = _get_metal_memory_bytes()
-
-            # Initialize before try so the except handler can always
-            # clean up, whether _load_model or the post-load check fails.
-            model = tokenizer = None
-            lm = None
-            try:
-                coro = asyncio.to_thread(self._load_model, hf_path)
-                timeout = settings.model_load_timeout
-                if timeout is not None:
-                    load_task = asyncio.create_task(coro)
-                    try:
-                        model, tokenizer, is_vlm, caps = await asyncio.wait_for(
-                            asyncio.shield(load_task), timeout=timeout
-                        )
-                    except asyncio.TimeoutError:
-                        # The background thread continues running — Python
-                        # cannot interrupt native threads.  Schedule GPU
-                        # cleanup for when it finishes to prevent Metal
-                        # memory leaks from orphaned model weights.
-                        self._schedule_deferred_cleanup(load_task, normalized)
-                        # Re-raise as builtin TimeoutError (not
-                        # asyncio.TimeoutError) so the FastAPI exception
-                        # handler fires.  On Python <=3.10 these are
-                        # distinct types; on 3.11+ they are aliases but the
-                        # explicit re-raise adds a descriptive message.
-                        raise TimeoutError(
-                            f"Loading model '{normalized}' timed out after {timeout}s. "
-                            f"Increase OLMLX_MODEL_LOAD_TIMEOUT or unset it to disable."
-                        )
-                else:
-                    model, tokenizer, is_vlm, caps = await coro
-
-                # Check if the model fits safely in memory.  On Apple Silicon
-                # the GPU shares system RAM — if total Metal memory exceeds the
-                # configured fraction of system RAM, generation will almost
-                # certainly OOM and crash the process (Metal abort, not catchable
-                # in Python).  Reject early with a clear error instead.
-                #
-                # Note: this is a post-hoc check — the model is already loaded.
-                # If loading itself triggers an OOM the process will still crash.
-                # In practice, loading succeeds; it is the KV cache allocation
-                # during generation that causes the abort.
-                mem_after = _get_metal_memory_bytes()
-                total = _get_system_memory_bytes()
-                limit = int(total * settings.memory_limit_fraction)
-                if mem_after > limit:
-                    model_mb = max(0, (mem_after - mem_before)) // (1024 * 1024)
-                    total_mb = total // (1024 * 1024)
-                    limit_mb = limit // (1024 * 1024)
-                    logger.error(
-                        "Model %s uses %d MB, pushing Metal memory to %d MB "
-                        "which exceeds the limit of %d MB "
-                        "(%.0f%% of %d MB system RAM). Refusing to load.",
-                        normalized,
-                        model_mb,
-                        mem_after // (1024 * 1024),
-                        limit_mb,
-                        settings.memory_limit_fraction * 100,
-                        total_mb,
-                    )
-                    raise MemoryError(
-                        f"Model '{normalized}' requires ~{model_mb} MB but the memory limit "
-                        f"is {limit_mb} MB ({settings.memory_limit_fraction:.0%} of "
-                        f"{total_mb} MB system RAM). Use a smaller/more quantized model, "
-                        f"or increase OLMLX_MEMORY_LIMIT_FRACTION (current: "
-                        f"{settings.memory_limit_fraction})."
-                    )
-
-                # Memory check passed — register the model
-                ka = self._resolve_keep_alive(keep_alive)
-                expires = time.time() + ka if ka is not None else None
-
+        while True:
+            # If a previous load timed out and the background thread is still
+            # running, wait for its deferred cleanup to finish BEFORE acquiring
+            # the lock — the cleanup may take minutes (waiting for a background
+            # download thread), and holding the lock would block all model ops.
+            cleanup = self._pending_cleanups.get(normalized)
+            if cleanup is not None:
                 logger.info(
-                    "Model %s caps: tools=%s, thinking=%s, thinking_tags=%s",
+                    "Waiting for deferred cleanup of '%s' before retry",
                     normalized,
-                    caps.supports_tools,
-                    caps.supports_enable_thinking,
-                    caps.has_thinking_tags,
                 )
+                await cleanup
 
-                lm = LoadedModel(
-                    name=normalized,
-                    hf_path=hf_path,
-                    model=model,
-                    tokenizer=tokenizer,
-                    is_vlm=is_vlm,
-                    template_caps=caps,
-                    expires_at=expires,
-                )
-                self._loaded[normalized] = lm
-                return lm
-            except BaseException:
-                # Drop references and flush Metal allocator so the memory
-                # is actually reclaimed before we raise.  Also clean up
-                # lm if it was already constructed (exception between
-                # LoadedModel() and return), and pop from _loaded to
-                # prevent a zombie entry holding GPU memory.
-                if lm is not None:
-                    self._loaded.pop(normalized, None)
-                    del lm
-                # When _load_model fails, model/tokenizer are still None —
-                # only bother deleting if they hold actual GPU resources.
-                if model is not None:
-                    del model, tokenizer
+            async with self._lock:
+                # A cleanup may have been scheduled while we were waiting
+                # for the lock (another caller timed out).  Release the lock
+                # and loop back to await it outside.
+                if normalized in self._pending_cleanups:
+                    continue
+
+                if normalized in self._loaded:
+                    lm = self._loaded[normalized]
+                    # Refresh expiry
+                    ka = self._resolve_keep_alive(keep_alive)
+                    if ka is not None:
+                        lm.expires_at = time.time() + ka
+                    else:
+                        lm.expires_at = None
+                    return lm
+
+                # Evict LRU if at capacity (skip models with active inference)
+                while len(self._loaded) >= settings.max_loaded_models:
+                    evictable = {
+                        k: v for k, v in self._loaded.items() if v.active_refs == 0
+                    }
+                    if not evictable:
+                        raise RuntimeError(
+                            "All loaded models are in use, cannot evict to load a new model"
+                        )
+                    oldest_name = min(evictable, key=lambda k: evictable[k].loaded_at)
+                    logger.info("Evicting model %s", oldest_name)
+                    del self._loaded[oldest_name]
+
+                # Flush Metal allocator cache so that buffers from evicted models
+                # don't inflate the mem_before measurement below.
                 gc.collect()
                 mx.clear_cache()
-                raise
+
+                hf_path = self.registry.resolve(name)
+                if hf_path is None:
+                    raise ValueError(
+                        f"Model '{name}' not found. "
+                        f"Add it to {settings.models_config} or use a HuggingFace path like 'mlx-community/Qwen2.5-3B-Instruct-4bit'"
+                    )
+
+                # Auto-register direct HF paths so future requests find them
+                if "/" in name:
+                    self.registry.add_mapping(name, hf_path)
+
+                logger.info("Loading model %s from %s", normalized, hf_path)
+                mem_before = _get_metal_memory_bytes()
+
+                # Initialize before try so the except handler can always
+                # clean up, whether _load_model or the post-load check fails.
+                model = tokenizer = None
+                lm = None
+                try:
+                    coro = asyncio.to_thread(self._load_model, hf_path)
+                    timeout = settings.model_load_timeout
+                    if timeout is not None:
+                        load_task = asyncio.create_task(coro)
+                        try:
+                            model, tokenizer, is_vlm, caps = await asyncio.wait_for(
+                                asyncio.shield(load_task), timeout=timeout
+                            )
+                        except asyncio.TimeoutError:
+                            # The background thread continues running — Python
+                            # cannot interrupt native threads.  Schedule GPU
+                            # cleanup for when it finishes to prevent Metal
+                            # memory leaks from orphaned model weights.
+                            self._schedule_deferred_cleanup(load_task, normalized)
+                            # Re-raise as builtin TimeoutError (not
+                            # asyncio.TimeoutError) so the FastAPI exception
+                            # handler fires.  On Python <=3.10 these are
+                            # distinct types; on 3.11+ they are aliases but the
+                            # explicit re-raise adds a descriptive message.
+                            raise TimeoutError(
+                                f"Loading model '{normalized}' timed out after {timeout}s. "
+                                f"Increase OLMLX_MODEL_LOAD_TIMEOUT or unset it to disable."
+                            )
+                    else:
+                        model, tokenizer, is_vlm, caps = await coro
+
+                    # Check if the model fits safely in memory.  On Apple Silicon
+                    # the GPU shares system RAM — if total Metal memory exceeds the
+                    # configured fraction of system RAM, generation will almost
+                    # certainly OOM and crash the process (Metal abort, not catchable
+                    # in Python).  Reject early with a clear error instead.
+                    #
+                    # Note: this is a post-hoc check — the model is already loaded.
+                    # If loading itself triggers an OOM the process will still crash.
+                    # In practice, loading succeeds; it is the KV cache allocation
+                    # during generation that causes the abort.
+                    mem_after = _get_metal_memory_bytes()
+                    total = _get_system_memory_bytes()
+                    limit = int(total * settings.memory_limit_fraction)
+                    if mem_after > limit:
+                        model_mb = max(0, (mem_after - mem_before)) // (1024 * 1024)
+                        total_mb = total // (1024 * 1024)
+                        limit_mb = limit // (1024 * 1024)
+                        logger.error(
+                            "Model %s uses %d MB, pushing Metal memory to %d MB "
+                            "which exceeds the limit of %d MB "
+                            "(%.0f%% of %d MB system RAM). Refusing to load.",
+                            normalized,
+                            model_mb,
+                            mem_after // (1024 * 1024),
+                            limit_mb,
+                            settings.memory_limit_fraction * 100,
+                            total_mb,
+                        )
+                        raise MemoryError(
+                            f"Model '{normalized}' requires ~{model_mb} MB but the memory limit "
+                            f"is {limit_mb} MB ({settings.memory_limit_fraction:.0%} of "
+                            f"{total_mb} MB system RAM). Use a smaller/more quantized model, "
+                            f"or increase OLMLX_MEMORY_LIMIT_FRACTION (current: "
+                            f"{settings.memory_limit_fraction})."
+                        )
+
+                    # Memory check passed — register the model
+                    ka = self._resolve_keep_alive(keep_alive)
+                    expires = time.time() + ka if ka is not None else None
+
+                    logger.info(
+                        "Model %s caps: tools=%s, thinking=%s, thinking_tags=%s",
+                        normalized,
+                        caps.supports_tools,
+                        caps.supports_enable_thinking,
+                        caps.has_thinking_tags,
+                    )
+
+                    lm = LoadedModel(
+                        name=normalized,
+                        hf_path=hf_path,
+                        model=model,
+                        tokenizer=tokenizer,
+                        is_vlm=is_vlm,
+                        template_caps=caps,
+                        expires_at=expires,
+                    )
+                    self._loaded[normalized] = lm
+                    return lm
+                except BaseException:
+                    # Drop references and flush Metal allocator so the memory
+                    # is actually reclaimed before we raise.  Also clean up
+                    # lm if it was already constructed (exception between
+                    # LoadedModel() and return), and pop from _loaded to
+                    # prevent a zombie entry holding GPU memory.
+                    if lm is not None:
+                        self._loaded.pop(normalized, None)
+                        del lm
+                    # When _load_model fails, model/tokenizer are still None —
+                    # only bother deleting if they hold actual GPU resources.
+                    if model is not None:
+                        del model, tokenizer
+                    # Skip immediate cache flush when a deferred cleanup is
+                    # pending — the background thread is still running and
+                    # mx.clear_cache() is not safe to call concurrently with
+                    # active Metal allocations.  The deferred cleanup handles
+                    # it after the thread finishes.
+                    if normalized not in self._pending_cleanups:
+                        gc.collect()
+                        mx.clear_cache()
+                    raise
 
     def _schedule_deferred_cleanup(
         self, load_task: asyncio.Task, model_name: str

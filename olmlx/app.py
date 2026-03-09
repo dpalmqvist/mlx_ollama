@@ -131,7 +131,7 @@ def create_app() -> FastAPI:
             request.url.path,
             504,
             msg,
-            "overloaded_error",
+            "api_error",
             "server_error",
             "timeout",
         )

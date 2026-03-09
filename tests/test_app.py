@@ -267,7 +267,7 @@ class TestErrorHandlers:
         assert resp.status_code == 504
         data = resp.json()
         assert data["type"] == "error"
-        assert data["error"]["type"] == "overloaded_error"
+        assert data["error"]["type"] == "api_error"
 
     @pytest.mark.asyncio
     async def test_timeout_error_handler_openai(self, app_client):
