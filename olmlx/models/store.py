@@ -126,6 +126,8 @@ class ModelStore:
 
         yield {"status": f"downloading {hf_path}"}
 
+        import shutil
+
         marker = local_dir / ".downloading"
         marker.touch()
         try:
@@ -134,16 +136,17 @@ class ModelStore:
                 repo_id=hf_path,
                 local_dir=str(local_dir),
             )
-            marker.unlink(missing_ok=True)
-        except BaseException:
-            import shutil
-
+        except Exception:
             try:
                 shutil.rmtree(local_dir)
             except OSError:
-                logger.warning("Failed to clean up partial download at %s", local_dir, exc_info=True)
+                logger.warning(
+                    "Failed to clean up partial download at %s",
+                    local_dir,
+                    exc_info=True,
+                )
             raise
-            raise
+        marker.unlink(missing_ok=True)
 
         yield {"status": "verifying"}
 

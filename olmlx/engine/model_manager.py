@@ -380,10 +380,17 @@ class ModelManager:
                 marker.touch()
                 try:
                     snapshot_download(repo_id=hf_path, local_dir=str(local_dir))
-                    marker.unlink(missing_ok=True)
-                except BaseException:
-                    shutil.rmtree(local_dir, ignore_errors=True)
+                except Exception:
+                    try:
+                        shutil.rmtree(local_dir)
+                    except OSError:
+                        logger.warning(
+                            "Failed to clean up partial download at %s",
+                            local_dir,
+                            exc_info=True,
+                        )
                     raise
+                marker.unlink(missing_ok=True)
             load_path = str(local_dir)
 
         kind = self._detect_model_kind(hf_path)
