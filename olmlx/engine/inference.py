@@ -323,12 +323,24 @@ async def _stream_completion(
         # We MUST wait for the Metal thread to finish before releasing
         # _inference_lock, otherwise the next inference will hit concurrent
         # Metal command buffer access.
+        # Worst case: drain_and_join runs up to 60s under shield, then if
+        # CancelledError fires, the fallback join adds up to 10s — total
+        # 70s holding _inference_lock.
         try:
             await asyncio.shield(stream.drain_and_join())
         except (asyncio.CancelledError, Exception):
-            # Shield was interrupted — do synchronous thread join as fallback
+            # Shield was interrupted — async fallback join (avoids blocking
+            # the event loop, unlike a synchronous thread.join).
             if stream._thread is not None and stream._thread.is_alive():
-                stream._thread.join(timeout=30)
+                try:
+                    await asyncio.to_thread(stream._thread.join, 10)
+                except (asyncio.CancelledError, Exception):
+                    pass
+            if stream._thread is not None and stream._thread.is_alive():
+                logger.error(
+                    "Fallback thread join timed out after 10s — "
+                    "thread still alive, potential GPU resource leak"
+                )
         finally:
             # Sync default stream after drain to ensure cleanup is complete
             # before releasing the lock.
