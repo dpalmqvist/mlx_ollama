@@ -169,6 +169,24 @@ class TestModelStore:
         assert mock_store.delete("test") is True
         assert not model_dir.exists()
 
+    def test_delete_cleans_up_pull_lock(self, mock_store, tmp_path):
+        """Delete should remove the stale pull lock for the model."""
+        import asyncio
+
+        # Register mapping and create model dir
+        mock_store.registry._mappings["test:latest"] = "test/model"
+        local_dir = mock_store.local_path("test/model")
+        local_dir.mkdir(parents=True)
+        manifest = ModelManifest(name="test:latest", hf_path="test/model")
+        manifest.save(local_dir / "manifest.json")
+
+        # Pre-populate a pull lock
+        mock_store._pull_locks["test/model"] = asyncio.Lock()
+        assert "test/model" in mock_store._pull_locks
+
+        mock_store.delete("test")
+        assert "test/model" not in mock_store._pull_locks
+
     def test_has_blob_false(self, mock_store):
         assert mock_store.has_blob("sha256:abc") is False
 

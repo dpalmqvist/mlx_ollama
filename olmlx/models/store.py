@@ -190,6 +190,10 @@ class ModelStore:
             yield {"status": "pulling manifest"}
             yield {"status": f"downloading {hf_path}"}
 
+            # ensure_downloaded acquires its own threading.Lock for the same
+            # hf_path — that lock serializes the sync download path used by
+            # ModelManager._load_model().  The asyncio lock here serializes the
+            # async pull path (is_downloaded check → download → manifest write).
             local_dir = await asyncio.to_thread(self.ensure_downloaded, hf_path)
 
             yield {"status": "verifying"}
@@ -244,6 +248,10 @@ class ModelStore:
         model_dir = self._resolve_model_dir(name)
         if model_dir is not None:
             shutil.rmtree(model_dir)
+            # Clean up stale pull lock
+            hf_path = self.registry.resolve(name)
+            if hf_path is not None:
+                self._pull_locks.pop(hf_path, None)
             return True
         return False
 
