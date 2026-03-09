@@ -248,10 +248,6 @@ class ModelStore:
         model_dir = self._resolve_model_dir(name)
         if model_dir is not None:
             shutil.rmtree(model_dir)
-            # Clean up stale pull lock
-            hf_path = self.registry.resolve(name)
-            if hf_path is not None:
-                self._pull_locks.pop(hf_path, None)
             return True
         return False
 
