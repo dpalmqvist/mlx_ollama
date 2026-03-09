@@ -105,6 +105,7 @@ class ModelManager:
         self._lock = asyncio.Lock()
         self._expiry_task: asyncio.Task | None = None
         self._pending_cleanups: dict[str, asyncio.Task] = {}
+        self._pending_load_tasks: dict[str, asyncio.Task] = {}
 
     def start_expiry_checker(self):
         self._expiry_task = asyncio.create_task(self._check_expiry_loop())
@@ -123,6 +124,16 @@ class ModelManager:
                 *self._pending_cleanups.values(), return_exceptions=True
             )
         self._pending_cleanups.clear()
+        # Drain orphaned load tasks so their exceptions are retrieved.
+        # The underlying threads can't be interrupted (Python limitation)
+        # but cancelling the asyncio tasks prevents warnings at shutdown.
+        for task in self._pending_load_tasks.values():
+            task.cancel()
+        if self._pending_load_tasks:
+            await asyncio.gather(
+                *self._pending_load_tasks.values(), return_exceptions=True
+            )
+        self._pending_load_tasks.clear()
         self._loaded.clear()
 
     def _resolve_keep_alive(self, keep_alive: str | None) -> float | None:
@@ -148,7 +159,14 @@ class ModelManager:
                     "Waiting for deferred cleanup of '%s' before retry",
                     normalized,
                 )
-                await cleanup
+                try:
+                    await cleanup
+                except BaseException:
+                    logger.warning(
+                        "Deferred cleanup for '%s' failed; proceeding with retry",
+                        normalized,
+                        exc_info=True,
+                    )
 
             async with self._lock:
                 # A cleanup may have been scheduled while we were waiting
@@ -333,16 +351,24 @@ class ModelManager:
             except BaseException:
                 pass
             finally:
-                # Always clear the entry so a retry isn't bricked if
-                # gc.collect() or mx.clear_cache() raises below.
-                self._pending_cleanups.pop(model_name, None)
-            gc.collect()
-            mx.clear_cache()
+                # Flush Metal allocator before removing the entry.
+                # gc/clear must complete before pop — otherwise a
+                # concurrent retry could start its own pre-load gc/clear
+                # while ours is still running, which is unsafe for the
+                # Metal allocator.  If gc/clear itself fails, still pop
+                # so the model slot isn't permanently bricked.
+                try:
+                    gc.collect()
+                    mx.clear_cache()
+                finally:
+                    self._pending_cleanups.pop(model_name, None)
+                    self._pending_load_tasks.pop(model_name, None)
             logger.info(
                 "Deferred GPU cleanup after timeout of '%s' completed", model_name
             )
 
         self._pending_cleanups[model_name] = asyncio.create_task(_cleanup())
+        self._pending_load_tasks[model_name] = load_task
 
     def get_loaded(self) -> list[LoadedModel]:
         return list(self._loaded.values())
