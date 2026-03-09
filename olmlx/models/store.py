@@ -97,6 +97,36 @@ class ModelStore:
                 return d
         return None
 
+    def ensure_downloaded(self, hf_path: str) -> Path:
+        """Download a model if not already present. Returns the local directory.
+
+        Uses a .downloading marker to track incomplete downloads.
+        Partial directories are kept on failure so snapshot_download can resume.
+        """
+        local_dir = self.local_path(hf_path)
+        if self.is_downloaded(hf_path):
+            return local_dir
+
+        from huggingface_hub import snapshot_download
+
+        local_dir.mkdir(parents=True, exist_ok=True)
+        marker = local_dir / ".downloading"
+        # Let touch() propagate on failure — without the marker we can't
+        # safely track download state, so failing fast is correct.
+        marker.touch()
+        # Don't rmtree on failure: partial dir lets snapshot_download
+        # resume on retry.  The .downloading marker keeps is_downloaded()
+        # safe either way.
+        snapshot_download(repo_id=hf_path, local_dir=str(local_dir))
+        try:
+            marker.unlink(missing_ok=True)
+        except OSError:
+            logger.warning(
+                "Failed to remove .downloading marker %s; model may appear not downloaded",
+                marker,
+            )
+        return local_dir
+
     async def pull(self, name: str) -> AsyncGenerator[dict, None]:
         """Pull a model from HuggingFace, yielding progress dicts."""
         hf_path = self.registry.resolve(name)
@@ -105,8 +135,6 @@ class ModelStore:
                 hf_path = name
             else:
                 raise ValueError(f"Model '{name}' not found in config")
-
-        local_dir = self.local_path(hf_path)
 
         # Skip download if already present
         if self.is_downloaded(hf_path):
@@ -118,32 +146,10 @@ class ModelStore:
                 self.registry.add_mapping(name, hf_path)
             return
 
-        local_dir.mkdir(parents=True, exist_ok=True)
-
         yield {"status": "pulling manifest"}
-
-        from huggingface_hub import snapshot_download
-
         yield {"status": f"downloading {hf_path}"}
 
-        marker = local_dir / ".downloading"
-        marker.touch()
-        # Don't rmtree on failure: on CancelledError the download thread
-        # may still be running (asyncio.to_thread doesn't cancel threads),
-        # and on Exception the partial dir lets snapshot_download resume
-        # on retry.  The .downloading marker keeps is_downloaded() safe.
-        await asyncio.to_thread(
-            snapshot_download,
-            repo_id=hf_path,
-            local_dir=str(local_dir),
-        )
-        try:
-            marker.unlink(missing_ok=True)
-        except OSError:
-            logger.warning(
-                "Failed to remove .downloading marker %s; model may appear not downloaded",
-                marker,
-            )
+        local_dir = await asyncio.to_thread(self.ensure_downloaded, hf_path)
 
         yield {"status": "verifying"}
 

@@ -313,3 +313,66 @@ class TestModelStore:
         with pytest.raises(ValueError, match="not found"):
             async for _ in mock_store.pull("totally_unknown"):
                 pass
+
+
+class TestEnsureDownloaded:
+    def test_skips_if_already_downloaded(self, mock_store):
+        """Returns local path without downloading if model is already present."""
+        local_dir = mock_store.local_path("org/model")
+        local_dir.mkdir(parents=True)
+        (local_dir / "config.json").write_text("{}")
+
+        from unittest.mock import patch
+
+        with patch("huggingface_hub.snapshot_download") as mock_dl:
+            result = mock_store.ensure_downloaded("org/model")
+
+        mock_dl.assert_not_called()
+        assert result == local_dir
+
+    def test_downloads_and_removes_marker(self, mock_store):
+        """Downloads model and removes .downloading marker on success."""
+        from unittest.mock import patch
+
+        with patch("huggingface_hub.snapshot_download"):
+            result = mock_store.ensure_downloaded("Qwen/Qwen3-8B-MLX")
+
+        local_dir = mock_store.local_path("Qwen/Qwen3-8B-MLX")
+        assert result == local_dir
+        assert local_dir.exists()
+        assert not (local_dir / ".downloading").exists()
+
+    def test_keeps_partial_dir_on_failure(self, mock_store):
+        """Partial directory is kept for resume on download failure."""
+        from unittest.mock import patch
+
+        with patch(
+            "huggingface_hub.snapshot_download",
+            side_effect=Exception("network error"),
+        ):
+            with pytest.raises(Exception, match="network error"):
+                mock_store.ensure_downloaded("Qwen/Qwen3-8B-MLX")
+
+        local_dir = mock_store.local_path("Qwen/Qwen3-8B-MLX")
+        assert local_dir.exists()
+        assert (local_dir / ".downloading").exists()
+        assert not mock_store.is_downloaded("Qwen/Qwen3-8B-MLX")
+
+    def test_succeeds_when_marker_unlink_raises_oserror(self, mock_store):
+        """If marker.unlink() raises OSError, ensure_downloaded still succeeds."""
+        from unittest.mock import patch
+
+        original_unlink = Path.unlink
+
+        def unlink_that_fails_on_downloading(self_path, **kwargs):
+            if self_path.name == ".downloading":
+                raise OSError("permission denied")
+            return original_unlink(self_path, **kwargs)
+
+        with (
+            patch("huggingface_hub.snapshot_download"),
+            patch.object(Path, "unlink", unlink_that_fails_on_downloading),
+        ):
+            result = mock_store.ensure_downloaded("Qwen/Qwen3-8B-MLX")
+
+        assert result == mock_store.local_path("Qwen/Qwen3-8B-MLX")

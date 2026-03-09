@@ -382,26 +382,7 @@ class ModelManager:
         # Ensure model is downloaded to the store
         load_path: str = hf_path
         if self.store is not None:
-            local_dir = self.store.local_path(hf_path)
-            if not self.store.is_downloaded(hf_path):
-                from huggingface_hub import snapshot_download
-
-                logger.info("Downloading %s to %s", hf_path, local_dir)
-                local_dir.mkdir(parents=True, exist_ok=True)
-                marker = local_dir / ".downloading"
-                marker.touch()
-                # Don't rmtree on failure: partial dir lets
-                # snapshot_download resume on retry.  The .downloading
-                # marker keeps is_downloaded() safe.
-                snapshot_download(repo_id=hf_path, local_dir=str(local_dir))
-                try:
-                    marker.unlink(missing_ok=True)
-                except OSError:
-                    logger.warning(
-                        "Failed to remove .downloading marker %s; "
-                        "model may appear not downloaded",
-                        marker,
-                    )
+            local_dir = self.store.ensure_downloaded(hf_path)
             load_path = str(local_dir)
 
         kind = self._detect_model_kind(hf_path)
