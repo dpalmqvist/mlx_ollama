@@ -352,6 +352,9 @@ async def _stream_completion(
                 len(prompt_tokens),
             )
 
+            # Set before mutation so finally guard can clean up on error
+            full_prompt_tokens = prompt_tokens
+
             if prefix_len > 0:
                 # Ensure at least 1 token for stream_generate
                 suffix_start = min(prefix_len, len(prompt_tokens) - 1)
@@ -385,8 +388,6 @@ async def _stream_completion(
                     len(prompt_tokens),
                 )
                 prompt = prompt_tokens
-
-            full_prompt_tokens = prompt_tokens
 
             # Yield cache stats as first chunk so routers can use them
             yield {
@@ -612,14 +613,11 @@ async def generate_chat(
     prompt_tokens = None
     if use_prompt_cache:
         prompt_tokens = _tokenize_for_cache(lm.text_tokenizer, prompt)
+        cached_state = lm.prompt_cache_state
         logger.debug(
             "Prompt cache enabled: %d prompt tokens, existing cache=%s",
             len(prompt_tokens),
-            (
-                f"{len(lm.prompt_cache_state.tokens)} tokens"
-                if lm.prompt_cache_state
-                else "none"
-            ),
+            f"{len(cached_state.tokens)} tokens" if cached_state else "none",
         )
     else:
         logger.debug(
