@@ -462,6 +462,135 @@ class TestLoadModel:
         assert model is mock_model
 
 
+class TestModelLoadTimeout:
+    """Test configurable timeout for model loading."""
+
+    GB = 1024 * 1024 * 1024
+
+    @pytest.mark.asyncio
+    async def test_timeout_fires_on_slow_load(self, registry, mock_store, monkeypatch):
+        """When _load_model takes longer than the timeout, raise TimeoutError."""
+        monkeypatch.setattr(
+            "olmlx.engine.model_manager.settings.model_load_timeout", 0.1
+        )
+        manager = ModelManager(registry, mock_store)
+
+        def slow_load(hf_path):
+            time.sleep(2)
+            return (MagicMock(), MagicMock(), False, TemplateCaps())
+
+        with (
+            patch.object(manager, "_load_model", side_effect=slow_load),
+            patch(
+                "olmlx.engine.model_manager._get_metal_memory_bytes",
+                return_value=1 * self.GB,
+            ),
+            patch("olmlx.engine.model_manager.gc.collect"),
+            patch("olmlx.engine.model_manager.mx.clear_cache"),
+        ):
+            with pytest.raises(TimeoutError, match="OLMLX_MODEL_LOAD_TIMEOUT"):
+                await manager.ensure_loaded("qwen3")
+
+    @pytest.mark.asyncio
+    async def test_no_timeout_by_default(self, registry, mock_store, monkeypatch):
+        """With default None timeout, fast loads succeed normally."""
+        monkeypatch.setattr(
+            "olmlx.engine.model_manager.settings.model_load_timeout", None
+        )
+        manager = ModelManager(registry, mock_store)
+
+        mock_model = MagicMock()
+        mock_tokenizer = MagicMock()
+        mock_tokenizer.chat_template = None
+
+        total_ram = 64 * self.GB
+
+        with (
+            patch.object(
+                manager,
+                "_load_model",
+                return_value=(mock_model, mock_tokenizer, False, TemplateCaps()),
+            ),
+            patch(
+                "olmlx.engine.model_manager._get_metal_memory_bytes",
+                side_effect=[1 * self.GB, int(total_ram * 0.50)],
+            ),
+            patch(
+                "olmlx.engine.model_manager._get_system_memory_bytes",
+                return_value=total_ram,
+            ),
+            patch("olmlx.engine.model_manager.gc.collect"),
+            patch("olmlx.engine.model_manager.mx.clear_cache"),
+        ):
+            lm = await manager.ensure_loaded("qwen3")
+
+        assert lm.name == "qwen3:latest"
+
+    @pytest.mark.asyncio
+    async def test_timeout_allows_fast_loads(self, registry, mock_store, monkeypatch):
+        """With a generous timeout, fast loads succeed."""
+        monkeypatch.setattr(
+            "olmlx.engine.model_manager.settings.model_load_timeout", 10.0
+        )
+        manager = ModelManager(registry, mock_store)
+
+        mock_model = MagicMock()
+        mock_tokenizer = MagicMock()
+        mock_tokenizer.chat_template = None
+
+        total_ram = 64 * self.GB
+
+        with (
+            patch.object(
+                manager,
+                "_load_model",
+                return_value=(mock_model, mock_tokenizer, False, TemplateCaps()),
+            ),
+            patch(
+                "olmlx.engine.model_manager._get_metal_memory_bytes",
+                side_effect=[1 * self.GB, int(total_ram * 0.50)],
+            ),
+            patch(
+                "olmlx.engine.model_manager._get_system_memory_bytes",
+                return_value=total_ram,
+            ),
+            patch("olmlx.engine.model_manager.gc.collect"),
+            patch("olmlx.engine.model_manager.mx.clear_cache"),
+        ):
+            lm = await manager.ensure_loaded("qwen3")
+
+        assert lm.name == "qwen3:latest"
+
+    @pytest.mark.asyncio
+    async def test_cleanup_on_timeout(self, registry, mock_store, monkeypatch):
+        """On timeout, gc.collect and mx.clear_cache are called, model not in _loaded."""
+        monkeypatch.setattr(
+            "olmlx.engine.model_manager.settings.model_load_timeout", 0.1
+        )
+        manager = ModelManager(registry, mock_store)
+
+        def slow_load(hf_path):
+            time.sleep(2)
+            return (MagicMock(), MagicMock(), False, TemplateCaps())
+
+        with (
+            patch.object(manager, "_load_model", side_effect=slow_load),
+            patch(
+                "olmlx.engine.model_manager._get_metal_memory_bytes",
+                return_value=1 * self.GB,
+            ),
+            patch("olmlx.engine.model_manager.gc.collect") as mock_gc,
+            patch("olmlx.engine.model_manager.mx.clear_cache") as mock_clear,
+        ):
+            with pytest.raises(TimeoutError):
+                await manager.ensure_loaded("qwen3")
+
+        # Pre-load flush + post-timeout cleanup = 2 calls each
+        assert mock_gc.call_count == 2
+        assert mock_clear.call_count == 2
+        assert "qwen3:latest" not in manager._loaded
+
+
 class TestTryLmThenVlmFallback:
     """Test that _try_lm_then_vlm only falls back on expected exceptions."""
 

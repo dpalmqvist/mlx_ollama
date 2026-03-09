@@ -172,9 +172,20 @@ class ModelManager:
             model = tokenizer = None
             lm = None
             try:
-                model, tokenizer, is_vlm, caps = await asyncio.to_thread(
-                    self._load_model, hf_path
-                )
+                coro = asyncio.to_thread(self._load_model, hf_path)
+                timeout = settings.model_load_timeout
+                try:
+                    if timeout is not None:
+                        model, tokenizer, is_vlm, caps = await asyncio.wait_for(
+                            coro, timeout=timeout
+                        )
+                    else:
+                        model, tokenizer, is_vlm, caps = await coro
+                except asyncio.TimeoutError:
+                    raise TimeoutError(
+                        f"Loading model '{normalized}' timed out after {timeout}s. "
+                        f"Increase OLMLX_MODEL_LOAD_TIMEOUT or unset it to disable."
+                    )
 
                 # Check if the model fits safely in memory.  On Apple Silicon
                 # the GPU shares system RAM — if total Metal memory exceeds the

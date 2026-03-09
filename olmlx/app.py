@@ -123,6 +123,19 @@ def create_app() -> FastAPI:
             "model_too_large",
         )
 
+    @app.exception_handler(TimeoutError)
+    async def timeout_error_handler(request: Request, exc: TimeoutError):
+        msg = str(exc)
+        logger.error("TimeoutError on %s: %s", request.url.path, msg)
+        return _make_error_response(
+            request.url.path,
+            504,
+            msg,
+            "overloaded_error",
+            "server_error",
+            "timeout",
+        )
+
     @app.exception_handler(RuntimeError)
     async def runtime_error_handler(request: Request, exc: RuntimeError):
         msg = str(exc)
