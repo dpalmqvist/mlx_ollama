@@ -555,9 +555,12 @@ async def anthropic_messages(req: AnthropicMessagesRequest, request: Request):
 
                 # Consume cache_info if present (forwarded by helpers),
                 # then emit message_start with accurate cache stats.
+                # Keepalive pings may arrive before cache_info (during lock
+                # wait), so skip them here and replay after message_start.
                 cache_read = 0
                 cache_creation = 0
                 first_event = None
+                pending_pings: list[str] = []
                 async for event in path:
                     if isinstance(event, dict) and event.get("cache_info"):
                         cache_read = event.get("cache_read_tokens", 0)
@@ -567,6 +570,8 @@ async def anthropic_messages(req: AnthropicMessagesRequest, request: Request):
                             cache_read,
                             cache_creation,
                         )
+                    elif isinstance(event, str) and event.startswith("event: ping"):
+                        pending_pings.append(event)
                     else:
                         first_event = event
                         break
@@ -592,6 +597,10 @@ async def anthropic_messages(req: AnthropicMessagesRequest, request: Request):
                         },
                     },
                 )
+
+                # Replay any pings that arrived before message_start
+                for ping in pending_pings:
+                    yield ping
 
                 meta = {}
                 if first_event is not None:

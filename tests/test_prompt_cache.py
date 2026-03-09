@@ -667,6 +667,55 @@ class TestCacheExactMatchTrimAlignment:
         assert cache_info["cache_creation_tokens"] == 1
 
 
+class TestLockReleasedOnCacheInfoDisconnect:
+    @pytest.mark.asyncio
+    async def test_lock_released_when_generator_closed_at_cache_info(
+        self, mock_manager
+    ):
+        """If client disconnects right after cache_info yield, the lock must still be released."""
+        from olmlx.engine.inference import _inference_lock, generate_chat
+
+        lm = mock_manager._loaded["qwen3:latest"]
+        lm.tokenizer.apply_chat_template = MagicMock(return_value="prompt")
+        lm.tokenizer.bos_token = None
+        lm.tokenizer.encode = MagicMock(return_value=[10, 20, 30])
+
+        mock_make_cache = MagicMock(return_value=[MagicMock()])
+
+        mock_mx = MagicMock()
+        with (
+            patch("olmlx.engine.inference.mx", mock_mx),
+            patch(
+                "olmlx.engine.inference.async_mlx_stream",
+                return_value=_make_mock_stream(
+                    _make_stream_tokens("hi", prompt_tokens=3)
+                ),
+            ),
+            patch(
+                "olmlx.engine.inference.make_prompt_cache",
+                mock_make_cache,
+            ),
+            patch("olmlx.engine.inference.settings") as mock_settings,
+        ):
+            mock_settings.prompt_cache = True
+            mock_settings.default_keep_alive = "5m"
+            gen = await generate_chat(
+                mock_manager,
+                "qwen3",
+                [{"role": "user", "content": "hi"}],
+                stream=True,
+            )
+            # Read only the cache_info chunk, then close (simulates client disconnect)
+            first = await gen.__anext__()
+            assert first.get("cache_info") is True
+            await gen.aclose()
+
+        # Lock must be released — if not, this acquire would deadlock
+        acquired = await asyncio.wait_for(_inference_lock.acquire(), timeout=1.0)
+        assert acquired
+        _inference_lock.release()
+
+
 class TestConfigPromptCacheSetting:
     def test_default_enabled(self, monkeypatch):
         monkeypatch.delenv("OLMLX_PROMPT_CACHE", raising=False)
