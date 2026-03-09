@@ -222,19 +222,17 @@ async def _stream_buffered_with_tools(result, tool_names):
     full_text = ""
     output_tokens = 0
 
-    cache_read_tokens = 0
-    cache_creation_tokens = 0
-
     async for chunk in _with_keepalive_pings(result, interval=KEEPALIVE_PING_INTERVAL):
         if chunk is _PING_SENTINEL:
             yield _sse("ping", {"type": "ping"})
+            continue
+        if isinstance(chunk, dict) and chunk.get("cache_info"):
+            yield chunk  # Forward to stream_sse for message_start
             continue
         if chunk.get("done"):
             stats = chunk.get("stats")
             if stats:
                 output_tokens = stats.eval_count
-            cache_read_tokens = chunk.get("cache_read_tokens", 0)
-            cache_creation_tokens = chunk.get("cache_creation_tokens", 0)
             break
         full_text += chunk.get("text", "")
 
@@ -308,8 +306,6 @@ async def _stream_buffered_with_tools(result, tool_names):
     yield {
         "stop_reason": "tool_use" if tool_uses else "end_turn",
         "output_tokens": output_tokens,
-        "cache_read_tokens": cache_read_tokens,
-        "cache_creation_tokens": cache_creation_tokens,
     }
 
 
@@ -317,8 +313,6 @@ async def _stream_thinking_state_machine(result):
     """Stream incrementally with thinking state machine. Yields a final dict with metadata."""
     block_idx = 0
     output_tokens = 0
-    cache_read_tokens = 0
-    cache_creation_tokens = 0
     buffer = ""
     state = "init"  # "init", "thinking", "text"
     text_block_started = False
@@ -327,12 +321,13 @@ async def _stream_thinking_state_machine(result):
         if chunk is _PING_SENTINEL:
             yield _sse("ping", {"type": "ping"})
             continue
+        if isinstance(chunk, dict) and chunk.get("cache_info"):
+            yield chunk  # Forward to stream_sse for message_start
+            continue
         if chunk.get("done"):
             stats = chunk.get("stats")
             if stats:
                 output_tokens = stats.eval_count
-            cache_read_tokens = chunk.get("cache_read_tokens", 0)
-            cache_creation_tokens = chunk.get("cache_creation_tokens", 0)
             break
 
         token_text = chunk.get("text", "")
@@ -487,8 +482,6 @@ async def _stream_thinking_state_machine(result):
     yield {
         "stop_reason": "end_turn",
         "output_tokens": output_tokens,
-        "cache_read_tokens": cache_read_tokens,
-        "cache_creation_tokens": cache_creation_tokens,
     }
 
 
@@ -554,6 +547,25 @@ async def anthropic_messages(req: AnthropicMessagesRequest, request: Request):
 
         async def stream_sse():
             try:
+                path = (
+                    _stream_buffered_with_tools(result, tool_names)
+                    if has_tools
+                    else _stream_thinking_state_machine(result)
+                )
+
+                # Consume cache_info if present (forwarded by helpers),
+                # then emit message_start with accurate cache stats.
+                cache_read = 0
+                cache_creation = 0
+                first_event = None
+                async for event in path:
+                    if isinstance(event, dict) and event.get("cache_info"):
+                        cache_read = event.get("cache_read_tokens", 0)
+                        cache_creation = event.get("cache_creation_tokens", 0)
+                    else:
+                        first_event = event
+                        break
+
                 yield _sse(
                     "message_start",
                     {
@@ -569,20 +581,20 @@ async def anthropic_messages(req: AnthropicMessagesRequest, request: Request):
                             "usage": {
                                 "input_tokens": 0,
                                 "output_tokens": 0,
-                                "cache_creation_input_tokens": 0,
-                                "cache_read_input_tokens": 0,
+                                "cache_creation_input_tokens": cache_creation,
+                                "cache_read_input_tokens": cache_read,
                             },
                         },
                     },
                 )
 
-                path = (
-                    _stream_buffered_with_tools(result, tool_names)
-                    if has_tools
-                    else _stream_thinking_state_machine(result)
-                )
-
                 meta = {}
+                if first_event is not None:
+                    if isinstance(first_event, dict):
+                        meta = first_event
+                    else:
+                        yield first_event
+
                 async for event in path:
                     if isinstance(event, dict):
                         meta = event
@@ -599,10 +611,6 @@ async def anthropic_messages(req: AnthropicMessagesRequest, request: Request):
                         },
                         "usage": {
                             "output_tokens": meta.get("output_tokens", 0),
-                            "cache_read_input_tokens": meta.get("cache_read_tokens", 0),
-                            "cache_creation_input_tokens": meta.get(
-                                "cache_creation_tokens", 0
-                            ),
                         },
                     },
                 )

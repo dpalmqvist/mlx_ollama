@@ -525,10 +525,10 @@ class TestCacheTokenCountLogging:
         )
 
 
-class TestCacheStatsInDoneChunk:
+class TestCacheStatsInCacheInfoChunk:
     @pytest.mark.asyncio
-    async def test_done_chunk_includes_cache_stats(self, mock_manager):
-        """The done chunk should include cache_read_tokens and cache_creation_tokens."""
+    async def test_cache_info_chunk_emitted_first(self, mock_manager):
+        """A cache_info chunk with cache stats is yielded before streaming tokens."""
         from olmlx.engine.inference import generate_chat
         from olmlx.engine.model_manager import CachedPromptState
 
@@ -575,10 +575,16 @@ class TestCacheStatsInDoneChunk:
             async for chunk in gen:
                 chunks.append(chunk)
 
+        # First chunk should be cache_info
+        cache_info = chunks[0]
+        assert cache_info.get("cache_info") is True
+        assert cache_info["cache_read_tokens"] == 5
+        assert cache_info["cache_creation_tokens"] == 3
+
+        # Done chunk should not have cache stats
         done_chunk = chunks[-1]
         assert done_chunk["done"] is True
-        assert done_chunk["cache_read_tokens"] == 5
-        assert done_chunk["cache_creation_tokens"] == 3
+        assert "cache_read_tokens" not in done_chunk
 
 
 class TestConfigPromptCacheSetting:

@@ -1008,3 +1008,22 @@ class TestCountTokens:
         assert resp.status_code == 200
         assert resp.json()["input_tokens"] == 7
         inner_tokenizer.apply_chat_template.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_batch_encoding_return_type(self, app_client, mock_loaded_model):
+        """apply_chat_template may return BatchEncoding (UserDict subclass)."""
+        from collections import UserDict
+
+        # BatchEncoding extends UserDict, not dict — simulate it
+        batch_encoding = UserDict({"input_ids": [1, 2, 3, 4, 5, 6, 7, 8]})
+        mock_loaded_model.tokenizer.apply_chat_template.return_value = batch_encoding
+        resp = await app_client.post(
+            "/v1/messages/count_tokens",
+            json={
+                "model": "qwen3",
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 100,
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.json()["input_tokens"] == 8

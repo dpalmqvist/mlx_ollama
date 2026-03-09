@@ -3,6 +3,7 @@ import contextlib
 import json
 import logging
 import time
+import collections.abc
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -248,8 +249,9 @@ def count_chat_tokens(
     """
     result = _apply_chat_template(tokenizer, messages, tools, caps, tokenize=True)
 
-    # Handle varied return types from apply_chat_template
-    if isinstance(result, dict):
+    # Handle varied return types from apply_chat_template.
+    # BatchEncoding (transformers) extends UserDict, not dict, so use Mapping.
+    if isinstance(result, collections.abc.Mapping):
         tokens = result.get("input_ids")
         if tokens is None:
             raise TypeError(
@@ -303,15 +305,71 @@ async def _stream_completion(
     stats: TimingStats,
     images: list[str] | None = None,
     *,
-    full_prompt_tokens: list[int] | None = None,
-    cache_read_tokens: int = 0,
-    cache_creation_tokens: int = 0,
+    use_prompt_cache: bool = False,
+    prompt_tokens: list[int] | None = None,
 ) -> AsyncGenerator[dict, None]:
     # Use explicit acquire/release instead of `async with` to prevent
     # CancelledError from releasing the lock before cleanup completes.
     await _inference_lock.acquire()
     # Sync default stream before starting — same purpose as _inference_locked entry.
     _safe_sync()
+
+    # Cache setup — must happen after lock to prevent concurrent cache corruption
+    cache_read_tokens = 0
+    cache_creation_tokens = 0
+    full_prompt_tokens: list[int] | None = None
+
+    if use_prompt_cache and prompt_tokens is not None and make_prompt_cache is not None:
+        cached = lm.prompt_cache_state
+
+        prefix_len = (
+            _find_common_prefix(prompt_tokens, cached.tokens)
+            if cached is not None
+            else 0
+        )
+
+        if prefix_len > 0:
+            # Trim cache to common prefix (remove generated + divergent tokens)
+            trim_amount = len(cached.tokens) - prefix_len
+            if trim_amount > 0:
+                trim_prompt_cache(cached.cache, trim_amount)
+
+            # Ensure at least 1 token for stream_generate
+            suffix_start = min(prefix_len, len(prompt_tokens) - 1)
+            suffix_tokens = prompt_tokens[suffix_start:]
+
+            cache_read_tokens = prefix_len
+            cache_creation_tokens = len(suffix_tokens)
+            logger.info(
+                "Prompt cache hit: %d prefix tokens reused, %d new tokens to process (was %d total)",
+                prefix_len,
+                len(suffix_tokens),
+                len(prompt_tokens),
+            )
+            gen_kwargs["prompt_cache"] = cached.cache
+            prompt = suffix_tokens
+        else:
+            # No usable prefix — free old cache and create fresh
+            lm.prompt_cache_state = None
+            new_cache = make_prompt_cache(lm.model)
+            gen_kwargs["prompt_cache"] = new_cache
+            cache_creation_tokens = len(prompt_tokens)
+            logger.info(
+                "Prompt cache %s: creating fresh cache for %d tokens",
+                "miss" if cached is not None else "init",
+                len(prompt_tokens),
+            )
+            prompt = prompt_tokens
+
+        full_prompt_tokens = prompt_tokens
+
+        # Yield cache stats as first chunk so routers can use them
+        yield {
+            "cache_info": True,
+            "cache_read_tokens": cache_read_tokens,
+            "cache_creation_tokens": cache_creation_tokens,
+        }
+
     stream = async_mlx_stream(
         lm.model,
         lm.tokenizer,
@@ -360,8 +418,6 @@ async def _stream_completion(
             "text": "",
             "done": True,
             "stats": stats,
-            "cache_read_tokens": cache_read_tokens,
-            "cache_creation_tokens": cache_creation_tokens,
         }
     finally:
         # Invalidate cache on incomplete generation to avoid inconsistent state
@@ -518,59 +574,15 @@ async def generate_chat(
     mt = gen_kwargs.pop("max_tokens", max_tokens)
 
     # Prompt caching: text models only, streaming only, when enabled
-    full_prompt_tokens: list[int] | None = None
-    cache_read_tokens = 0
-    cache_creation_tokens = 0
-
-    if (
+    use_prompt_cache = (
         settings.prompt_cache
         and not lm.is_vlm
         and stream
         and make_prompt_cache is not None
-    ):
+    )
+    prompt_tokens = None
+    if use_prompt_cache:
         prompt_tokens = _tokenize_for_cache(lm.text_tokenizer, prompt)
-        cached = lm.prompt_cache_state
-
-        prefix_len = (
-            _find_common_prefix(prompt_tokens, cached.tokens)
-            if cached is not None
-            else 0
-        )
-
-        if prefix_len > 0:
-            # Trim cache to common prefix (remove generated + divergent tokens)
-            trim_amount = len(cached.tokens) - prefix_len
-            if trim_amount > 0:
-                trim_prompt_cache(cached.cache, trim_amount)
-
-            # Ensure at least 1 token for stream_generate
-            suffix_start = min(prefix_len, len(prompt_tokens) - 1)
-            suffix_tokens = prompt_tokens[suffix_start:]
-
-            cache_read_tokens = suffix_start
-            cache_creation_tokens = len(suffix_tokens)
-            logger.info(
-                "Prompt cache hit: %d prefix tokens reused, %d new tokens to process (was %d total)",
-                suffix_start,
-                len(suffix_tokens),
-                len(prompt_tokens),
-            )
-            gen_kwargs["prompt_cache"] = cached.cache
-            prompt = suffix_tokens
-        else:
-            # No usable prefix — free old cache and create fresh
-            lm.prompt_cache_state = None
-            new_cache = make_prompt_cache(lm.model)
-            gen_kwargs["prompt_cache"] = new_cache
-            cache_creation_tokens = len(prompt_tokens)
-            logger.info(
-                "Prompt cache %s: creating fresh cache for %d tokens",
-                "miss" if cached is not None else "init",
-                len(prompt_tokens),
-            )
-            prompt = prompt_tokens
-
-        full_prompt_tokens = prompt_tokens
 
     if stream:
         return _stream_completion(
@@ -580,9 +592,8 @@ async def generate_chat(
             gen_kwargs,
             stats,
             images,
-            full_prompt_tokens=full_prompt_tokens,
-            cache_read_tokens=cache_read_tokens,
-            cache_creation_tokens=cache_creation_tokens,
+            use_prompt_cache=use_prompt_cache,
+            prompt_tokens=prompt_tokens,
         )
     else:
         return await _full_completion(lm, prompt, mt, gen_kwargs, stats, images)
