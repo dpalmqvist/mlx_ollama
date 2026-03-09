@@ -247,8 +247,10 @@ class TestModelStore:
         assert any(e["status"] == "success" for e in events)
 
     @pytest.mark.asyncio
-    async def test_pull_cleans_up_on_download_failure(self, mock_store, tmp_path):
-        """If snapshot_download fails, partial directory is removed."""
+    async def test_pull_keeps_partial_dir_on_download_failure(
+        self, mock_store, tmp_path
+    ):
+        """If snapshot_download fails, partial directory is kept for resume."""
         from unittest.mock import patch
 
         with patch(
@@ -259,9 +261,12 @@ class TestModelStore:
                 async for _ in mock_store.pull("qwen3"):
                     pass
 
-        # The partial directory should have been cleaned up
+        # The partial directory should be kept (snapshot_download can resume),
+        # and the .downloading marker should remain so is_downloaded() is False
         local_dir = mock_store.local_path("Qwen/Qwen3-8B-MLX")
-        assert not local_dir.exists()
+        assert local_dir.exists()
+        assert (local_dir / ".downloading").exists()
+        assert not mock_store.is_downloaded("Qwen/Qwen3-8B-MLX")
 
     @pytest.mark.asyncio
     async def test_pull_removes_downloading_marker_on_success(

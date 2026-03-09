@@ -126,8 +126,6 @@ class ModelStore:
 
         yield {"status": f"downloading {hf_path}"}
 
-        import shutil
-
         marker = local_dir / ".downloading"
         marker.touch()
         try:
@@ -137,18 +135,10 @@ class ModelStore:
                 local_dir=str(local_dir),
             )
         except BaseException:
-            # Note: on CancelledError the download thread may still be
-            # running (asyncio.to_thread doesn't support cancellation).
-            # rmtree could race with snapshot_download, but the
-            # .downloading marker keeps is_downloaded() correct either way.
-            try:
-                shutil.rmtree(local_dir)
-            except OSError:
-                logger.warning(
-                    "Failed to clean up partial download at %s",
-                    local_dir,
-                    exc_info=True,
-                )
+            # Don't rmtree: on CancelledError the download thread may still
+            # be running (asyncio.to_thread doesn't cancel threads), and on
+            # Exception the partial dir enables snapshot_download to resume
+            # on retry.  The .downloading marker keeps is_downloaded() safe.
             raise
         marker.unlink(missing_ok=True)
 

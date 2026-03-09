@@ -398,8 +398,8 @@ class TestLoadModel:
         mock_dl.assert_called_once()
         assert mock_dl.call_args[1]["repo_id"] == "test/path"
 
-    def test_load_cleans_up_partial_download(self, registry, mock_store):
-        """If snapshot_download fails in _load_model, partial dir is removed."""
+    def test_load_keeps_partial_dir_on_download_failure(self, registry, mock_store):
+        """If snapshot_download fails in _load_model, partial dir is kept for resume."""
         manager = self._make_manager(registry, mock_store)
 
         with patch(
@@ -409,8 +409,11 @@ class TestLoadModel:
             with pytest.raises(Exception, match="download failed"):
                 manager._load_model("test/path")
 
+        # Dir kept for resume, marker stays so is_downloaded() returns False
         local_dir = mock_store.local_path("test/path")
-        assert not local_dir.exists()
+        assert local_dir.exists()
+        assert (local_dir / ".downloading").exists()
+        assert not mock_store.is_downloaded("test/path")
 
     def test_load_removes_downloading_marker_on_success(self, registry, mock_store):
         """After successful download in _load_model, .downloading marker is gone."""

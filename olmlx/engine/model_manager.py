@@ -232,7 +232,11 @@ class ModelManager:
                 return lm
             except BaseException:
                 # Drop references and flush Metal allocator so the memory
-                # is actually reclaimed before we raise.
+                # is actually reclaimed before we raise.  Also clean up
+                # lm if it was already constructed (exception between
+                # LoadedModel() and return).
+                if "lm" in locals():
+                    del lm
                 del model, tokenizer
                 gc.collect()
                 mx.clear_cache()
@@ -370,8 +374,6 @@ class ModelManager:
         if self.store is not None:
             local_dir = self.store.local_path(hf_path)
             if not self.store.is_downloaded(hf_path):
-                import shutil
-
                 from huggingface_hub import snapshot_download
 
                 logger.info("Downloading %s to %s", hf_path, local_dir)
@@ -381,16 +383,9 @@ class ModelManager:
                 try:
                     snapshot_download(repo_id=hf_path, local_dir=str(local_dir))
                 except Exception:
-                    # This runs in a thread (via asyncio.to_thread in
-                    # ensure_loaded), so CancelledError cannot reach here.
-                    try:
-                        shutil.rmtree(local_dir)
-                    except OSError:
-                        logger.warning(
-                            "Failed to clean up partial download at %s",
-                            local_dir,
-                            exc_info=True,
-                        )
+                    # Don't rmtree: partial dir enables snapshot_download to
+                    # resume on retry.  The .downloading marker keeps
+                    # is_downloaded() safe.
                     raise
                 marker.unlink(missing_ok=True)
             load_path = str(local_dir)
