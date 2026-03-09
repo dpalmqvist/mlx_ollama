@@ -11,6 +11,7 @@ def _atomic_write_json(data: dict, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_path = tempfile.mkstemp(suffix=".tmp", dir=path.parent)
     try:
+        os.fchmod(fd, 0o644)
         with os.fdopen(fd, "w") as f:
             fd = -1  # ownership transferred to the file object
             json.dump(data, f, indent=2)

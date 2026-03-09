@@ -1,6 +1,8 @@
 """Tests for olmlx.engine.registry."""
 
 import json
+import os
+import stat
 from unittest.mock import patch
 
 import pytest
@@ -124,3 +126,9 @@ class TestAtomicWriteJson:
             with pytest.raises(IOError, match="disk full"):
                 _atomic_write_json({"new": True}, target)
         assert json.loads(target.read_text()) == original
+
+    def test_atomic_write_json_file_permissions(self, tmp_path):
+        target = tmp_path / "data.json"
+        _atomic_write_json({"a": 1}, target)
+        mode = stat.S_IMODE(os.stat(target).st_mode)
+        assert mode == 0o644
