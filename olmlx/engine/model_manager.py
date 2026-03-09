@@ -100,6 +100,7 @@ class ModelManager:
         self._loaded: dict[str, LoadedModel] = {}
         self._lock = asyncio.Lock()
         self._expiry_task: asyncio.Task | None = None
+        self._pending_cleanups: dict[str, asyncio.Task] = {}
 
     def start_expiry_checker(self):
         self._expiry_task = asyncio.create_task(self._check_expiry_loop())
@@ -134,6 +135,18 @@ class ModelManager:
                 else:
                     lm.expires_at = None
                 return lm
+
+            # If a previous load timed out and the background thread is
+            # still running, wait for its deferred cleanup to finish before
+            # starting a new load — otherwise two threads race to load the
+            # same weights, doubling peak GPU memory.
+            cleanup = self._pending_cleanups.get(normalized)
+            if cleanup is not None:
+                logger.info(
+                    "Waiting for deferred cleanup of '%s' before retry",
+                    normalized,
+                )
+                await cleanup
 
             # Evict LRU if at capacity (skip models with active inference)
             while len(self._loaded) >= settings.max_loaded_models:
@@ -175,7 +188,7 @@ class ModelManager:
                 coro = asyncio.to_thread(self._load_model, hf_path)
                 timeout = settings.model_load_timeout
                 if timeout is not None:
-                    load_task = asyncio.ensure_future(coro)
+                    load_task = asyncio.create_task(coro)
                     try:
                         model, tokenizer, is_vlm, caps = await asyncio.wait_for(
                             asyncio.shield(load_task), timeout=timeout
@@ -281,8 +294,10 @@ class ModelManager:
 
         asyncio.to_thread() threads cannot be interrupted, so after a timeout
         the thread continues running and may allocate GPU memory.  This method
-        schedules a fire-and-forget task that waits for the thread to complete,
-        then flushes the Metal allocator to reclaim the memory.
+        schedules a task that waits for the thread to complete, then flushes
+        the Metal allocator to reclaim the memory.  The task is tracked in
+        _pending_cleanups so that a retry for the same model waits for
+        cleanup to finish before starting a new load.
         """
 
         async def _cleanup() -> None:
@@ -292,11 +307,12 @@ class ModelManager:
                 pass
             gc.collect()
             mx.clear_cache()
+            self._pending_cleanups.pop(model_name, None)
             logger.info(
                 "Deferred GPU cleanup after timeout of '%s' completed", model_name
             )
 
-        asyncio.create_task(_cleanup())
+        self._pending_cleanups[model_name] = asyncio.create_task(_cleanup())
 
     def get_loaded(self) -> list[LoadedModel]:
         return list(self._loaded.values())

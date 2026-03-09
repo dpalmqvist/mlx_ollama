@@ -476,7 +476,7 @@ class TestModelLoadTimeout:
         manager = ModelManager(registry, mock_store)
 
         def slow_load(hf_path):
-            time.sleep(2)
+            time.sleep(0.4)
             return (MagicMock(), MagicMock(), False, TemplateCaps())
 
         with (
@@ -570,7 +570,7 @@ class TestModelLoadTimeout:
         manager = ModelManager(registry, mock_store)
 
         def slow_load(hf_path):
-            time.sleep(2)
+            time.sleep(0.4)
             return (MagicMock(), MagicMock(), False, TemplateCaps())
 
         with (
@@ -626,6 +626,57 @@ class TestModelLoadTimeout:
             # Deferred cleanup adds one more call each
             assert mock_gc.call_count == 3
             assert mock_clear.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_retry_after_timeout_waits_for_cleanup(
+        self, registry, mock_store, monkeypatch
+    ):
+        """Retrying after timeout waits for deferred cleanup before starting new load."""
+        monkeypatch.setattr(
+            "olmlx.engine.model_manager.settings.model_load_timeout", 0.1
+        )
+        manager = ModelManager(registry, mock_store)
+
+        call_count = 0
+
+        def slow_then_fast(hf_path):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                time.sleep(0.3)  # First call triggers timeout
+            return (MagicMock(), MagicMock(), False, TemplateCaps())
+
+        total_ram = 64 * self.GB
+
+        with (
+            patch.object(manager, "_load_model", side_effect=slow_then_fast),
+            patch(
+                "olmlx.engine.model_manager._get_metal_memory_bytes",
+                side_effect=[1 * self.GB, 1 * self.GB, int(total_ram * 0.50)],
+            ),
+            patch(
+                "olmlx.engine.model_manager._get_system_memory_bytes",
+                return_value=total_ram,
+            ),
+            patch("olmlx.engine.model_manager.gc.collect"),
+            patch("olmlx.engine.model_manager.mx.clear_cache"),
+        ):
+            # First call times out
+            with pytest.raises(TimeoutError):
+                await manager.ensure_loaded("qwen3")
+
+            # Pending cleanup should exist
+            assert "qwen3:latest" in manager._pending_cleanups
+
+            # Retry — should wait for cleanup to finish, then load fresh
+            monkeypatch.setattr(
+                "olmlx.engine.model_manager.settings.model_load_timeout", None
+            )
+            lm = await manager.ensure_loaded("qwen3")
+            assert lm.name == "qwen3:latest"
+
+            # Cleanup should be complete
+            assert "qwen3:latest" not in manager._pending_cleanups
 
 
 class TestTryLmThenVlmFallback:
