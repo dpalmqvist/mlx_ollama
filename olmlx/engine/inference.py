@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import importlib
 import json
 import logging
 import time
@@ -54,13 +55,18 @@ def _safe_sync():
     except Exception:
         logger.debug("mx.synchronize() failed", exc_info=True)
 
-    # Also sync the generation stream used by mlx_lm/mlx_vlm
-    try:
-        from mlx_lm.generate import generation_stream
-
-        mx.synchronize(generation_stream)
-    except Exception:
-        logger.debug("generation_stream sync failed", exc_info=True)
+    # Also sync the generation stream used by mlx_lm/mlx_vlm.
+    # Try both since we don't know which model type was last active.
+    for module_name in ("mlx_lm.generate", "mlx_vlm.generate"):
+        try:
+            mod = importlib.import_module(module_name)
+            mx.synchronize(mod.generation_stream)
+        except (ImportError, AttributeError):
+            pass  # Module not installed or no generation_stream attr
+        except Exception:
+            logger.debug(
+                "generation_stream sync failed for %s", module_name, exc_info=True
+            )
 
 
 def _tokenize_for_cache(tokenizer: Any, prompt_text: str) -> list[int]:
@@ -418,7 +424,12 @@ async def _stream_completion(
                     len(prompt_tokens),
                 )
                 gen_kwargs["prompt_cache"] = cached.cache
-                prompt = suffix_tokens
+                if lm.is_vlm:
+                    # VLM stream_generate expects a string prompt; pass
+                    # pre-tokenized tokens via input_ids to bypass prepare_inputs.
+                    gen_kwargs["input_ids"] = mx.array([suffix_tokens])
+                else:
+                    prompt = suffix_tokens
             else:
                 # No usable prefix — free old cache and create fresh
                 lm.prompt_cache_state = None
@@ -431,7 +442,10 @@ async def _stream_completion(
                     "miss" if cached is not None else "init",
                     len(prompt_tokens),
                 )
-                prompt = prompt_tokens
+                if lm.is_vlm:
+                    gen_kwargs["input_ids"] = mx.array([prompt_tokens])
+                else:
+                    prompt = prompt_tokens
 
             # Yield cache stats as first chunk so routers can use them
             yield {
@@ -667,10 +681,9 @@ async def generate_chat(
             f"{len(cached_state.tokens)} tokens" if cached_state else "none",
         )
     else:
-        logger.warning(
-            "Prompt cache disabled: setting=%s vlm=%s stream=%s make_prompt_cache=%s",
+        logger.debug(
+            "Prompt cache disabled: setting=%s stream=%s make_prompt_cache=%s",
             settings.prompt_cache,
-            lm.is_vlm,
             stream,
             make_prompt_cache is not None,
         )

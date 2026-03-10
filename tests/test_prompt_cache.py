@@ -424,24 +424,26 @@ class TestCacheDisabledViaConfig:
 
 
 class TestVlmUsesCache:
-    @pytest.mark.asyncio
-    async def test_vlm_uses_cache(self, mock_manager):
-        """VLM models now use prompt caching with language_model."""
-        from olmlx.engine.inference import generate_chat
-
+    def _setup_vlm(self, mock_manager):
+        """Set up a VLM model for cache testing."""
         lm = mock_manager._loaded["qwen3:latest"]
         lm.is_vlm = True
-        # VLMs have language_model attribute
         lm.language_model = MagicMock()
-        lm.language_model.layers = [None] * 32  # Typical transformer layer count
-        # VLMs have a tokenizer attribute that has a tokenizer (the actual HF tokenizer)
+        lm.language_model.layers = [None] * 32
         lm.tokenizer.tokenizer = MagicMock()
         lm.tokenizer.tokenizer.chat_template = "{{ messages }}{{ tools }}"
         lm.tokenizer.tokenizer.bos_token = None
         lm.tokenizer.tokenizer.encode = MagicMock(return_value=[10, 20, 30, 40, 50])
         lm.tokenizer.apply_chat_template = MagicMock(return_value="formatted prompt")
-        # VLM model needs config attribute
         lm.model.config = {}
+        return lm
+
+    @pytest.mark.asyncio
+    async def test_vlm_uses_cache(self, mock_manager):
+        """VLM models use prompt caching with language_model."""
+        from olmlx.engine.inference import generate_chat
+
+        lm = self._setup_vlm(mock_manager)
 
         mock_mlx_vlm = MagicMock()
         mock_mlx_vlm.apply_chat_template.return_value = "vlm prompt"
@@ -474,15 +476,65 @@ class TestVlmUsesCache:
                 pass
 
         # Cache should have been created with language_model (not the full VLM model)
-        # Verify the first argument to make_prompt_cache is language_model
         call_args = mock_make_cache.call_args
         assert call_args is not None, "make_prompt_cache was not called"
-        # The first arg should be the language_model (which is lm.model.language_model)
-        # Note: lm.model is the original mock, lm.language_model is set in test
-        # The actual call uses lm.model.language_model (the _get_model_for_cache function)
         assert call_args[0][0] is lm.model.language_model
-        # After successful generation, cache state should be stored
         assert lm.prompt_cache_state is not None
+
+    @pytest.mark.asyncio
+    async def test_vlm_passes_input_ids_not_token_list(self, mock_manager):
+        """VLM cache passes input_ids kwarg instead of overwriting prompt with tokens.
+
+        mlx_vlm.stream_generate expects prompt as str; passing a list[int]
+        causes ValueError in prepare_inputs. The fix is to pass pre-tokenized
+        tokens via the input_ids kwarg which bypasses prepare_inputs.
+        """
+        from olmlx.engine.inference import generate_chat
+
+        self._setup_vlm(mock_manager)
+
+        mock_mlx_vlm = MagicMock()
+        mock_mlx_vlm.apply_chat_template.return_value = "vlm prompt"
+
+        tokens = _make_stream_tokens("Hello", prompt_tokens=5)
+        mock_stream = _make_mock_stream(tokens)
+
+        mock_make_cache = MagicMock(return_value=[MagicMock()])
+
+        mock_mx = MagicMock()
+        with (
+            patch("olmlx.engine.inference.mx", mock_mx),
+            patch.dict("sys.modules", {"mlx_vlm": mock_mlx_vlm}),
+            patch(
+                "olmlx.engine.inference.async_mlx_stream",
+                return_value=mock_stream,
+            ) as mock_async_stream,
+            patch("olmlx.engine.inference.make_prompt_cache", mock_make_cache),
+            patch("olmlx.engine.inference.settings") as mock_settings,
+        ):
+            mock_settings.prompt_cache = True
+            mock_settings.default_keep_alive = "5m"
+            gen = await generate_chat(
+                mock_manager,
+                "qwen3",
+                [{"role": "user", "content": "describe"}],
+                stream=True,
+            )
+            async for chunk in gen:
+                pass
+
+        # Verify prompt is still a string (not overwritten with token list)
+        call_args = mock_async_stream.call_args
+        prompt_arg = (
+            call_args[0][2] if len(call_args[0]) > 2 else call_args[1]["prompt"]
+        )
+        assert isinstance(prompt_arg, str), (
+            f"VLM prompt should be a string, got {type(prompt_arg)}"
+        )
+        # input_ids should be passed as a kwarg
+        assert "input_ids" in call_args[1], (
+            "VLM cache should pass input_ids kwarg to bypass prepare_inputs"
+        )
 
 
 class TestCacheTokenCountLogging:

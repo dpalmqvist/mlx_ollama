@@ -11,3 +11,4 @@ aliases.json
 *.mlx
 .coverage
 .pytest_cache/
+.claude/scheduled_tasks.lock

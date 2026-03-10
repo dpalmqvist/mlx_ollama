@@ -53,7 +53,9 @@ def _convert_tools(req: AnthropicMessagesRequest) -> list[dict] | None:
 BILLING_HEADER_PREFIX = "x-anthropic-billing-header"
 
 
-def _strip_billing_headers(system):
+def _strip_billing_headers(
+    system: str | list[AnthropicContentBlock] | None,
+) -> str | list[AnthropicContentBlock] | None:
     """Strip Claude Code billing header blocks/lines from system prompt.
 
     These headers change every request and break KV cache prefix matching.

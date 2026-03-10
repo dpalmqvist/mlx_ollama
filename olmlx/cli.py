@@ -39,9 +39,8 @@ def cmd_serve(_args):
     import uvicorn
 
     ensure_config()
-    log_level = getattr(logging, settings.log_level.upper(), logging.INFO)
     logging.basicConfig(
-        level=log_level,
+        level=getattr(logging, settings.log_level),
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
     uvicorn.run(
