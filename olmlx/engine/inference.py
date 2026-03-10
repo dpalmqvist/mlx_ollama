@@ -375,10 +375,11 @@ async def _stream_completion(
 
                 suffix_tokens = prompt_tokens[suffix_start:]
 
-                # Report prefix_len as cache_read — what was actually matched.
-                # suffix_start may be less (stream_generate needs ≥1 token),
-                # but that re-processed token was still served from cache.
-                cache_read_tokens = prefix_len
+                # Report suffix_start as cache_read — the number of tokens
+                # whose KV entries are actually reused from cache.  On exact
+                # match, suffix_start = prefix_len - 1 because stream_generate
+                # re-processes the token at suffix_start (its KV is not reused).
+                cache_read_tokens = suffix_start
                 cache_creation_tokens = len(suffix_tokens)
                 logger.info(
                     "Prompt cache hit: %d prefix tokens reused, %d new tokens to process (was %d total)",

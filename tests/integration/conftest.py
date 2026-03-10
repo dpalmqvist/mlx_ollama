@@ -96,12 +96,14 @@ class FakeStreamResponse:
 # Module-level list that fake stream_generate reads from.
 _stream_responses: list[list[str]] = []
 _stream_call_count = 0
+_generate_call_count = 0
 
 
 def _reset_stream_responses():
-    global _stream_responses, _stream_call_count
+    global _stream_responses, _stream_call_count, _generate_call_count
     _stream_responses = [["Hello", " world"]]
     _stream_call_count = 0
+    _generate_call_count = 0
 
 
 def set_stream_responses(responses: list[str]):
@@ -134,9 +136,9 @@ def _fake_stream_generate(model, tokenizer, *, prompt, max_tokens=512, **kwargs)
 
 def _fake_generate(model, tokenizer, *, prompt, max_tokens=512, **kwargs):
     """Fake mlx_lm.generate for non-streaming path."""
-    global _stream_call_count
-    idx = min(_stream_call_count, len(_stream_responses) - 1)
-    _stream_call_count += 1
+    global _generate_call_count
+    idx = min(_generate_call_count, len(_stream_responses) - 1)
+    _generate_call_count += 1
     texts = _stream_responses[idx] if _stream_responses else ["Hello", " world"]
     return "".join(texts)
 

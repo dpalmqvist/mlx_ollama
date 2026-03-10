@@ -665,12 +665,13 @@ class TestCacheExactMatchTrimAlignment:
         prompt_arg = call_args[1].get("prompt") or call_args[0][2]
         assert prompt_arg == [30]
 
-        # Cache stats: cache_read should be prefix_len (3) — what was actually
-        # matched. suffix_start (2) is an implementation detail of stream_generate
-        # needing ≥1 token; the re-processed token was still in the cache.
+        # Cache stats: cache_read should be suffix_start (2) — the number of
+        # tokens whose KV entries are actually reused from cache.  The token at
+        # suffix_start is re-processed by stream_generate, so its KV is not
+        # served from cache.
         cache_info = chunks[0]
         assert cache_info.get("cache_info") is True
-        assert cache_info["cache_read_tokens"] == 3
+        assert cache_info["cache_read_tokens"] == 2
         assert cache_info["cache_creation_tokens"] == 1
 
 

@@ -565,23 +565,27 @@ class ModelManager:
         # Text or unknown — try mlx-lm first, fall back to mlx-vlm
         return self._try_lm_then_vlm(load_path, hf_path)
 
+    async def _expire_stale(self):
+        """Unload models whose keep-alive has expired (active_refs == 0)."""
+        now = time.time()
+        async with self._lock:
+            # Models with active_refs > 0 are skipped — they are currently
+            # serving requests.  Even if a model slips through with
+            # active_refs == 0 between ensure_loaded() and _inference_ref(),
+            # the caller still holds a Python reference, so the model/
+            # tokenizer stay alive; only the _loaded dict entry is removed.
+            expired = [
+                name
+                for name, lm in self._loaded.items()
+                if lm.expires_at is not None
+                and lm.expires_at <= now
+                and lm.active_refs == 0
+            ]
+            for name in expired:
+                logger.info("Unloading expired model %s", name)
+                del self._loaded[name]
+
     async def _check_expiry_loop(self):
         while True:
             await asyncio.sleep(30)
-            now = time.time()
-            async with self._lock:
-                # Models with active_refs > 0 are skipped — they are currently
-                # serving requests.  Even if a model slips through with
-                # active_refs == 0 between ensure_loaded() and _inference_ref(),
-                # the caller still holds a Python reference, so the model/
-                # tokenizer stay alive; only the _loaded dict entry is removed.
-                expired = [
-                    name
-                    for name, lm in self._loaded.items()
-                    if lm.expires_at is not None
-                    and lm.expires_at <= now
-                    and lm.active_refs == 0
-                ]
-                for name in expired:
-                    logger.info("Unloading expired model %s", name)
-                    del self._loaded[name]
+            await self._expire_stale()

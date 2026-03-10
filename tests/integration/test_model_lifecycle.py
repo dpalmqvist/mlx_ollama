@@ -123,16 +123,8 @@ async def test_keep_alive_expiry(integration_ctx, anthropic_request, monkeypatch
     lm = integration_ctx.manager._loaded["qwen3:latest"]
     lm.expires_at = time.time() - 10  # Already expired
 
-    # Trigger expiry manually (don't wait for the 30s loop)
-    async with integration_ctx.manager._lock:
-        now = time.time()
-        expired = [
-            name
-            for name, m in integration_ctx.manager._loaded.items()
-            if m.expires_at is not None and m.expires_at <= now and m.active_refs == 0
-        ]
-        for name in expired:
-            del integration_ctx.manager._loaded[name]
+    # Trigger the manager's actual expiry logic
+    await integration_ctx.manager._expire_stale()
 
     assert "qwen3:latest" not in integration_ctx.manager._loaded
 
