@@ -97,7 +97,7 @@ async def test_pull_concurrent_serialization(integration_ctx):
 
     assert all(r.status_code == 200 for r in results)
     # snapshot_download should be called at most once due to lock serialization
-    assert call_count <= 1
+    assert call_count == 1
 
 
 async def test_pull_then_inference(integration_ctx):

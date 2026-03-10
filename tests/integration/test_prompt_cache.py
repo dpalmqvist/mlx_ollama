@@ -90,6 +90,10 @@ async def test_cache_miss_on_different_prompt(integration_ctx):
     stats1 = _get_cache_stats(sse1)
     assert stats1["cache_creation_input_tokens"] > 0
 
+    # Invalidate the cache to force a true miss
+    lm = integration_ctx.manager._loaded["qwen3:latest"]
+    lm.prompt_cache_state = None
+
     # Entirely different prompt
     msgs2 = [
         {
@@ -101,6 +105,7 @@ async def test_cache_miss_on_different_prompt(integration_ctx):
     stats2 = _get_cache_stats(sse2)
     # Should create fresh cache, not read from old one
     assert stats2["cache_creation_input_tokens"] > 0
+    assert stats2["cache_read_input_tokens"] == 0
 
 
 async def test_cache_stats_in_sse(integration_ctx):

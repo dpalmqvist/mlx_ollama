@@ -63,7 +63,7 @@ class FakeTokenizer:
     def encode(self, text, add_special_tokens=True):
         """Deterministic char-based encoding."""
         tokens = [ord(c) % 1000 for c in text]
-        if add_special_tokens and self.bos_token:
+        if add_special_tokens and self.bos_token is not None:
             tokens = [1] + tokens  # BOS token = 1
         return tokens
 
@@ -151,7 +151,9 @@ def mock_mlx_primitives(monkeypatch):
     """Patch all MLX primitives so tests don't need a GPU."""
     patches = []
 
-    def _start(target, replacement=MagicMock()):
+    def _start(target, replacement=None):
+        if replacement is None:
+            replacement = MagicMock()
         p = patch(target, replacement)
         patches.append(p)
         return p.start()

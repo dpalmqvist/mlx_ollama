@@ -244,6 +244,7 @@ async def test_thinking_blocks_only_anthropic(integration_ctx):
     blocks = anthropic_resp.json()["content"]
     block_types = [b["type"] for b in blocks]
     assert "text" in block_types
+    assert "thinking" in block_types
 
     # OpenAI — should return raw text with thinking tags
     integration_ctx.set_stream_responses(["<think>", "reasoning", "</think>", "Answer"])
