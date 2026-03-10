@@ -700,10 +700,11 @@ class TestGenerateEmbeddingsAcquiresLock:
 
 class TestSafeSync:
     def test_success(self):
-        """_safe_sync() should not raise when mx.synchronize() succeeds."""
+        """_safe_sync() should sync both default and generation streams."""
         with patch("olmlx.engine.inference.mx") as mock_mx:
             _safe_sync()
-            mock_mx.synchronize.assert_called_once()
+            # Should be called twice: once for default stream, once for generation stream
+            assert mock_mx.synchronize.call_count == 2
 
     def test_suppresses_exception(self):
         """_safe_sync() should suppress exceptions from mx.synchronize()."""

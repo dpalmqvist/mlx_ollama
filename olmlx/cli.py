@@ -39,8 +39,9 @@ def cmd_serve(_args):
     import uvicorn
 
     ensure_config()
+    log_level = getattr(logging, settings.log_level.upper(), logging.INFO)
     logging.basicConfig(
-        level=logging.INFO,
+        level=log_level,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
     uvicorn.run(
@@ -48,7 +49,7 @@ def cmd_serve(_args):
         factory=True,
         host=settings.host,
         port=settings.port,
-        log_level="info",
+        log_level=settings.log_level.lower(),
     )
 
 
@@ -281,6 +282,8 @@ def cmd_config_show(_args):
     print(f"Default keep-alive:     {settings.default_keep_alive}")
     print(f"Max loaded models:      {settings.max_loaded_models}")
     print(f"Memory limit fraction:  {settings.memory_limit_fraction}")
+    print(f"Log level:              {settings.log_level}")
+    print(f"Prompt cache:           {settings.prompt_cache}")
     print(f"CORS origins:           {settings.cors_origins}")
 
 

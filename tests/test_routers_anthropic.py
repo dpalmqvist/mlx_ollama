@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -12,6 +13,7 @@ from olmlx.routers.anthropic import (
     _convert_tools,
     _PING_SENTINEL,
     _sse,
+    _strip_billing_headers,
     _with_keepalive_pings,
 )
 from olmlx.schemas.anthropic import (
@@ -53,6 +55,75 @@ class TestConvertTools:
         assert tools[0]["function"]["name"] == "get_weather"
         assert tools[0]["function"]["description"] == "Get weather info"
         assert "city" in tools[0]["function"]["parameters"]["properties"]
+
+
+class TestStripBillingHeaders:
+    def test_list_system_billing_first_block(self):
+        """Billing header as first block is removed, real content preserved."""
+        system = [
+            AnthropicContentBlock(
+                type="text",
+                text="x-anthropic-billing-header: cc_version=2.1.37.981; cc_entrypoint=cli; cch=0a829;",
+            ),
+            AnthropicContentBlock(type="text", text="You are a helpful assistant."),
+        ]
+        result = _strip_billing_headers(system)
+        assert len(result) == 1
+        assert result[0].text == "You are a helpful assistant."
+
+    def test_list_system_no_billing_blocks(self):
+        """System with no billing blocks is unchanged."""
+        system = [
+            AnthropicContentBlock(type="text", text="You are helpful."),
+            AnthropicContentBlock(type="text", text="Be concise."),
+        ]
+        result = _strip_billing_headers(system)
+        assert len(result) == 2
+        assert result[0].text == "You are helpful."
+        assert result[1].text == "Be concise."
+
+    def test_list_system_only_billing_blocks(self):
+        """System with only billing blocks returns None."""
+        system = [
+            AnthropicContentBlock(
+                type="text",
+                text="x-anthropic-billing-header: cc_version=2.1.37; cch=abc;",
+            ),
+        ]
+        result = _strip_billing_headers(system)
+        assert result is None
+
+    def test_string_system_starting_with_billing(self):
+        """String system starting with billing header has that line stripped."""
+        system = (
+            "x-anthropic-billing-header: cc_version=2.1.37; cch=abc;\nYou are helpful."
+        )
+        result = _strip_billing_headers(system)
+        assert result == "You are helpful."
+
+    def test_string_system_without_billing(self):
+        """String system without billing header is unchanged."""
+        system = "You are a helpful assistant."
+        result = _strip_billing_headers(system)
+        assert result == "You are a helpful assistant."
+
+    def test_none_system(self):
+        """None system returns None."""
+        result = _strip_billing_headers(None)
+        assert result is None
+
+    def test_logs_when_stripping(self, caplog):
+        """Info log emitted when billing headers are stripped."""
+        system = [
+            AnthropicContentBlock(
+                type="text",
+                text="x-anthropic-billing-header: cc_version=2.1.37; cch=abc;",
+            ),
+            AnthropicContentBlock(type="text", text="Real content."),
+        ]
+        with caplog.at_level(logging.INFO, logger="olmlx.routers.anthropic"):
+            _strip_billing_headers(system)
+        assert any("billing" in r.message.lower() for r in caplog.records)
 
 
 class TestConvertMessages:
@@ -180,6 +251,39 @@ class TestConvertMessages:
         messages = _convert_messages(req)
         assert "Deep thoughts" not in messages[0]["content"]
         assert "The answer" in messages[0]["content"]
+
+    def test_system_blocks_billing_header_stripped(self):
+        """Billing header block in system is stripped during convert_messages."""
+        req = AnthropicMessagesRequest(
+            model="test",
+            messages=[AnthropicMessage(role="user", content="hi")],
+            system=[
+                AnthropicContentBlock(
+                    type="text",
+                    text="x-anthropic-billing-header: cc_version=2.1.37; cch=abc;",
+                ),
+                AnthropicContentBlock(type="text", text="You are helpful."),
+            ],
+        )
+        messages = _convert_messages(req)
+        assert messages[0]["role"] == "system"
+        assert "billing" not in messages[0]["content"]
+        assert "You are helpful." in messages[0]["content"]
+
+    def test_system_only_billing_header_no_system_message(self):
+        """System with only billing header produces no system message."""
+        req = AnthropicMessagesRequest(
+            model="test",
+            messages=[AnthropicMessage(role="user", content="hi")],
+            system=[
+                AnthropicContentBlock(
+                    type="text",
+                    text="x-anthropic-billing-header: cc_version=2.1.37; cch=abc;",
+                ),
+            ],
+        )
+        messages = _convert_messages(req)
+        assert all(m["role"] != "system" for m in messages)
 
 
 class TestBuildOptions:

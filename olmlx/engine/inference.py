@@ -24,6 +24,9 @@ except ImportError:  # pragma: no cover
     make_prompt_cache = None  # type: ignore[assignment]
     trim_prompt_cache = None  # type: ignore[assignment]
     _find_common_prefix = None  # type: ignore[assignment]
+    logging.getLogger(__name__).warning(
+        "mlx-lm prompt cache imports unavailable — prompt caching disabled"
+    )
 from olmlx.engine.template_caps import TemplateCaps
 from olmlx.utils.streaming import async_mlx_stream
 from olmlx.utils.timing import Timer, TimingStats
@@ -39,11 +42,25 @@ _inference_lock = asyncio.Lock()
 
 
 def _safe_sync():
-    """Synchronize Metal GPU state, suppressing and logging any errors."""
+    """Synchronize Metal GPU state, suppressing and logging any errors.
+
+    Also syncs the generation stream (mlx_lm/mlx_vlm use a separate stream
+    from the default stream). This is critical to prevent 'command encoder
+    already encoding' errors when the background inference thread is still
+    writing to the GPU while a new request tries to start.
+    """
     try:
         mx.synchronize()
     except Exception:
         logger.debug("mx.synchronize() failed", exc_info=True)
+
+    # Also sync the generation stream used by mlx_lm/mlx_vlm
+    try:
+        from mlx_lm.generate import generation_stream
+
+        mx.synchronize(generation_stream)
+    except Exception:
+        logger.debug("generation_stream sync failed", exc_info=True)
 
 
 def _tokenize_for_cache(tokenizer: Any, prompt_text: str) -> list[int]:
@@ -231,6 +248,17 @@ def _apply_chat_template_vlm(
     )
 
 
+def _get_model_for_cache(model: Any, is_vlm: bool) -> Any:
+    """Get the language model for cache creation.
+
+    For text models (mlx-lm), returns the model directly.
+    For VLM models (mlx-vlm), returns model.language_model.
+    """
+    if is_vlm:
+        return model.language_model
+    return model
+
+
 def _extract_images(messages: list[dict]) -> list[str] | None:
     """Extract image URLs/paths from message content."""
     images = []
@@ -394,7 +422,8 @@ async def _stream_completion(
             else:
                 # No usable prefix — free old cache and create fresh
                 lm.prompt_cache_state = None
-                new_cache = make_prompt_cache(lm.model)
+                cache_model = _get_model_for_cache(lm.model, lm.is_vlm)
+                new_cache = make_prompt_cache(cache_model)
                 gen_kwargs["prompt_cache"] = new_cache
                 cache_creation_tokens = len(prompt_tokens)
                 logger.info(
@@ -624,12 +653,9 @@ async def generate_chat(
     gen_kwargs = _build_generate_kwargs(options, is_vlm=lm.is_vlm)
     mt = gen_kwargs.pop("max_tokens", max_tokens)
 
-    # Prompt caching: text models only, streaming only, when enabled
+    # Prompt caching: streaming only, when enabled
     use_prompt_cache = (
-        settings.prompt_cache
-        and not lm.is_vlm
-        and stream
-        and make_prompt_cache is not None
+        settings.prompt_cache and stream and make_prompt_cache is not None
     )
     prompt_tokens = None
     if use_prompt_cache:
@@ -641,7 +667,7 @@ async def generate_chat(
             f"{len(cached_state.tokens)} tokens" if cached_state else "none",
         )
     else:
-        logger.debug(
+        logger.warning(
             "Prompt cache disabled: setting=%s vlm=%s stream=%s make_prompt_cache=%s",
             settings.prompt_cache,
             lm.is_vlm,
