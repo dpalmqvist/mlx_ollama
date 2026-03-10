@@ -47,9 +47,14 @@ def _safe_sync():
 
 
 def _tokenize_for_cache(tokenizer: Any, prompt_text: str) -> list[int]:
-    """Tokenize prompt text matching stream_generate's tokenization logic."""
+    """Tokenize prompt text matching stream_generate's tokenization logic.
+
+    Must exactly replicate the BOS heuristic in mlx_lm.generate.stream_generate
+    to avoid token sequence divergence (which would cause every request to be a
+    cache miss).  stream_generate uses ``bos_token is None``, NOT ``not bos_token``.
+    """
     bos = getattr(tokenizer, "bos_token", None)
-    add_special = not bos or not prompt_text.startswith(bos)
+    add_special = bos is None or not prompt_text.startswith(bos)
     return tokenizer.encode(prompt_text, add_special_tokens=add_special)
 
 
@@ -355,10 +360,16 @@ async def _stream_completion(
             # Set before mutation so finally guard can clean up on error
             full_prompt_tokens = prompt_tokens
 
-            if prefix_len > 0:
-                # Ensure at least 1 token for stream_generate
-                suffix_start = min(prefix_len, len(prompt_tokens) - 1)
+            # stream_generate requires at least 1 token, so we must back up
+            # by one position on exact-match.  If that would mean suffix_start=0
+            # (single-token prompt), the cache hit is useless — trimming the
+            # entire cache to re-process the lone token is a cold start.  Treat
+            # it as a miss and create a fresh cache instead.
+            suffix_start = (
+                min(prefix_len, len(prompt_tokens) - 1) if prompt_tokens else 0
+            )
 
+            if prefix_len > 0 and suffix_start > 0:
                 # Trim cache to suffix_start so it aligns with where we resume
                 trim_amount = len(cached.tokens) - suffix_start
                 if trim_amount > 0:
@@ -366,6 +377,10 @@ async def _stream_completion(
 
                 suffix_tokens = prompt_tokens[suffix_start:]
 
+                # Report suffix_start as cache_read — the number of tokens
+                # whose KV entries are actually reused from cache.  On exact
+                # match, suffix_start = prefix_len - 1 because stream_generate
+                # re-processes the token at suffix_start (its KV is not reused).
                 cache_read_tokens = suffix_start
                 cache_creation_tokens = len(suffix_tokens)
                 logger.info(
@@ -414,6 +429,12 @@ async def _stream_completion(
                     stats.prompt_eval_count = token.prompt_tokens
                     if token.token is not None:
                         generated_tokens.append(token.token)
+                    else:
+                        logger.debug(
+                            "Skipping token with None ID at generation step %d "
+                            "(cache token sequence will be incomplete)",
+                            token.generation_tokens,
+                        )
 
             stats.eval_duration = eval_timer.duration_ns
             prompt_tps = getattr(token, "prompt_tps", 0) or 0
