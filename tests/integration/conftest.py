@@ -184,13 +184,12 @@ def mock_mlx_primitives(monkeypatch):
     # mlx_lm.stream_generate
     _start("mlx_lm.stream_generate", _fake_stream_generate)
 
-    # generation_stream (synced in CancellableStream._run finally block)
-    # Must be patched BEFORE mlx_lm.generate attribute replacement below,
-    # because patch resolves "mlx_lm.generate" as module via sys.modules.
+    # ORDER MATTERS: these two patches are order-dependent and must not be
+    # separated.  The first targets an attribute on the mlx_lm.generate MODULE.
+    # The second replaces mlx_lm.generate itself with a plain function.  If
+    # swapped, the first patch would resolve to the replacement function (not
+    # the module) and silently patch nothing useful.
     _start("mlx_lm.generate.generation_stream", MagicMock())
-
-    # mlx_lm.generate function (non-streaming path calls this directly)
-    # This patches the 'generate' attribute on the mlx_lm namespace.
     _start("mlx_lm.generate", _fake_generate)
 
     # Prompt cache

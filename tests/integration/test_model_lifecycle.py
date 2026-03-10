@@ -87,7 +87,9 @@ async def test_active_refs_prevents_eviction(integration_ctx, monkeypatch):
     resp_a = await integration_ctx.client.post("/v1/messages", json=req_a)
     assert resp_a.status_code == 200
 
-    # Simulate active reference
+    # Simulate active reference.  Direct write is safe here: active_refs is a
+    # plain int on the dataclass, and in asyncio there are no preemption points
+    # between this assignment and the next await.
     lm = integration_ctx.manager._loaded["qwen3:latest"]
     lm.active_refs = 1
 

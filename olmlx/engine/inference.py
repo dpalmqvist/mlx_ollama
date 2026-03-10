@@ -365,7 +365,9 @@ async def _stream_completion(
             # (single-token prompt), the cache hit is useless — trimming the
             # entire cache to re-process the lone token is a cold start.  Treat
             # it as a miss and create a fresh cache instead.
-            suffix_start = min(prefix_len, len(prompt_tokens) - 1)
+            suffix_start = (
+                min(prefix_len, len(prompt_tokens) - 1) if prompt_tokens else 0
+            )
 
             if prefix_len > 0 and suffix_start > 0:
                 # Trim cache to suffix_start so it aligns with where we resume
