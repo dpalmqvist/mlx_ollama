@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import gc
 import importlib
 import json
 import logging
@@ -79,13 +80,18 @@ def _safe_sync():
             logger.debug("generation_stream sync failed", exc_info=True)
 
 
+# Fraction of memory_limit_fraction at which we shed the prompt cache to
+# free Metal memory before hitting the hard model-load rejection limit.
+_MEMORY_PRESSURE_THRESHOLD = 0.9
+
+
 def _is_memory_pressure_high() -> bool:
     """Check if Metal memory is approaching the safety limit."""
     try:
         mem = mx.get_active_memory() + mx.get_cache_memory()
         total = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
         limit = int(total * settings.memory_limit_fraction)
-        return mem > int(limit * 0.9)
+        return mem > int(limit * _MEMORY_PRESSURE_THRESHOLD)
     except Exception:
         return False
 
@@ -396,6 +402,8 @@ async def _stream_completion(
                 "Memory pressure high, invalidating prompt cache to prevent OOM"
             )
             lm.prompt_cache_state = None
+            gc.collect()
+            mx.clear_cache()
 
         # Cache setup — must happen after lock to prevent concurrent cache corruption
         if (
@@ -541,6 +549,8 @@ async def _stream_completion(
                     max_cache_tokens,
                 )
                 lm.prompt_cache_state = None
+                gc.collect()
+                mx.clear_cache()
             else:
                 lm.prompt_cache_state = CachedPromptState(
                     tokens=stored_tokens,
