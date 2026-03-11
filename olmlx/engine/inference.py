@@ -34,15 +34,21 @@ from olmlx.utils.timing import Timer, TimingStats
 
 logger = logging.getLogger(__name__)
 
+
 # Resolve generation streams at module load time to avoid repeated
 # importlib.import_module() calls in the hot path (_safe_sync).
-_generation_streams: list[Any] = []
-for _mod_name in ("mlx_lm.generate", "mlx_vlm.generate"):
-    try:
-        _mod = importlib.import_module(_mod_name)
-        _generation_streams.append(_mod.generation_stream)
-    except (ImportError, AttributeError):
-        pass
+def _resolve_generation_streams() -> list[Any]:
+    streams = []
+    for mod_name in ("mlx_lm.generate", "mlx_vlm.generate"):
+        try:
+            mod = importlib.import_module(mod_name)
+            streams.append(mod.generation_stream)
+        except (ImportError, AttributeError):
+            pass
+    return streams
+
+
+_generation_streams = _resolve_generation_streams()
 
 # Metal does not support concurrent command buffer submission across any
 # models — they all share the same Metal device and command queue.  A per-model

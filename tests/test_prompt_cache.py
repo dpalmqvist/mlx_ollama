@@ -428,8 +428,9 @@ class TestVlmUsesCache:
         """Set up a VLM model for cache testing."""
         lm = mock_manager._loaded["qwen3:latest"]
         lm.is_vlm = True
-        lm.language_model = MagicMock()
-        lm.language_model.layers = [None] * 32
+        # _get_model_for_cache accesses lm.model.language_model, not lm.language_model
+        lm.model.language_model = MagicMock()
+        lm.model.language_model.layers = [None] * 32
         lm.tokenizer.tokenizer = MagicMock()
         lm.tokenizer.tokenizer.chat_template = "{{ messages }}{{ tools }}"
         lm.tokenizer.tokenizer.bos_token = None
