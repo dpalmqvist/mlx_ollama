@@ -1,4 +1,5 @@
 import json
+import logging
 import time
 import uuid
 
@@ -25,6 +26,8 @@ from olmlx.schemas.openai import (
     OpenAIModelList,
     OpenAIUsage,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -64,6 +67,19 @@ async def _stream_openai_sse(
                     "choices": [format_content(chunk.get("text", ""))],
                 }
                 yield f"data: {json.dumps(data)}\n\n"
+    except Exception as exc:
+        logger.error("Error during OpenAI streaming: %s", exc, exc_info=True)
+        error_payload = json.dumps(
+            {
+                "error": {
+                    "message": "An internal server error occurred during streaming.",
+                    "type": "server_error",
+                    "code": "internal_error",
+                }
+            }
+        )
+        yield f"data: {error_payload}\n\n"
+        yield "data: [DONE]\n\n"
     finally:
         await result.aclose()
 

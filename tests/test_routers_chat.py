@@ -1,5 +1,6 @@
 """Tests for olmlx.routers.chat."""
 
+import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -77,3 +78,34 @@ class TestChatRouter:
         # Verify options were passed
         call_args = mock_gen.call_args
         assert call_args[1]["max_tokens"] == 100
+
+    @pytest.mark.asyncio
+    async def test_chat_streaming_error_mid_stream(self, app_client):
+        """Error during streaming emits an NDJSON error line instead of crashing."""
+
+        async def mock_stream(*args, **kwargs):
+            async def gen():
+                yield {"text": "partial", "done": False}
+                raise RuntimeError("GPU exploded")
+
+            return gen()
+
+        with patch("olmlx.routers.chat.generate_chat", side_effect=mock_stream):
+            resp = await app_client.post(
+                "/api/chat",
+                json={
+                    "model": "qwen3",
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "stream": True,
+                },
+            )
+
+        assert resp.status_code == 200
+        lines = [line for line in resp.text.strip().split("\n") if line.strip()]
+        last_line = json.loads(lines[-1])
+        assert "error" in last_line
+        assert "internal server error" in last_line["error"]
+        assert last_line["done"] is True
+        assert last_line["done_reason"] == "error"
+        assert last_line["model"] == "qwen3"
+        assert "created_at" in last_line

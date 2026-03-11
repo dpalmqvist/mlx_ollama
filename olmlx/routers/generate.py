@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request
@@ -6,6 +7,8 @@ from fastapi.responses import StreamingResponse
 
 from olmlx.engine.inference import generate_completion
 from olmlx.schemas.generate import GenerateRequest
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -61,6 +64,20 @@ async def generate(req: GenerateRequest, request: Request):
                             )
                             + "\n"
                         )
+            except Exception as exc:
+                logger.error("Error during generate streaming: %s", exc, exc_info=True)
+                yield (
+                    json.dumps(
+                        {
+                            "model": req.model,
+                            "created_at": datetime.now(timezone.utc).isoformat(),
+                            "error": "An internal server error occurred during streaming.",
+                            "done": True,
+                            "done_reason": "error",
+                        }
+                    )
+                    + "\n"
+                )
             finally:
                 await result.aclose()
 

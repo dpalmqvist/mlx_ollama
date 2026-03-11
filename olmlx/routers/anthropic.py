@@ -584,6 +584,7 @@ async def anthropic_messages(req: AnthropicMessagesRequest, request: Request):
         )
 
         async def stream_sse():
+            path = None
             try:
                 path = (
                     _stream_buffered_with_tools(result, tool_names)
@@ -667,8 +668,24 @@ async def anthropic_messages(req: AnthropicMessagesRequest, request: Request):
                     },
                 )
                 yield _sse("message_stop", {"type": "message_stop"})
+            except Exception as exc:
+                logger.error("Error during Anthropic streaming: %s", exc, exc_info=True)
+                yield _sse(
+                    "error",
+                    {
+                        "type": "error",
+                        "error": {
+                            "type": "api_error",
+                            "message": "An internal server error occurred during streaming.",
+                        },
+                    },
+                )
             finally:
-                await result.aclose()
+                try:
+                    if path is not None:
+                        await path.aclose()
+                finally:
+                    await result.aclose()
 
         return StreamingResponse(stream_sse(), media_type="text/event-stream")
     else:

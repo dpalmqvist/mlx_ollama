@@ -1,5 +1,6 @@
 """Tests for olmlx.routers.openai."""
 
+import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -201,3 +202,36 @@ class TestOpenAIRouter:
         assert options["seed"] == 42
         assert options["frequency_penalty"] == 0.3
         assert options["stop"] == ["END"]
+
+    @pytest.mark.asyncio
+    async def test_chat_streaming_error_mid_stream(self, app_client):
+        """Error during streaming emits an SSE error event instead of crashing."""
+
+        async def mock_stream(*args, **kwargs):
+            async def gen():
+                yield {"text": "partial", "done": False}
+                raise RuntimeError("GPU exploded")
+
+            return gen()
+
+        with patch("olmlx.routers.openai.generate_chat", side_effect=mock_stream):
+            resp = await app_client.post(
+                "/v1/chat/completions",
+                json={
+                    "model": "qwen3",
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "stream": True,
+                },
+            )
+
+        assert resp.status_code == 200
+        lines = resp.text.strip().split("\n")
+        error_line = None
+        for line in lines:
+            if line.startswith("data:") and "server_error" in line:
+                error_line = json.loads(line[5:].strip())
+                break
+        assert error_line is not None
+        assert error_line["error"]["type"] == "server_error"
+        assert "internal server error" in error_line["error"]["message"]
+        assert any("[DONE]" in line for line in lines)
