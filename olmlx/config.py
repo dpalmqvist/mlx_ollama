@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     model_load_timeout: Annotated[float, Field(gt=0)] | None = None
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     prompt_cache: bool = True
+    prompt_cache_max_tokens: Annotated[int, Field(gt=0)] | None = 32768
     cors_origins: list[str] = ["http://localhost:*", "http://127.0.0.1:*"]
 
 

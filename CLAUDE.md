@@ -8,7 +8,7 @@ Ollama-compatible API server using Apple MLX for local inference on Apple Silico
 olmlx/
 ├── app.py              # FastAPI app factory, middleware, router registration
 ├── config.py           # Settings (pydantic-settings, OLMLX_ env prefix)
-├── cli.py              # CLI with subcommands (serve, service install/uninstall/status)
+├── cli.py              # CLI with subcommands (serve, service, models, config)
 ├── __main__.py         # Entry point (delegates to cli.py)
 ├── engine/
 │   ├── inference.py    # generate_chat, generate_completion, generate_embeddings
@@ -32,7 +32,14 @@ olmlx/
 ├── schemas/
 │   ├── anthropic.py    # Anthropic API request/response models
 │   ├── openai.py       # OpenAI API request/response models
-│   └── ...             # Ollama API schemas
+│   ├── common.py       # Shared schema types
+│   ├── chat.py         # Ollama chat schemas
+│   ├── generate.py     # Ollama generate schemas
+│   ├── embed.py        # Ollama embedding schemas
+│   ├── models.py       # Ollama model schemas
+│   ├── manage.py       # Ollama management schemas
+│   ├── pull.py         # Ollama pull schemas
+│   └── status.py       # Ollama status schemas
 └── utils/
     ├── streaming.py    # async_mlx_stream — sync-to-async streaming bridge
     └── timing.py       # Timer, TimingStats
@@ -40,15 +47,17 @@ olmlx/
 
 ## Key Design Decisions
 
-- **Anthropic router** (`routers/anthropic.py`): Buffers full model output before emitting SSE events to properly parse `<think>` blocks (→ thinking content blocks) and `<tool_call>` blocks (→ tool_use content blocks). This is necessary because Qwen 3.5 outputs these as raw text.
+- **Anthropic router** (`routers/anthropic.py`): Buffers full model output before emitting SSE events to properly parse `<think>` blocks (→ thinking content blocks) and `<tool_call>` blocks (→ tool_use content blocks). This is necessary because Qwen 3.5 outputs these as raw text. Also exposes `/v1/messages/count_tokens`.
 - **Tool format conversion**: Anthropic tool definitions are converted to OpenAI-style `{"type": "function", "function": {...}}` format for `tokenizer.apply_chat_template()`.
-- **Tool call parsing**: Supports Qwen (`<tool_call>`), Mistral (`[TOOL_CALLS]`), Llama 3.x, DeepSeek, and bare JSON formats.
+- **Tool call parsing**: Supports Qwen (`<tool_call>`), Mistral (`[TOOL_CALLS]`), Llama 3.x (`<function=Name>`), DeepSeek, and bare JSON formats.
 - **Message conversion**: `tool_result` blocks → `role: "tool"` messages; `tool_use` blocks → `tool_calls` array; `thinking` blocks in history are skipped.
 - **Model storage**: Models stored by HF repo path (e.g. `Qwen--Qwen3-8B`). `ModelManager` takes a `ModelStore` dependency for local-first config loading and auto-download.
 - **Active inference protection**: `LoadedModel.active_refs` prevents LRU eviction and expiry of models currently serving requests.
 - **Memory safety**: After loading, checks Metal memory (active + cache) against `OLMLX_MEMORY_LIMIT_FRACTION` of system RAM. Rejects oversized models with `MemoryError` (HTTP 503) to prevent uncatchable Metal OOM crashes.
 - **Stream cleanup**: All streaming routers use `try/finally` with `await result.aclose()` to ensure GPU resources are released on client disconnect.
 - **Auto-registration**: Direct HF paths (e.g. `Qwen/Qwen3-8B`) are auto-registered in `models.json` on first load or pull.
+- **Prompt caching**: KV cache reuse across requests when prompts share a common prefix. Works with both mlx-lm (text) and mlx-vlm (vision) models. Controlled via `OLMLX_PROMPT_CACHE` setting.
+- **Model load timeout**: Configurable via `OLMLX_MODEL_LOAD_TIMEOUT` with dedicated `ModelLoadTimeoutError` (HTTP 504).
 
 ## Development
 

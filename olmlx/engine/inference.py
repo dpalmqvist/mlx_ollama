@@ -1,8 +1,10 @@
 import asyncio
 import contextlib
+import gc
 import importlib
 import json
 import logging
+import os
 import time
 import collections.abc
 from collections.abc import AsyncGenerator
@@ -76,6 +78,28 @@ def _safe_sync():
             mx.synchronize(stream)
         except Exception:
             logger.debug("generation_stream sync failed", exc_info=True)
+
+
+# Fraction of memory_limit_fraction at which we shed the prompt cache to
+# free Metal memory before hitting the hard model-load rejection limit.
+_MEMORY_PRESSURE_THRESHOLD = 0.9
+
+try:
+    _TOTAL_PHYSICAL_MEMORY = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+except (OSError, ValueError):
+    _TOTAL_PHYSICAL_MEMORY = 0
+
+
+def _is_memory_pressure_high() -> bool:
+    """Check if Metal memory is approaching the safety limit."""
+    if _TOTAL_PHYSICAL_MEMORY == 0:
+        return False
+    try:
+        mem = mx.get_active_memory() + mx.get_cache_memory()
+        limit = int(_TOTAL_PHYSICAL_MEMORY * settings.memory_limit_fraction)
+        return mem > int(limit * _MEMORY_PRESSURE_THRESHOLD)
+    except Exception:
+        return False
 
 
 def _tokenize_for_cache(tokenizer: Any, prompt_text: str) -> list[int]:
@@ -372,9 +396,26 @@ async def _stream_completion(
     cache_creation_tokens = 0
     full_prompt_tokens: list[int] | None = None
     try:
+        # Memory pressure check — invalidate cache to prevent Metal OOM
+        memory_too_high = (
+            use_prompt_cache
+            and prompt_tokens is not None
+            and make_prompt_cache is not None
+            and _is_memory_pressure_high()
+        )
+        if memory_too_high:
+            logger.warning(
+                "Memory pressure high, invalidating prompt cache to prevent OOM"
+            )
+            lm.prompt_cache_state = None
+            gc.collect()
+            mx.clear_cache()
+            memory_too_high = _is_memory_pressure_high()
+
         # Cache setup — must happen after lock to prevent concurrent cache corruption
         if (
             use_prompt_cache
+            and not memory_too_high
             and prompt_tokens is not None
             and make_prompt_cache is not None
         ):
@@ -507,16 +548,29 @@ async def _stream_completion(
         prompt_cache = gen_kwargs.get("prompt_cache")
         if prompt_cache is not None and full_prompt_tokens is not None:
             stored_tokens = list(full_prompt_tokens) + generated_tokens
-            lm.prompt_cache_state = CachedPromptState(
-                tokens=stored_tokens,
-                cache=prompt_cache,
-            )
-            logger.debug(
-                "Cache stored: %d tokens (%d prompt + %d generated)",
-                len(stored_tokens),
-                len(full_prompt_tokens),
-                len(generated_tokens),
-            )
+            max_cache_tokens = settings.prompt_cache_max_tokens
+            if max_cache_tokens is not None and len(stored_tokens) > max_cache_tokens:
+                logger.info(
+                    "Cache invalidated: %d tokens exceeds limit of %d",
+                    len(stored_tokens),
+                    max_cache_tokens,
+                )
+                lm.prompt_cache_state = None
+                gen_kwargs.pop("prompt_cache", None)
+                prompt_cache = None
+                gc.collect()
+                mx.clear_cache()
+            else:
+                lm.prompt_cache_state = CachedPromptState(
+                    tokens=stored_tokens,
+                    cache=prompt_cache,
+                )
+                logger.debug(
+                    "Cache stored: %d tokens (%d prompt + %d generated)",
+                    len(stored_tokens),
+                    len(full_prompt_tokens),
+                    len(generated_tokens),
+                )
 
         yield {
             "text": "",

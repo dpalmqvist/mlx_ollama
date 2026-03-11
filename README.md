@@ -32,6 +32,21 @@ uv run olmlx
 
 The server starts on `http://localhost:11434` — the same default port as Ollama.
 
+## CLI
+
+```bash
+olmlx                      # Start the server (default)
+olmlx serve                # Start the server (explicit)
+olmlx models list          # List locally downloaded models
+olmlx models pull <name>   # Download a model
+olmlx models show <name>   # Show model details
+olmlx models delete <name> # Delete a local model
+olmlx config show          # Show current configuration
+olmlx service install      # Install as launchd service
+olmlx service status       # Check service status
+olmlx service uninstall    # Remove the service
+```
+
 ## Auto-start on Login (macOS)
 
 ```bash
@@ -156,8 +171,9 @@ print(response["message"]["content"])
 | Endpoint | Method | Description |
 |---|---|---|
 | `/v1/messages` | POST | Anthropic Messages API (SSE streaming supported) |
+| `/v1/messages/count_tokens` | POST | Count tokens for a messages request |
 
-This endpoint allows using the server as a backend for tools that speak the Anthropic API, such as Claude Code. It supports thinking blocks, tool use, and streaming.
+This endpoint allows using the server as a backend for tools that speak the Anthropic API, such as Claude Code. It supports thinking blocks, tool use, streaming, and prompt caching (KV cache reuse across requests).
 
 ## Configuration
 
@@ -172,6 +188,11 @@ All settings can be overridden with `OLMLX_`-prefixed environment variables or a
 | `OLMLX_DEFAULT_KEEP_ALIVE` | `5m` | How long idle models stay loaded (`0` = unload immediately, `-1` = never unload) |
 | `OLMLX_MAX_LOADED_MODELS` | `1` | Max models loaded concurrently (LRU eviction when exceeded) |
 | `OLMLX_MEMORY_LIMIT_FRACTION` | `0.75` | Max fraction of system RAM for Metal GPU memory (0–1). Models exceeding this are rejected to prevent OOM crashes |
+| `OLMLX_MODEL_LOAD_TIMEOUT` | `None` | Timeout in seconds for model loading (no timeout by default) |
+| `OLMLX_LOG_LEVEL` | `INFO` | Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`) |
+| `OLMLX_PROMPT_CACHE` | `true` | Enable KV cache reuse across requests for faster inference |
+| `OLMLX_PROMPT_CACHE_MAX_TOKENS` | `32768` | Invalidate the KV cache after a conversation exceeds this many tokens. Use a very large value to effectively disable |
+| `OLMLX_CORS_ORIGINS` | `http://localhost:*`, `http://127.0.0.1:*` | Allowed CORS origins |
 
 ## How It Works
 
@@ -184,6 +205,7 @@ Key internals:
 - **Registry** — resolves Ollama model names to HuggingFace paths via `models.json`
 - **Streaming Bridge** — runs `mlx_lm.stream_generate()` in a thread, feeds tokens through an `asyncio.Queue`
 - **Chat Templates** — uses each model's built-in `tokenizer.apply_chat_template()` for correct prompt formatting
+- **Prompt Caching** — reuses KV cache across requests when the prompt shares a common prefix, reducing time-to-first-token. Works with both text models (mlx-lm) and vision models (mlx-vlm)
 
 ## Troubleshooting
 
@@ -258,7 +280,7 @@ If the template doesn't support tools, olmlx falls back to injecting tool descri
 
 | Model Family | Chat | Tools | Thinking | Vision |
 |---|---|---|---|---|
-| Qwen 2.5/3 | ✓ | ✓ | ✓ (Qwen 3) | ✗ |
+| Qwen 2.5/3/3.5 | ✓ | ✓ | ✓ (Qwen 3+) | ✗ |
 | Llama 3.1/3.2 | ✓ | ✓ | ✗ | ✗ |
 | Mistral/Nemo | ✓ | ✓ | ✗ | ✗ |
 | Gemma 2 | ✓ | ✗ | ✗ | ✗ |
