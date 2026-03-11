@@ -1140,6 +1140,71 @@ class TestCacheSkippedOnMemoryPressure:
         assert lm.prompt_cache_state is None
 
 
+class TestCacheRebuiltAfterPressureResolves:
+    @pytest.mark.asyncio
+    async def test_fresh_cache_built_when_pressure_clears(self, mock_manager):
+        """When memory pressure resolves after clearing, a fresh cache is built."""
+        from olmlx.engine.inference import generate_chat
+
+        lm = mock_manager._loaded["qwen3:latest"]
+        lm.tokenizer.apply_chat_template = MagicMock(return_value="prompt")
+        lm.tokenizer.bos_token = None
+        lm.tokenizer.encode = MagicMock(return_value=[10, 20, 30])
+
+        from olmlx.engine.model_manager import CachedPromptState
+
+        lm.prompt_cache_state = CachedPromptState(
+            tokens=[10, 20, 30], cache=[MagicMock()]
+        )
+
+        tokens = _make_stream_tokens("Hello", prompt_tokens=3)
+        mock_stream = _make_mock_stream(tokens)
+
+        mock_make_cache = MagicMock(return_value=[MagicMock()])
+
+        # First call returns True (pressure high), second returns False (resolved)
+        pressure_returns = iter([True, False])
+
+        mock_mx = MagicMock()
+        with (
+            patch("olmlx.engine.inference.mx", mock_mx),
+            patch(
+                "olmlx.engine.inference.async_mlx_stream",
+                return_value=mock_stream,
+            ) as mock_async_stream,
+            patch(
+                "olmlx.engine.inference.make_prompt_cache",
+                mock_make_cache,
+            ),
+            patch("olmlx.engine.inference.settings") as mock_settings,
+            patch(
+                "olmlx.engine.inference._is_memory_pressure_high",
+                side_effect=pressure_returns,
+            ),
+        ):
+            mock_settings.prompt_cache = True
+            mock_settings.prompt_cache_max_tokens = 32768
+            mock_settings.default_keep_alive = "5m"
+            gen = await generate_chat(
+                mock_manager,
+                "qwen3",
+                [{"role": "user", "content": "hi"}],
+                stream=True,
+            )
+            chunks = []
+            async for chunk in gen:
+                chunks.append(chunk)
+
+        # After clearing resolved pressure, a fresh cache should be built
+        mock_make_cache.assert_called_once()
+        call_args = mock_async_stream.call_args
+        assert "prompt_cache" in call_args[1]
+        # Cache info chunk should be emitted
+        assert any(c.get("cache_info") for c in chunks)
+        # Cache should be stored after generation
+        assert lm.prompt_cache_state is not None
+
+
 class TestConfigPromptCacheSetting:
     def test_default_enabled(self, monkeypatch):
         monkeypatch.delenv("OLMLX_PROMPT_CACHE", raising=False)
