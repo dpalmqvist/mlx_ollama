@@ -681,9 +681,11 @@ async def anthropic_messages(req: AnthropicMessagesRequest, request: Request):
                     },
                 )
             finally:
-                if path is not None:
-                    await path.aclose()
-                await result.aclose()
+                try:
+                    if path is not None:
+                        await path.aclose()
+                finally:
+                    await result.aclose()
 
         return StreamingResponse(stream_sse(), media_type="text/event-stream")
     else:
