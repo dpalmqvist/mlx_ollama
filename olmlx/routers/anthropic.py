@@ -6,6 +6,7 @@ import uuid
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
+from olmlx.config import settings
 from olmlx.engine.inference import count_chat_tokens, generate_chat
 from olmlx.engine.tool_parser import _make_tool_use_id, parse_model_output
 from olmlx.schemas.anthropic import (
@@ -18,6 +19,21 @@ from olmlx.schemas.anthropic import (
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _resolve_anthropic_model(model: str) -> str:
+    """Resolve Claude model names to local models via config mapping.
+
+    Matches family keywords (e.g. "haiku", "sonnet") against the model name.
+    """
+    if not settings.anthropic_models:
+        return model
+    model_lower = model.lower()
+    for family, local_model in settings.anthropic_models.items():
+        if family.lower() in model_lower:
+            return local_model
+    return model
+
 
 THINKING_CHUNK_SIZE = 1000
 TEXT_CHUNK_SIZE = 100
@@ -531,8 +547,9 @@ async def anthropic_count_tokens(req: AnthropicMessagesRequest, request: Request
         len(req.messages),
         len(req.tools or []),
     )
+    resolved_model = _resolve_anthropic_model(req.model)
     manager = request.app.state.model_manager
-    lm = await manager.ensure_loaded(req.model)
+    lm = await manager.ensure_loaded(resolved_model)
 
     messages = _convert_messages(req)
     tools = _convert_tools(req)
@@ -563,6 +580,7 @@ async def anthropic_messages(req: AnthropicMessagesRequest, request: Request):
         len(req.messages),
         req.max_tokens,
     )
+    resolved_model = _resolve_anthropic_model(req.model)
     manager = request.app.state.model_manager
     messages = _convert_messages(req)
     options = _build_options(req)
@@ -575,7 +593,7 @@ async def anthropic_messages(req: AnthropicMessagesRequest, request: Request):
     if req.stream:
         result = await generate_chat(
             manager,
-            req.model,
+            resolved_model,
             messages,
             options,
             tools=tools,
@@ -691,7 +709,7 @@ async def anthropic_messages(req: AnthropicMessagesRequest, request: Request):
     else:
         result = await generate_chat(
             manager,
-            req.model,
+            resolved_model,
             messages,
             options,
             tools=tools,

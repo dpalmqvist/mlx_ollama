@@ -50,3 +50,19 @@ class TestSettings:
         monkeypatch.setenv("OLMLX_MODEL_LOAD_TIMEOUT", "-1")
         with pytest.raises(ValidationError):
             Settings()
+
+    def test_anthropic_models_default(self, monkeypatch):
+        monkeypatch.delenv("OLMLX_ANTHROPIC_MODELS", raising=False)
+        s = Settings()
+        assert s.anthropic_models == {}
+
+    def test_anthropic_models_from_env(self, monkeypatch):
+        monkeypatch.setenv(
+            "OLMLX_ANTHROPIC_MODELS",
+            '{"haiku": "qwen3:latest", "sonnet": "qwen3-8b:latest"}',
+        )
+        s = Settings()
+        assert s.anthropic_models == {
+            "haiku": "qwen3:latest",
+            "sonnet": "qwen3-8b:latest",
+        }

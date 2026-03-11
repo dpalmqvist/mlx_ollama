@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     prompt_cache: bool = True
     prompt_cache_max_tokens: Annotated[int, Field(gt=0)] | None = 32768
     cors_origins: list[str] = ["http://localhost:*", "http://127.0.0.1:*"]
+    anthropic_models: dict[str, str] = {}
 
 
 settings = Settings()
