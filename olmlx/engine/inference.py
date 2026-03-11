@@ -34,6 +34,16 @@ from olmlx.utils.timing import Timer, TimingStats
 
 logger = logging.getLogger(__name__)
 
+# Resolve generation streams at module load time to avoid repeated
+# importlib.import_module() calls in the hot path (_safe_sync).
+_generation_streams: list[Any] = []
+for _mod_name in ("mlx_lm.generate", "mlx_vlm.generate"):
+    try:
+        _mod = importlib.import_module(_mod_name)
+        _generation_streams.append(_mod.generation_stream)
+    except (ImportError, AttributeError):
+        pass
+
 # Metal does not support concurrent command buffer submission across any
 # models — they all share the same Metal device and command queue.  A per-model
 # lock would still allow interleaved GPU work from different models, risking
@@ -55,18 +65,11 @@ def _safe_sync():
     except Exception:
         logger.debug("mx.synchronize() failed", exc_info=True)
 
-    # Also sync the generation stream used by mlx_lm/mlx_vlm.
-    # Try both since we don't know which model type was last active.
-    for module_name in ("mlx_lm.generate", "mlx_vlm.generate"):
+    for stream in _generation_streams:
         try:
-            mod = importlib.import_module(module_name)
-            mx.synchronize(mod.generation_stream)
-        except (ImportError, AttributeError):
-            pass  # Module not installed or no generation_stream attr
+            mx.synchronize(stream)
         except Exception:
-            logger.debug(
-                "generation_stream sync failed for %s", module_name, exc_info=True
-            )
+            logger.debug("generation_stream sync failed", exc_info=True)
 
 
 def _tokenize_for_cache(tokenizer: Any, prompt_text: str) -> list[int]:
@@ -261,7 +264,7 @@ def _get_model_for_cache(model: Any, is_vlm: bool) -> Any:
     For VLM models (mlx-vlm), returns model.language_model.
     """
     if is_vlm:
-        return model.language_model
+        return getattr(model, "language_model", model)
     return model
 
 

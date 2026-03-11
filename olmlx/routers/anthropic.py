@@ -70,7 +70,9 @@ def _strip_billing_headers(
         ]
         if len(filtered) < len(lines):
             logger.info("Stripped billing header from string system prompt")
-        result = "\n".join(filtered).strip()
+        result = "\n".join(filtered)
+        if len(filtered) < len(lines):
+            result = result.strip()
         return result if result else None
 
     # list[AnthropicContentBlock]

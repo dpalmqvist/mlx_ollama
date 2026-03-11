@@ -107,6 +107,12 @@ class TestStripBillingHeaders:
         result = _strip_billing_headers(system)
         assert result == "You are a helpful assistant."
 
+    def test_string_system_trailing_newline_preserved(self):
+        """Trailing whitespace preserved when no billing headers removed."""
+        system = "You are helpful.\n"
+        result = _strip_billing_headers(system)
+        assert result == "You are helpful.\n"
+
     def test_none_system(self):
         """None system returns None."""
         result = _strip_billing_headers(None)
