@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings
@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     max_loaded_models: int = 1
     memory_limit_fraction: Annotated[float, Field(gt=0, le=1.0)] = 0.75
     model_load_timeout: Annotated[float, Field(gt=0)] | None = None
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     prompt_cache: bool = True
     cors_origins: list[str] = ["http://localhost:*", "http://127.0.0.1:*"]
 

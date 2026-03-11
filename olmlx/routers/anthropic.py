@@ -50,6 +50,43 @@ def _convert_tools(req: AnthropicMessagesRequest) -> list[dict] | None:
     return tools
 
 
+BILLING_HEADER_PREFIX = "x-anthropic-billing-header"
+
+
+def _strip_billing_headers(
+    system: str | list[AnthropicContentBlock] | None,
+) -> str | list[AnthropicContentBlock] | None:
+    """Strip Claude Code billing header blocks/lines from system prompt.
+
+    These headers change every request and break KV cache prefix matching.
+    """
+    if system is None:
+        return None
+
+    if isinstance(system, str):
+        lines = system.split("\n")
+        filtered = [
+            line for line in lines if not line.startswith(BILLING_HEADER_PREFIX)
+        ]
+        if len(filtered) < len(lines):
+            logger.info("Stripped billing header from string system prompt")
+        result = "\n".join(filtered)
+        if len(filtered) < len(lines):
+            result = result.strip()
+        return result if result else None
+
+    # list[AnthropicContentBlock]
+    filtered = [
+        b for b in system if not (b.text and b.text.startswith(BILLING_HEADER_PREFIX))
+    ]
+    if len(filtered) < len(system):
+        logger.info(
+            "Stripped %d billing header block(s) from system prompt",
+            len(system) - len(filtered),
+        )
+    return filtered if filtered else None
+
+
 def _convert_messages(req: AnthropicMessagesRequest) -> list[dict]:
     """Convert Anthropic message format to internal chat format.
 
@@ -57,12 +94,13 @@ def _convert_messages(req: AnthropicMessagesRequest) -> list[dict]:
     """
     messages = []
 
-    # System message
-    if req.system:
-        if isinstance(req.system, str):
-            messages.append({"role": "system", "content": req.system})
+    # System message (strip billing headers to preserve KV cache)
+    system = _strip_billing_headers(req.system)
+    if system:
+        if isinstance(system, str):
+            messages.append({"role": "system", "content": system})
         else:
-            text = " ".join(b.text for b in req.system if b.text)
+            text = " ".join(b.text for b in system if b.text)
             messages.append({"role": "system", "content": text})
 
     for msg in req.messages:
