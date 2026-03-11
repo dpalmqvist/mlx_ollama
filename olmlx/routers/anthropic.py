@@ -584,6 +584,7 @@ async def anthropic_messages(req: AnthropicMessagesRequest, request: Request):
         )
 
         async def stream_sse():
+            path = None
             try:
                 path = (
                     _stream_buffered_with_tools(result, tool_names)
@@ -680,7 +681,8 @@ async def anthropic_messages(req: AnthropicMessagesRequest, request: Request):
                     },
                 )
             finally:
-                await path.aclose()
+                if path is not None:
+                    await path.aclose()
                 await result.aclose()
 
         return StreamingResponse(stream_sse(), media_type="text/event-stream")
