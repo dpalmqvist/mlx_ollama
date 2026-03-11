@@ -919,6 +919,41 @@ class TestAnthropicEndpoint:
         assert messages[0]["role"] == "system"
         assert "helpful" in messages[0]["content"]
 
+    @pytest.mark.asyncio
+    async def test_streaming_error_mid_stream(self, app_client):
+        """Error during streaming emits an SSE error event instead of crashing."""
+
+        async def mock_stream(*args, **kwargs):
+            async def gen():
+                yield {"text": "partial", "done": False}
+                raise RuntimeError("GPU exploded")
+
+            return gen()
+
+        with patch("olmlx.routers.anthropic.generate_chat", side_effect=mock_stream):
+            resp = await app_client.post(
+                "/v1/messages",
+                json={
+                    "model": "qwen3",
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "max_tokens": 100,
+                    "stream": True,
+                },
+            )
+
+        assert resp.status_code == 200
+        text = resp.text
+        assert "event: error" in text
+        error_data = None
+        for line in text.split("\n"):
+            if line.startswith("data:") and "api_error" in line:
+                error_data = json.loads(line[5:])
+                break
+        assert error_data is not None
+        assert error_data["type"] == "error"
+        assert error_data["error"]["type"] == "api_error"
+        assert "RuntimeError" in error_data["error"]["message"]
+
 
 class TestCountTokens:
     @pytest.mark.asyncio

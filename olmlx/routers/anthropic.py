@@ -667,6 +667,18 @@ async def anthropic_messages(req: AnthropicMessagesRequest, request: Request):
                     },
                 )
                 yield _sse("message_stop", {"type": "message_stop"})
+            except Exception as exc:
+                logger.error("Error during Anthropic streaming: %s", exc, exc_info=True)
+                yield _sse(
+                    "error",
+                    {
+                        "type": "error",
+                        "error": {
+                            "type": "api_error",
+                            "message": f"{type(exc).__name__}: {exc}",
+                        },
+                    },
+                )
             finally:
                 await result.aclose()
 

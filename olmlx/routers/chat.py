@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request
@@ -6,6 +7,8 @@ from fastapi.responses import StreamingResponse
 
 from olmlx.engine.inference import generate_chat
 from olmlx.schemas.chat import ChatRequest, Message
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -67,6 +70,9 @@ async def chat(req: ChatRequest, request: Request):
                             )
                             + "\n"
                         )
+            except Exception as exc:
+                logger.error("Error during chat streaming: %s", exc, exc_info=True)
+                yield json.dumps({"error": f"{type(exc).__name__}: {exc}"}) + "\n"
             finally:
                 await result.aclose()
 
