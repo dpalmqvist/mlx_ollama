@@ -87,11 +87,13 @@ _MEMORY_PRESSURE_THRESHOLD = 0.9
 try:
     _TOTAL_PHYSICAL_MEMORY = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
 except (OSError, ValueError):
-    _TOTAL_PHYSICAL_MEMORY = 0  # _is_memory_pressure_high() will return False
+    _TOTAL_PHYSICAL_MEMORY = 0
 
 
 def _is_memory_pressure_high() -> bool:
     """Check if Metal memory is approaching the safety limit."""
+    if _TOTAL_PHYSICAL_MEMORY == 0:
+        return False
     try:
         mem = mx.get_active_memory() + mx.get_cache_memory()
         limit = int(_TOTAL_PHYSICAL_MEMORY * settings.memory_limit_fraction)
@@ -554,10 +556,8 @@ async def _stream_completion(
                     max_cache_tokens,
                 )
                 lm.prompt_cache_state = None
-                gen_kwargs.pop("prompt_cache", None)
-                if _is_memory_pressure_high():
-                    gc.collect()
-                    mx.clear_cache()
+                gc.collect()
+                mx.clear_cache()
             else:
                 lm.prompt_cache_state = CachedPromptState(
                     tokens=stored_tokens,
