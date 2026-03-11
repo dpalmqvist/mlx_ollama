@@ -675,7 +675,7 @@ async def anthropic_messages(req: AnthropicMessagesRequest, request: Request):
                         "type": "error",
                         "error": {
                             "type": "api_error",
-                            "message": f"{type(exc).__name__}: {exc}",
+                            "message": "An internal server error occurred during streaming.",
                         },
                     },
                 )

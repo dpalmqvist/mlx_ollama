@@ -952,7 +952,7 @@ class TestAnthropicEndpoint:
         assert error_data is not None
         assert error_data["type"] == "error"
         assert error_data["error"]["type"] == "api_error"
-        assert "RuntimeError" in error_data["error"]["message"]
+        assert "internal server error" in error_data["error"]["message"]
 
 
 class TestCountTokens:

@@ -133,4 +133,6 @@ class TestGenerateRouter:
         lines = [line for line in resp.text.strip().split("\n") if line.strip()]
         last_line = json.loads(lines[-1])
         assert "error" in last_line
-        assert "RuntimeError" in last_line["error"]
+        assert "internal server error" in last_line["error"]
+        assert last_line["done"] is True
+        assert last_line["done_reason"] == "error"

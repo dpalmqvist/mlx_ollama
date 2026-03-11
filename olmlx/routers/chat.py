@@ -72,7 +72,16 @@ async def chat(req: ChatRequest, request: Request):
                         )
             except Exception as exc:
                 logger.error("Error during chat streaming: %s", exc, exc_info=True)
-                yield json.dumps({"error": f"{type(exc).__name__}: {exc}"}) + "\n"
+                yield (
+                    json.dumps(
+                        {
+                            "error": "An internal server error occurred during streaming.",
+                            "done": True,
+                            "done_reason": "error",
+                        }
+                    )
+                    + "\n"
+                )
             finally:
                 await result.aclose()
 

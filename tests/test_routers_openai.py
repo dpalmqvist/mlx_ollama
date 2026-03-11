@@ -233,5 +233,5 @@ class TestOpenAIRouter:
                 break
         assert error_line is not None
         assert error_line["error"]["type"] == "server_error"
-        assert "RuntimeError" in error_line["error"]["message"]
+        assert "internal server error" in error_line["error"]["message"]
         assert any("[DONE]" in line for line in lines)
