@@ -283,6 +283,7 @@ def cmd_config_show(_args):
     print(f"Memory limit fraction:  {settings.memory_limit_fraction}")
     print(f"Log level:              {settings.log_level}")
     print(f"Prompt cache:           {settings.prompt_cache}")
+    print(f"Prompt cache max tokens: {settings.prompt_cache_max_tokens}")
     print(f"CORS origins:           {settings.cors_origins}")
 
 

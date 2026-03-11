@@ -155,6 +155,7 @@ class TestCacheCreatedOnFirstRequest:
             patch("olmlx.engine.inference.settings") as mock_settings,
         ):
             mock_settings.prompt_cache = True
+            mock_settings.prompt_cache_max_tokens = 32768
             mock_settings.default_keep_alive = "5m"
             gen = await generate_chat(
                 mock_manager,
@@ -216,6 +217,7 @@ class TestCacheReusedOnPrefixMatch:
             patch("olmlx.engine.inference.settings") as mock_settings,
         ):
             mock_settings.prompt_cache = True
+            mock_settings.prompt_cache_max_tokens = 32768
             mock_settings.default_keep_alive = "5m"
             gen = await generate_chat(
                 mock_manager,
@@ -280,6 +282,7 @@ class TestCacheMissCreatesFresh:
             patch("olmlx.engine.inference.settings") as mock_settings,
         ):
             mock_settings.prompt_cache = True
+            mock_settings.prompt_cache_max_tokens = 32768
             mock_settings.default_keep_alive = "5m"
             gen = await generate_chat(
                 mock_manager,
@@ -347,6 +350,7 @@ class TestCacheInvalidatedOnCancel:
             patch("olmlx.engine.inference.settings") as mock_settings,
         ):
             mock_settings.prompt_cache = True
+            mock_settings.prompt_cache_max_tokens = 32768
             mock_settings.default_keep_alive = "5m"
             gen = await generate_chat(
                 mock_manager,
@@ -466,6 +470,7 @@ class TestVlmUsesCache:
             patch("olmlx.engine.inference.settings") as mock_settings,
         ):
             mock_settings.prompt_cache = True
+            mock_settings.prompt_cache_max_tokens = 32768
             mock_settings.default_keep_alive = "5m"
             gen = await generate_chat(
                 mock_manager,
@@ -514,6 +519,7 @@ class TestVlmUsesCache:
             patch("olmlx.engine.inference.settings") as mock_settings,
         ):
             mock_settings.prompt_cache = True
+            mock_settings.prompt_cache_max_tokens = 32768
             mock_settings.default_keep_alive = "5m"
             gen = await generate_chat(
                 mock_manager,
@@ -578,6 +584,7 @@ class TestCacheTokenCountLogging:
             caplog.at_level(logging.INFO, logger="olmlx.engine.inference"),
         ):
             mock_settings.prompt_cache = True
+            mock_settings.prompt_cache_max_tokens = 32768
             mock_settings.default_keep_alive = "5m"
             gen = await generate_chat(
                 mock_manager,
@@ -634,6 +641,7 @@ class TestCacheStatsInCacheInfoChunk:
             patch("olmlx.engine.inference.settings") as mock_settings,
         ):
             mock_settings.prompt_cache = True
+            mock_settings.prompt_cache_max_tokens = 32768
             mock_settings.default_keep_alive = "5m"
             gen = await generate_chat(
                 mock_manager,
@@ -715,6 +723,7 @@ class TestCacheExactMatchTrimAlignment:
             patch("olmlx.engine.inference.settings") as mock_settings,
         ):
             mock_settings.prompt_cache = True
+            mock_settings.prompt_cache_max_tokens = 32768
             mock_settings.default_keep_alive = "5m"
             gen = await generate_chat(
                 mock_manager,
@@ -776,6 +785,7 @@ class TestLockReleasedOnCacheInfoDisconnect:
             patch("olmlx.engine.inference.settings") as mock_settings,
         ):
             mock_settings.prompt_cache = True
+            mock_settings.prompt_cache_max_tokens = 32768
             mock_settings.default_keep_alive = "5m"
             gen = await generate_chat(
                 mock_manager,
@@ -843,6 +853,7 @@ class TestNoneTokenWarning:
             caplog.at_level(logging.DEBUG, logger="olmlx.engine.inference"),
         ):
             mock_settings.prompt_cache = True
+            mock_settings.prompt_cache_max_tokens = 32768
             mock_settings.default_keep_alive = "5m"
             gen = await generate_chat(
                 mock_manager,
@@ -907,6 +918,7 @@ class TestSingleTokenPromptCacheEdgeCase:
             patch("olmlx.engine.inference.settings") as mock_settings,
         ):
             mock_settings.prompt_cache = True
+            mock_settings.prompt_cache_max_tokens = 32768
             mock_settings.default_keep_alive = "5m"
             gen = await generate_chat(
                 mock_manager,
@@ -924,6 +936,210 @@ class TestSingleTokenPromptCacheEdgeCase:
         mock_trim.assert_not_called()
 
 
+class TestCacheInvalidatedWhenExceedsTokenLimit:
+    @pytest.mark.asyncio
+    async def test_cache_cleared_when_over_limit(self, mock_manager):
+        """When stored tokens exceed prompt_cache_max_tokens, cache is invalidated."""
+        from olmlx.engine.inference import generate_chat
+
+        lm = mock_manager._loaded["qwen3:latest"]
+        lm.tokenizer.apply_chat_template = MagicMock(return_value="prompt")
+        lm.tokenizer.bos_token = None
+        lm.tokenizer.encode = MagicMock(return_value=[10, 20, 30, 40, 50])
+
+        # 5 prompt tokens + 2 generated = 7, but limit is 6
+        tokens = _make_stream_tokens("Hello", " world", prompt_tokens=5)
+        mock_stream = _make_mock_stream(tokens)
+
+        mock_make_cache = MagicMock(return_value=[MagicMock()])
+
+        mock_mx = MagicMock()
+        with (
+            patch("olmlx.engine.inference.mx", mock_mx),
+            patch(
+                "olmlx.engine.inference.async_mlx_stream",
+                return_value=mock_stream,
+            ),
+            patch(
+                "olmlx.engine.inference.make_prompt_cache",
+                mock_make_cache,
+            ),
+            patch("olmlx.engine.inference.settings") as mock_settings,
+        ):
+            mock_settings.prompt_cache = True
+            mock_settings.prompt_cache_max_tokens = 6
+            mock_settings.default_keep_alive = "5m"
+            gen = await generate_chat(
+                mock_manager,
+                "qwen3",
+                [{"role": "user", "content": "hi"}],
+                stream=True,
+            )
+            async for chunk in gen:
+                pass
+
+        # 5 prompt + 2 generated = 7 > limit of 6 → cache should be invalidated
+        assert lm.prompt_cache_state is None
+
+
+class TestCacheStoredWhenWithinTokenLimit:
+    @pytest.mark.asyncio
+    async def test_cache_stored_when_under_limit(self, mock_manager):
+        """When stored tokens are within prompt_cache_max_tokens, cache is stored normally."""
+        from olmlx.engine.inference import generate_chat
+        from olmlx.engine.model_manager import CachedPromptState
+
+        lm = mock_manager._loaded["qwen3:latest"]
+        lm.tokenizer.apply_chat_template = MagicMock(return_value="prompt")
+        lm.tokenizer.bos_token = None
+        lm.tokenizer.encode = MagicMock(return_value=[10, 20, 30, 40, 50])
+
+        # 5 prompt + 2 generated = 7, limit is 20
+        tokens = _make_stream_tokens("Hello", " world", prompt_tokens=5)
+        mock_stream = _make_mock_stream(tokens)
+
+        mock_make_cache = MagicMock(return_value=[MagicMock()])
+
+        mock_mx = MagicMock()
+        with (
+            patch("olmlx.engine.inference.mx", mock_mx),
+            patch(
+                "olmlx.engine.inference.async_mlx_stream",
+                return_value=mock_stream,
+            ),
+            patch(
+                "olmlx.engine.inference.make_prompt_cache",
+                mock_make_cache,
+            ),
+            patch("olmlx.engine.inference.settings") as mock_settings,
+        ):
+            mock_settings.prompt_cache = True
+            mock_settings.prompt_cache_max_tokens = 20
+            mock_settings.default_keep_alive = "5m"
+            gen = await generate_chat(
+                mock_manager,
+                "qwen3",
+                [{"role": "user", "content": "hi"}],
+                stream=True,
+            )
+            async for chunk in gen:
+                pass
+
+        # 7 tokens <= 20 limit → cache should be stored
+        assert lm.prompt_cache_state is not None
+        assert isinstance(lm.prompt_cache_state, CachedPromptState)
+        assert len(lm.prompt_cache_state.tokens) == 7
+
+
+class TestCacheStoredWhenLimitDisabled:
+    @pytest.mark.asyncio
+    async def test_cache_stored_when_limit_is_none(self, mock_manager):
+        """When prompt_cache_max_tokens is None, cache is stored regardless of size."""
+        from olmlx.engine.inference import generate_chat
+        from olmlx.engine.model_manager import CachedPromptState
+
+        lm = mock_manager._loaded["qwen3:latest"]
+        lm.tokenizer.apply_chat_template = MagicMock(return_value="prompt")
+        lm.tokenizer.bos_token = None
+        lm.tokenizer.encode = MagicMock(return_value=list(range(100)))
+
+        # 100 prompt + 2 generated = 102 tokens, but no limit
+        tokens = _make_stream_tokens("Hello", " world", prompt_tokens=100)
+        mock_stream = _make_mock_stream(tokens)
+
+        mock_make_cache = MagicMock(return_value=[MagicMock()])
+
+        mock_mx = MagicMock()
+        with (
+            patch("olmlx.engine.inference.mx", mock_mx),
+            patch(
+                "olmlx.engine.inference.async_mlx_stream",
+                return_value=mock_stream,
+            ),
+            patch(
+                "olmlx.engine.inference.make_prompt_cache",
+                mock_make_cache,
+            ),
+            patch("olmlx.engine.inference.settings") as mock_settings,
+        ):
+            mock_settings.prompt_cache = True
+            mock_settings.prompt_cache_max_tokens = None
+            mock_settings.default_keep_alive = "5m"
+            gen = await generate_chat(
+                mock_manager,
+                "qwen3",
+                [{"role": "user", "content": "hi"}],
+                stream=True,
+            )
+            async for chunk in gen:
+                pass
+
+        # No limit → cache stored regardless
+        assert lm.prompt_cache_state is not None
+        assert isinstance(lm.prompt_cache_state, CachedPromptState)
+        assert len(lm.prompt_cache_state.tokens) == 102
+
+
+class TestCacheSkippedOnMemoryPressure:
+    @pytest.mark.asyncio
+    async def test_cache_invalidated_on_high_memory(self, mock_manager):
+        """When memory pressure is high, cache is invalidated and no prompt_cache kwarg passed."""
+        from olmlx.engine.inference import generate_chat
+
+        lm = mock_manager._loaded["qwen3:latest"]
+        lm.tokenizer.apply_chat_template = MagicMock(return_value="prompt")
+        lm.tokenizer.bos_token = None
+        lm.tokenizer.encode = MagicMock(return_value=[10, 20, 30])
+
+        # Set up existing cache that should be invalidated
+        from olmlx.engine.model_manager import CachedPromptState
+
+        lm.prompt_cache_state = CachedPromptState(
+            tokens=[10, 20, 30], cache=[MagicMock()]
+        )
+
+        tokens = _make_stream_tokens("Hello", prompt_tokens=3)
+        mock_stream = _make_mock_stream(tokens)
+
+        mock_mx = MagicMock()
+        with (
+            patch("olmlx.engine.inference.mx", mock_mx),
+            patch(
+                "olmlx.engine.inference.async_mlx_stream",
+                return_value=mock_stream,
+            ) as mock_async_stream,
+            patch(
+                "olmlx.engine.inference.make_prompt_cache",
+                MagicMock(return_value=[MagicMock()]),
+            ),
+            patch("olmlx.engine.inference.settings") as mock_settings,
+            patch(
+                "olmlx.engine.inference._is_memory_pressure_high",
+                return_value=True,
+            ),
+        ):
+            mock_settings.prompt_cache = True
+            mock_settings.prompt_cache_max_tokens = 32768
+            mock_settings.default_keep_alive = "5m"
+            gen = await generate_chat(
+                mock_manager,
+                "qwen3",
+                [{"role": "user", "content": "hi"}],
+                stream=True,
+            )
+            chunks = []
+            async for chunk in gen:
+                chunks.append(chunk)
+
+        # No prompt_cache should be passed to async_mlx_stream
+        call_args = mock_async_stream.call_args
+        assert "prompt_cache" not in call_args[1]
+        # No cache_info chunk should be emitted
+        assert not any(c.get("cache_info") for c in chunks)
+        # Cache should be invalidated
+        assert lm.prompt_cache_state is None
+
+
 class TestConfigPromptCacheSetting:
     def test_default_enabled(self, monkeypatch):
         monkeypatch.delenv("OLMLX_PROMPT_CACHE", raising=False)
@@ -938,3 +1154,26 @@ class TestConfigPromptCacheSetting:
 
         s = Settings()
         assert s.prompt_cache is False
+
+
+class TestConfigPromptCacheMaxTokensSetting:
+    def test_default_is_32768(self, monkeypatch):
+        monkeypatch.delenv("OLMLX_PROMPT_CACHE_MAX_TOKENS", raising=False)
+        from olmlx.config import Settings
+
+        s = Settings()
+        assert s.prompt_cache_max_tokens == 32768
+
+    def test_env_override(self, monkeypatch):
+        monkeypatch.setenv("OLMLX_PROMPT_CACHE_MAX_TOKENS", "8192")
+        from olmlx.config import Settings
+
+        s = Settings()
+        assert s.prompt_cache_max_tokens == 8192
+
+    def test_none_disables_limit(self):
+        """Setting prompt_cache_max_tokens=None in code disables the limit."""
+        from olmlx.config import Settings
+
+        s = Settings(prompt_cache_max_tokens=None)
+        assert s.prompt_cache_max_tokens is None
