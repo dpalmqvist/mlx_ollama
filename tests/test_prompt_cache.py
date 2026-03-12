@@ -1048,13 +1048,13 @@ class TestCacheTrimmedWhenExceedsTokenLimit:
 
     @pytest.mark.asyncio
     async def test_trimmed_cache_reusable_on_next_request(self, mock_manager):
-        """After trimming, the next request reuses the trimmed prefix as a cache hit."""
+        """After trimming, the same prompt reuses the trimmed cache (not a fresh one)."""
         from olmlx.engine.inference import generate_chat
 
         lm = mock_manager._loaded["qwen3:latest"]
         lm.tokenizer.apply_chat_template = MagicMock(return_value="prompt")
         lm.tokenizer.bos_token = None
-        # Same 5 prompt tokens for both requests
+        # Same 5 prompt tokens for both requests (same content → same tokens)
         lm.tokenizer.encode = MagicMock(return_value=[10, 20, 30, 40, 50])
 
         mock_cache_obj = [MagicMock()]
@@ -1098,7 +1098,7 @@ class TestCacheTrimmedWhenExceedsTokenLimit:
         assert lm.prompt_cache_state is not None
         assert lm.prompt_cache_state.tokens == [10, 20, 30, 40, 50]
 
-        # Second request: same prompt tokens → should be a cache hit (prefix match)
+        # Second request: same prompt content → same tokens → cache hit
         tokens2 = _make_stream_tokens("Again", prompt_tokens=5)
         mock_stream2 = _make_mock_stream(tokens2)
         mock_make_cache.reset_mock()
@@ -1126,7 +1126,7 @@ class TestCacheTrimmedWhenExceedsTokenLimit:
             gen = await generate_chat(
                 mock_manager,
                 "qwen3",
-                [{"role": "user", "content": "hi again"}],
+                [{"role": "user", "content": "hi"}],
                 stream=True,
             )
             async for chunk in gen:
@@ -1134,6 +1134,137 @@ class TestCacheTrimmedWhenExceedsTokenLimit:
 
         # Should NOT have created a fresh cache — reused trimmed one
         mock_make_cache.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_trim_uses_actual_generation_steps(self, mock_manager):
+        """Trim amount accounts for None-ID tokens in KV cache depth."""
+        from olmlx.engine.inference import generate_chat
+        from olmlx.engine.model_manager import CachedPromptState
+
+        lm = mock_manager._loaded["qwen3:latest"]
+        lm.tokenizer.apply_chat_template = MagicMock(return_value="prompt")
+        lm.tokenizer.bos_token = None
+        lm.tokenizer.encode = MagicMock(return_value=[10, 20, 30])
+
+        # 3 generation steps, but token at step 2 is None
+        # KV cache depth = 3 prompt + 3 steps = 6
+        # stored_tokens = [10, 20, 30] + [100, 102] = 5 (skips None)
+        stream_tokens = [
+            StreamToken(
+                text="Hello",
+                token=100,
+                prompt_tokens=3,
+                generation_tokens=1,
+                prompt_tps=100.0,
+                generation_tps=50.0,
+            ),
+            StreamToken(
+                text="",
+                token=None,
+                prompt_tokens=3,
+                generation_tokens=2,
+                prompt_tps=100.0,
+                generation_tps=50.0,
+            ),
+            StreamToken(
+                text=" world",
+                token=102,
+                prompt_tokens=3,
+                generation_tokens=3,
+                prompt_tps=100.0,
+                generation_tps=50.0,
+            ),
+        ]
+        mock_stream = _make_mock_stream(stream_tokens)
+
+        mock_cache_obj = [MagicMock()]
+        mock_make_cache = MagicMock(return_value=mock_cache_obj)
+        mock_trim = MagicMock()
+
+        mock_mx = MagicMock()
+        with (
+            patch("olmlx.engine.inference.mx", mock_mx),
+            patch(
+                "olmlx.engine.inference.async_mlx_stream",
+                return_value=mock_stream,
+            ),
+            patch(
+                "olmlx.engine.inference.make_prompt_cache",
+                mock_make_cache,
+            ),
+            patch(
+                "olmlx.engine.inference.trim_prompt_cache",
+                mock_trim,
+            ),
+            patch("olmlx.engine.inference.settings") as mock_settings,
+        ):
+            mock_settings.prompt_cache = True
+            mock_settings.prompt_cache_max_tokens = 4
+            mock_settings.default_keep_alive = "5m"
+            gen = await generate_chat(
+                mock_manager,
+                "qwen3",
+                [{"role": "user", "content": "hi"}],
+                stream=True,
+            )
+            async for chunk in gen:
+                pass
+
+        # actual_total = 3 prompt + 3 generation steps = 6 > limit 4
+        # trim_amount = 6 - 4 = 2 (not 5 - 4 = 1 which would be wrong)
+        mock_trim.assert_called_once_with(mock_cache_obj, 2)
+        assert lm.prompt_cache_state is not None
+        assert isinstance(lm.prompt_cache_state, CachedPromptState)
+
+    @pytest.mark.asyncio
+    async def test_cache_invalidated_on_trim_exception(self, mock_manager):
+        """If trim_prompt_cache raises, cache is invalidated to prevent corruption."""
+        from olmlx.engine.inference import generate_chat
+
+        lm = mock_manager._loaded["qwen3:latest"]
+        lm.tokenizer.apply_chat_template = MagicMock(return_value="prompt")
+        lm.tokenizer.bos_token = None
+        lm.tokenizer.encode = MagicMock(return_value=[10, 20, 30, 40, 50])
+
+        tokens = _make_stream_tokens("Hello", " world", prompt_tokens=5)
+        mock_stream = _make_mock_stream(tokens)
+
+        mock_cache_obj = [MagicMock()]
+        mock_make_cache = MagicMock(return_value=mock_cache_obj)
+        mock_trim = MagicMock(side_effect=RuntimeError("trim failed"))
+
+        mock_mx = MagicMock()
+        with (
+            patch("olmlx.engine.inference.mx", mock_mx),
+            patch(
+                "olmlx.engine.inference.async_mlx_stream",
+                return_value=mock_stream,
+            ),
+            patch(
+                "olmlx.engine.inference.make_prompt_cache",
+                mock_make_cache,
+            ),
+            patch(
+                "olmlx.engine.inference.trim_prompt_cache",
+                mock_trim,
+            ),
+            patch("olmlx.engine.inference.settings") as mock_settings,
+        ):
+            mock_settings.prompt_cache = True
+            mock_settings.prompt_cache_max_tokens = 6
+            mock_settings.default_keep_alive = "5m"
+            with pytest.raises(RuntimeError, match="trim failed"):
+                gen = await generate_chat(
+                    mock_manager,
+                    "qwen3",
+                    [{"role": "user", "content": "hi"}],
+                    stream=True,
+                )
+                async for chunk in gen:
+                    pass
+
+        # Cache should be invalidated, not left in corrupted state
+        assert lm.prompt_cache_state is None
 
 
 class TestCacheStoredWhenWithinTokenLimit:

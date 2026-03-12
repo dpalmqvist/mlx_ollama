@@ -548,17 +548,28 @@ async def _stream_completion(
         prompt_cache = gen_kwargs.get("prompt_cache")
         if prompt_cache is not None and full_prompt_tokens is not None:
             stored_tokens = list(full_prompt_tokens) + generated_tokens
+            # The KV cache has an entry for every generation step, including
+            # steps where the token ID was None (skipped in generated_tokens).
+            # Use stats.eval_count for the real generation depth.
+            actual_total = len(full_prompt_tokens) + stats.eval_count
             max_cache_tokens = settings.prompt_cache_max_tokens
-            if max_cache_tokens is not None and len(stored_tokens) > max_cache_tokens:
-                trim_amount = len(stored_tokens) - max_cache_tokens
-                trim_prompt_cache(prompt_cache, trim_amount)
-                stored_tokens = stored_tokens[:max_cache_tokens]
-                lm.prompt_cache_state = CachedPromptState(
-                    tokens=stored_tokens, cache=prompt_cache
-                )
+            if max_cache_tokens is not None and actual_total > max_cache_tokens:
+                trim_amount = actual_total - max_cache_tokens
+                original_len = len(stored_tokens)
+                try:
+                    trim_prompt_cache(prompt_cache, trim_amount)
+                    # trim_prompt_cache only adjusts offsets, not Metal buffers
+                    mx.clear_cache()
+                    stored_tokens = stored_tokens[:max_cache_tokens]
+                    lm.prompt_cache_state = CachedPromptState(
+                        tokens=stored_tokens, cache=prompt_cache
+                    )
+                except Exception:
+                    lm.prompt_cache_state = None
+                    raise
                 logger.info(
                     "Cache trimmed: %d → %d tokens (limit %d)",
-                    len(stored_tokens) + trim_amount,
+                    original_len,
                     len(stored_tokens),
                     max_cache_tokens,
                 )
