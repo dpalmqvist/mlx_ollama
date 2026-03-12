@@ -3,7 +3,7 @@
 import asyncio
 import json
 import logging
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -12,10 +12,12 @@ from olmlx.routers.anthropic import (
     _convert_messages,
     _convert_tools,
     _PING_SENTINEL,
+    _resolve_anthropic_model,
     _sse,
     _strip_billing_headers,
     _with_keepalive_pings,
 )
+
 from olmlx.schemas.anthropic import (
     AnthropicContentBlock,
     AnthropicMessage,
@@ -24,6 +26,8 @@ from olmlx.schemas.anthropic import (
     AnthropicToolInputSchema,
 )
 from olmlx.utils.timing import TimingStats
+
+MAP_PATCH = "olmlx.routers.anthropic._anthropic_model_map"
 
 
 class TestConvertTools:
@@ -1231,3 +1235,184 @@ class TestPingBeforeCacheInfo:
                 break
         else:
             pytest.fail("message_start event not found in SSE output")
+
+
+class TestResolveAnthropicModel:
+    def test_no_mapping_returns_unchanged(self):
+        with patch(MAP_PATCH, []):
+            assert _resolve_anthropic_model("claude-sonnet-4-6") == "claude-sonnet-4-6"
+
+    def test_haiku_maps(self):
+        with patch(MAP_PATCH, [("haiku", "qwen3:latest")]):
+            assert (
+                _resolve_anthropic_model("claude-haiku-4-5-20251001") == "qwen3:latest"
+            )
+
+    def test_sonnet_maps(self):
+        with patch(MAP_PATCH, [("sonnet", "qwen3-8b:latest")]):
+            assert _resolve_anthropic_model("claude-sonnet-4-6") == "qwen3-8b:latest"
+
+    def test_opus_maps(self):
+        with patch(MAP_PATCH, [("opus", "qwen3-30b:latest")]):
+            assert _resolve_anthropic_model("claude-opus-4-6") == "qwen3-30b:latest"
+
+    def test_case_insensitive(self):
+        # Keys are pre-lowered by _build_anthropic_model_map; model name is lowered at runtime
+        with patch(MAP_PATCH, [("sonnet", "qwen3:latest")]):
+            assert _resolve_anthropic_model("Claude-SONNET-4-6") == "qwen3:latest"
+
+    def test_no_match_falls_through(self):
+        with patch(MAP_PATCH, [("haiku", "qwen3:latest")]):
+            assert _resolve_anthropic_model("qwen3:latest") == "qwen3:latest"
+
+    def test_longer_key_matches_first(self):
+        """More-specific (longer) keys should take priority over shorter ones."""
+        # Sorted descending by length: "sonnet" (6) before "son" (3)
+        with patch(MAP_PATCH, [("sonnet", "long-match"), ("son", "short-match")]):
+            assert _resolve_anthropic_model("claude-sonnet-4-6") == "long-match"
+
+    def test_equal_length_keys_sorted_alphabetically(self):
+        """Equal-length keys use alphabetical order for deterministic tie-breaking."""
+        from olmlx.routers.anthropic import _build_anthropic_model_map
+
+        with patch("olmlx.routers.anthropic.settings") as mock_settings:
+            mock_settings.anthropic_models = {
+                "llama": "llama-model",
+                "haiku": "haiku-model",
+            }
+            result = _build_anthropic_model_map()
+            # Both 5 chars — alphabetical: haiku before llama
+            assert result == [("haiku", "haiku-model"), ("llama", "llama-model")]
+
+    def test_empty_value_skipped(self):
+        """_build_anthropic_model_map filters out empty values at build time."""
+        from olmlx.routers.anthropic import _build_anthropic_model_map
+
+        with patch("olmlx.routers.anthropic.settings") as mock_settings:
+            mock_settings.anthropic_models = {"sonnet": ""}
+            assert _build_anthropic_model_map() == []
+
+    def test_empty_key_skipped(self):
+        """_build_anthropic_model_map filters out empty keys at build time."""
+        from olmlx.routers.anthropic import _build_anthropic_model_map
+
+        with patch("olmlx.routers.anthropic.settings") as mock_settings:
+            mock_settings.anthropic_models = {"": "rogue-model"}
+            assert _build_anthropic_model_map() == []
+
+    def test_segment_boundary_matching(self):
+        """Keys match whole segments (split on - and :), not arbitrary substrings."""
+        with patch(MAP_PATCH, [("net", "wrong-model")]):
+            # "net" is a substring of "sonnet" but not a segment
+            assert _resolve_anthropic_model("claude-sonnet-4-6") == "claude-sonnet-4-6"
+
+    def test_segment_match_with_colon(self):
+        """Colons are also segment boundaries (e.g. model:tag)."""
+        with patch(MAP_PATCH, [("sonnet", "qwen3:latest")]):
+            assert _resolve_anthropic_model("claude-sonnet:4-6") == "qwen3:latest"
+
+    def test_whitespace_value_skipped(self):
+        """Whitespace-only values should be filtered out at build time."""
+        from olmlx.routers.anthropic import _build_anthropic_model_map
+
+        with patch("olmlx.routers.anthropic.settings") as mock_settings:
+            mock_settings.anthropic_models = {"sonnet": "   "}
+            assert _build_anthropic_model_map() == []
+
+
+class TestAnthropicModelResolution:
+    """Integration tests: resolver applied in endpoints, response echoes original model."""
+
+    @pytest.mark.asyncio
+    async def test_non_streaming_resolves_model(self, app_client):
+        """generate_chat receives resolved model name, response has original."""
+        stats = TimingStats(prompt_eval_count=5, eval_count=10)
+        mock_result = {"text": "Hello!", "done": True, "stats": stats}
+
+        with (
+            patch(MAP_PATCH, [("sonnet", "qwen3-8b:latest")]),
+            patch(
+                "olmlx.routers.anthropic.generate_chat", new_callable=AsyncMock
+            ) as mock_gen,
+        ):
+            mock_gen.return_value = mock_result
+            resp = await app_client.post(
+                "/v1/messages",
+                json={
+                    "model": "claude-sonnet-4-6",
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "max_tokens": 100,
+                },
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        # Response echoes original Claude model name
+        assert data["model"] == "claude-sonnet-4-6"
+        # generate_chat was called with the resolved local model
+        call_args = mock_gen.call_args
+        assert call_args[0][1] == "qwen3-8b:latest"
+
+    @pytest.mark.asyncio
+    async def test_streaming_resolves_model(self, app_client):
+        """Streaming: generate_chat receives resolved name, SSE has original."""
+
+        async def fake_stream(*args, **kwargs):
+            yield {"text": "Hi", "done": False}
+            yield {"done": True, "stats": TimingStats(eval_count=5)}
+
+        with (
+            patch(MAP_PATCH, [("haiku", "qwen3:latest")]),
+            patch(
+                "olmlx.routers.anthropic.generate_chat", new_callable=AsyncMock
+            ) as mock_gen,
+        ):
+            mock_gen.return_value = fake_stream()
+            resp = await app_client.post(
+                "/v1/messages",
+                json={
+                    "model": "claude-haiku-4-5-20251001",
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "max_tokens": 100,
+                    "stream": True,
+                },
+            )
+
+        assert resp.status_code == 200
+        # Check message_start echoes original model name
+        for line in resp.text.split("\n"):
+            if line.startswith("data:") and "message_start" in line:
+                data = json.loads(line[5:])
+                assert data["message"]["model"] == "claude-haiku-4-5-20251001"
+                break
+        else:
+            pytest.fail("message_start event not found")
+        # generate_chat was called with resolved model
+        call_args = mock_gen.call_args
+        assert call_args[0][1] == "qwen3:latest"
+
+    @pytest.mark.asyncio
+    async def test_count_tokens_resolves_model(self, app_client):
+        """count_tokens endpoint resolves Claude model names."""
+        manager = app_client._transport.app.state.model_manager  # type: ignore[union-attr]
+        with (
+            patch(MAP_PATCH, [("sonnet", "qwen3-8b:latest")]),
+            patch("olmlx.routers.anthropic.count_chat_tokens", return_value=42),
+            patch.object(
+                manager, "ensure_loaded", new_callable=AsyncMock
+            ) as mock_ensure,
+        ):
+            mock_lm = MagicMock()
+            mock_lm.active_refs = 0
+            mock_ensure.return_value = mock_lm
+            resp = await app_client.post(
+                "/v1/messages/count_tokens",
+                json={
+                    "model": "claude-sonnet-4-6",
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "max_tokens": 100,
+                },
+            )
+
+        assert resp.status_code == 200
+        mock_ensure.assert_called_with("qwen3-8b:latest")

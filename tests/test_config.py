@@ -50,3 +50,35 @@ class TestSettings:
         monkeypatch.setenv("OLMLX_MODEL_LOAD_TIMEOUT", "-1")
         with pytest.raises(ValidationError):
             Settings()
+
+    def test_anthropic_models_default(self, monkeypatch):
+        monkeypatch.delenv("OLMLX_ANTHROPIC_MODELS", raising=False)
+        s = Settings()
+        assert s.anthropic_models == {}
+
+    def test_anthropic_models_from_env(self, monkeypatch):
+        monkeypatch.setenv(
+            "OLMLX_ANTHROPIC_MODELS",
+            '{"haiku": "qwen3:latest", "sonnet": "qwen3-8b:latest"}',
+        )
+        s = Settings()
+        assert s.anthropic_models == {
+            "haiku": "qwen3:latest",
+            "sonnet": "qwen3-8b:latest",
+        }
+
+    def test_anthropic_models_rejects_dash_in_key(self, monkeypatch):
+        monkeypatch.setenv(
+            "OLMLX_ANTHROPIC_MODELS",
+            '{"claude-sonnet": "qwen3:latest"}',
+        )
+        with pytest.raises(ValidationError, match="single segment"):
+            Settings()
+
+    def test_anthropic_models_rejects_colon_in_key(self, monkeypatch):
+        monkeypatch.setenv(
+            "OLMLX_ANTHROPIC_MODELS",
+            '{"sonnet:latest": "qwen3:latest"}',
+        )
+        with pytest.raises(ValidationError, match="single segment"):
+            Settings()
