@@ -578,7 +578,6 @@ async def _stream_completion(
                     )
                 except Exception:
                     lm.prompt_cache_state = None
-                    gen_kwargs.pop("prompt_cache", None)
                     prompt_cache = None
                     gc.collect()
                     mx.clear_cache()
