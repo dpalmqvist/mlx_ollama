@@ -1298,6 +1298,22 @@ class TestResolveAnthropicModel:
         with patch(MAP_PATCH, [("sonnet", "qwen3:latest")]):
             assert _resolve_anthropic_model("claude-sonnet:4-6") == "qwen3:latest"
 
+    def test_whitespace_value_skipped(self):
+        """Whitespace-only values should be filtered out at build time."""
+        from olmlx.routers.anthropic import _build_anthropic_model_map
+
+        with patch("olmlx.routers.anthropic.settings") as mock_settings:
+            mock_settings.anthropic_models = {"sonnet": "   "}
+            assert _build_anthropic_model_map() == []
+
+    def test_multi_segment_key_excluded(self):
+        """Keys containing - or : can never match a single segment; exclude them."""
+        from olmlx.routers.anthropic import _build_anthropic_model_map
+
+        with patch("olmlx.routers.anthropic.settings") as mock_settings:
+            mock_settings.anthropic_models = {"claude-sonnet": "qwen3:latest"}
+            assert _build_anthropic_model_map() == []
+
 
 class TestAnthropicModelResolution:
     """Integration tests: resolver applied in endpoints, response echoes original model."""
