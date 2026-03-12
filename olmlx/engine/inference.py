@@ -114,6 +114,11 @@ def _tokenize_for_cache(tokenizer: Any, prompt_text: str) -> list[int]:
     return tokenizer.encode(prompt_text, add_special_tokens=add_special)
 
 
+def _get_first_n_tokens(tokens: list[int], n: int = 10) -> list[int]:
+    """Get first N tokens for logging/debugging."""
+    return tokens[:n]
+
+
 @contextlib.asynccontextmanager
 async def _inference_locked():
     """Async context manager that acquires the inference lock with Metal sync on entry/exit."""
@@ -441,6 +446,17 @@ async def _stream_completion(
                 len(prompt_tokens),
             )
 
+            # Debug logging: show first 10 tokens of both cached and new prompts
+            if prefix_len == 0 and cached is not None:
+                cached_first_10 = _get_first_n_tokens(cached.tokens, 10)
+                new_first_10 = _get_first_n_tokens(prompt_tokens, 10)
+                logger.warning(
+                    "Cache miss with apparent prefix match — first 10 tokens:\n"
+                    "  cached: %s\n  new:      %s",
+                    cached_first_10,
+                    new_first_10,
+                )
+
             # Set before mutation so finally guard can clean up on error
             full_prompt_tokens = prompt_tokens
 
@@ -452,6 +468,27 @@ async def _stream_completion(
             suffix_start = (
                 min(prefix_len, len(prompt_tokens) - 1) if prompt_tokens else 0
             )
+
+            # Fallback: if common_prefix returns 0 but first N tokens match,
+            # use those as the prefix. This handles cases where tokenization
+            # diverges slightly but the actual content is the same.
+            if prefix_len == 0 and cached is not None and len(prompt_tokens) > 0:
+                cached_first_10 = _get_first_n_tokens(cached.tokens, 10)
+                new_first_10 = _get_first_n_tokens(prompt_tokens, 10)
+                matching_first_n = 0
+                for i, (c, n) in enumerate(zip(cached_first_10, new_first_10)):
+                    if c == n:
+                        matching_first_n = i + 1
+                    else:
+                        break
+
+                if matching_first_n > 0:
+                    logger.info(
+                        "Common prefix returned 0, but first %d tokens match — using as fallback",
+                        matching_first_n,
+                    )
+                    prefix_len = matching_first_n
+                    suffix_start = min(prefix_len, len(prompt_tokens) - 1)
 
             if prefix_len > 0 and suffix_start > 0:
                 # Trim cache to suffix_start so it aligns with where we resume
@@ -550,16 +587,18 @@ async def _stream_completion(
             stored_tokens = list(full_prompt_tokens) + generated_tokens
             max_cache_tokens = settings.prompt_cache_max_tokens
             if max_cache_tokens is not None and len(stored_tokens) > max_cache_tokens:
+                trim_amount = len(stored_tokens) - max_cache_tokens
+                trim_prompt_cache(prompt_cache, trim_amount)
+                stored_tokens = stored_tokens[:max_cache_tokens]
+                lm.prompt_cache_state = CachedPromptState(
+                    tokens=stored_tokens, cache=prompt_cache
+                )
                 logger.info(
-                    "Cache invalidated: %d tokens exceeds limit of %d",
+                    "Cache trimmed: %d → %d tokens (limit %d)",
+                    len(stored_tokens) + trim_amount,
                     len(stored_tokens),
                     max_cache_tokens,
                 )
-                lm.prompt_cache_state = None
-                gen_kwargs.pop("prompt_cache", None)
-                prompt_cache = None
-                gc.collect()
-                mx.clear_cache()
             else:
                 lm.prompt_cache_state = CachedPromptState(
                     tokens=stored_tokens,
