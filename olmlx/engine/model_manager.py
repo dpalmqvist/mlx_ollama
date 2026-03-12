@@ -65,15 +65,14 @@ class PromptCacheStore:
     def set(self, cache_id: str, state: CachedPromptState) -> CachedPromptState | None:
         """Set a cache entry, evicting LRU if at capacity.
 
-        Returns the evicted CachedPromptState if an eviction occurred, else None.
-        The caller is responsible for cleaning up GPU resources (gc.collect,
-        mx.clear_cache) on the evicted entry.
+        Returns the displaced CachedPromptState when its GPU resources need
+        cleanup (different .cache object), or None when no cleanup is needed.
         """
         if cache_id in self._entries:
             self._entries.move_to_end(cache_id)
             old = self._entries[cache_id]
             self._entries[cache_id] = state
-            return old
+            return old if old.cache is not state.cache else None
         evicted: CachedPromptState | None = None
         if len(self._entries) >= self._max_slots:
             _, evicted = self._entries.popitem(last=False)

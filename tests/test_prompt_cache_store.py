@@ -96,6 +96,17 @@ class TestPromptCacheStore:
         state2 = _make_state(2)
         store.set("a", state1)
         old = store.set("a", state2)
-        assert old is state1  # returns replaced entry for caller cleanup
+        assert old is state1  # different .cache → returns old for cleanup
         assert store.get("a") is state2
         assert len(store) == 1
+
+    def test_set_overwrite_same_cache_returns_none(self):
+        """Overwrite with same .cache list returns None (no cleanup needed)."""
+        store = PromptCacheStore(max_slots=4)
+        shared_cache = ["kv_layer"]
+        state1 = CachedPromptState(tokens=[1, 2], cache=shared_cache)
+        state2 = CachedPromptState(tokens=[1, 2, 3], cache=shared_cache)
+        store.set("a", state1)
+        old = store.set("a", state2)
+        assert old is None
+        assert store.get("a") is state2

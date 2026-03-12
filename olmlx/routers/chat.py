@@ -20,7 +20,7 @@ async def chat(req: ChatRequest, request: Request):
     messages = [m.model_dump(exclude_none=True) for m in req.messages]
     tools = [t.model_dump() for t in req.tools] if req.tools else None
     max_tokens = options.pop("num_predict", 512)
-    cache_id = request.headers.get("x-cache-id", "")
+    cache_id = request.headers.get("x-cache-id", "")[:256]
 
     if req.stream:
         result = await generate_chat(

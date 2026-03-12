@@ -109,7 +109,7 @@ async def openai_chat(req: OpenAIChatRequest, request: Request):
     max_tokens = req.max_completion_tokens or req.max_tokens or 512
     chat_id = _make_id()
     created = int(time.time())
-    cache_id = request.headers.get("x-cache-id", "")
+    cache_id = request.headers.get("x-cache-id", "")[:256]
 
     if req.stream:
         result = await generate_chat(

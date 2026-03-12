@@ -614,7 +614,7 @@ async def anthropic_messages(req: AnthropicMessagesRequest, request: Request):
     msg_id = _make_msg_id()
     logger.debug("Converted %d messages, %d tools", len(messages), len(tools or []))
 
-    cache_id = request.headers.get("x-cache-id", "")
+    cache_id = request.headers.get("x-cache-id", "")[:256]
 
     if req.stream:
         result = await generate_chat(

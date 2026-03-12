@@ -572,10 +572,11 @@ async def _stream_completion(
                         cache_id,
                         CachedPromptState(tokens=stored_tokens, cache=prompt_cache),
                     )
-                    if evicted is not None and evicted.cache is not prompt_cache:
+                    if evicted is not None:
                         del evicted
-                        gc.collect()
-                        mx.clear_cache()
+                        if _is_memory_pressure_high():
+                            gc.collect()
+                            mx.clear_cache()
                     logger.info(
                         "Cache trimmed: %d → %d tokens (limit %d)",
                         actual_total,
@@ -599,10 +600,11 @@ async def _stream_completion(
                         cache=prompt_cache,
                     ),
                 )
-                if evicted is not None and evicted.cache is not prompt_cache:
+                if evicted is not None:
                     del evicted
-                    gc.collect()
-                    mx.clear_cache()
+                    if _is_memory_pressure_high():
+                        gc.collect()
+                        mx.clear_cache()
                 logger.debug(
                     "Cache stored: %d tokens (%d prompt + %d generated)",
                     len(stored_tokens),
