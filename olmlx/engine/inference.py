@@ -572,7 +572,7 @@ async def _stream_completion(
                         cache_id,
                         CachedPromptState(tokens=stored_tokens, cache=prompt_cache),
                     )
-                    if evicted is not None:
+                    if evicted is not None and evicted.cache is not prompt_cache:
                         del evicted
                         gc.collect()
                         mx.clear_cache()
@@ -599,7 +599,7 @@ async def _stream_completion(
                         cache=prompt_cache,
                     ),
                 )
-                if evicted is not None:
+                if evicted is not None and evicted.cache is not prompt_cache:
                     del evicted
                     gc.collect()
                     mx.clear_cache()

@@ -71,8 +71,9 @@ class PromptCacheStore:
         """
         if cache_id in self._entries:
             self._entries.move_to_end(cache_id)
+            old = self._entries[cache_id]
             self._entries[cache_id] = state
-            return None
+            return old
         evicted: CachedPromptState | None = None
         if len(self._entries) >= self._max_slots:
             _, evicted = self._entries.popitem(last=False)

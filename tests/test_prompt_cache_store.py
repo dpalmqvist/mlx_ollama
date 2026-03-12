@@ -95,7 +95,7 @@ class TestPromptCacheStore:
         state1 = _make_state(1)
         state2 = _make_state(2)
         store.set("a", state1)
-        evicted = store.set("a", state2)
-        assert evicted is None  # overwrite is not an eviction
+        old = store.set("a", state2)
+        assert old is state1  # returns replaced entry for caller cleanup
         assert store.get("a") is state2
         assert len(store) == 1
