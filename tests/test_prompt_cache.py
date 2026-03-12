@@ -1211,13 +1211,18 @@ class TestCacheTrimmedWhenExceedsTokenLimit:
                 pass
 
         # actual_total = 3 prompt + 3 generation steps = 6 > limit 4
-        # trim_amount = 6 - 4 = 2 (not 5 - 4 = 1 which would be wrong)
-        mock_trim.assert_called_once_with(mock_cache_obj, 2)
+        # First trim: trim_amount = 6 - 4 = 2, KV depth → 4
+        # Second trim: None-ID detected, trim extra 1 gen step KV entry
+        # to align KV depth with stored prompt tokens (3)
+        from unittest.mock import call
+
+        assert mock_trim.call_count == 2
+        assert mock_trim.call_args_list[0] == call(mock_cache_obj, 2)
+        # extra = max_cache_tokens(4) - len(prompt)(3) = 1
+        assert mock_trim.call_args_list[1] == call(mock_cache_obj, 1)
         assert lm.prompt_cache_state is not None
         assert isinstance(lm.prompt_cache_state, CachedPromptState)
-        # Retained KV depth = 4: 3 prompt + 1 gen step (step 1 = token 100).
-        # None-ID tokens make generated_tokens unreliable for slicing,
-        # so only prompt tokens should be stored.
+        # Only prompt tokens stored — KV depth matches len(stored_tokens)
         assert lm.prompt_cache_state.tokens == [10, 20, 30]
 
     @pytest.mark.asyncio

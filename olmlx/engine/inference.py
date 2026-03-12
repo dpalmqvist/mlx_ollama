@@ -558,11 +558,13 @@ async def _stream_completion(
                 original_len = len(stored_tokens)
                 try:
                     trim_prompt_cache(prompt_cache, trim_amount)
-                    # trim_prompt_cache only adjusts offsets, not Metal buffers
-                    mx.clear_cache()
                     if stats.eval_count != len(generated_tokens):
                         # None-ID tokens present: can't map generated_tokens
-                        # to KV cache positions, so only store prompt tokens.
+                        # to KV cache positions. Trim KV cache down to prompt
+                        # boundary so depth == len(stored_tokens).
+                        extra = max_cache_tokens - len(full_prompt_tokens)
+                        if extra > 0:
+                            trim_prompt_cache(prompt_cache, extra)
                         stored_tokens = list(full_prompt_tokens)
                     else:
                         stored_tokens = stored_tokens[:max_cache_tokens]
