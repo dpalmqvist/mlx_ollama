@@ -62,15 +62,22 @@ class PromptCacheStore:
             self._entries.move_to_end(cache_id)
         return state
 
-    def set(self, cache_id: str, state: CachedPromptState) -> None:
-        """Set a cache entry, evicting LRU if at capacity."""
+    def set(self, cache_id: str, state: CachedPromptState) -> CachedPromptState | None:
+        """Set a cache entry, evicting LRU if at capacity.
+
+        Returns the evicted CachedPromptState if an eviction occurred, else None.
+        The caller is responsible for cleaning up GPU resources (gc.collect,
+        mx.clear_cache) on the evicted entry.
+        """
         if cache_id in self._entries:
             self._entries.move_to_end(cache_id)
             self._entries[cache_id] = state
-        else:
-            while len(self._entries) >= self._max_slots:
-                self._entries.popitem(last=False)
-            self._entries[cache_id] = state
+            return None
+        evicted: CachedPromptState | None = None
+        if len(self._entries) >= self._max_slots:
+            _, evicted = self._entries.popitem(last=False)
+        self._entries[cache_id] = state
+        return evicted
 
     def remove(self, cache_id: str) -> None:
         """Remove a specific cache entry."""

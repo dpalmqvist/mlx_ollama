@@ -16,14 +16,17 @@ class TestPromptCacheStore:
     def test_set_and_get_roundtrip(self):
         store = PromptCacheStore(max_slots=4)
         state = _make_state(1)
-        store.set("agent-a", state)
+        evicted = store.set("agent-a", state)
+        assert evicted is None
         assert store.get("agent-a") is state
 
     def test_set_evicts_lru_when_full(self):
         store = PromptCacheStore(max_slots=2)
-        store.set("a", _make_state(1))
+        state_a = _make_state(1)
+        store.set("a", state_a)
         store.set("b", _make_state(2))
-        store.set("c", _make_state(3))  # should evict "a"
+        evicted = store.set("c", _make_state(3))  # should evict "a"
+        assert evicted is state_a
         assert store.get("a") is None
         assert store.get("b") is not None
         assert store.get("c") is not None
@@ -72,7 +75,8 @@ class TestPromptCacheStore:
         assert store.get("a") is state_a
 
         state_b = _make_state(2)
-        store.set("b", state_b)
+        evicted = store.set("b", state_b)
+        assert evicted is state_a
         assert store.get("a") is None
         assert store.get("b") is state_b
 
@@ -91,6 +95,7 @@ class TestPromptCacheStore:
         state1 = _make_state(1)
         state2 = _make_state(2)
         store.set("a", state1)
-        store.set("a", state2)
+        evicted = store.set("a", state2)
+        assert evicted is None  # overwrite is not an eviction
         assert store.get("a") is state2
         assert len(store) == 1

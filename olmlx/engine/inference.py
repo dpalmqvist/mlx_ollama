@@ -568,10 +568,14 @@ async def _stream_completion(
                         stored_tokens = list(full_prompt_tokens)[:max_cache_tokens]
                     else:
                         stored_tokens = stored_tokens[:max_cache_tokens]
-                    lm.prompt_cache_store.set(
+                    evicted = lm.prompt_cache_store.set(
                         cache_id,
                         CachedPromptState(tokens=stored_tokens, cache=prompt_cache),
                     )
+                    if evicted is not None:
+                        del evicted
+                        gc.collect()
+                        mx.clear_cache()
                     logger.info(
                         "Cache trimmed: %d → %d tokens (limit %d)",
                         actual_total,
@@ -588,13 +592,17 @@ async def _stream_completion(
                         exc_info=True,
                     )
             else:
-                lm.prompt_cache_store.set(
+                evicted = lm.prompt_cache_store.set(
                     cache_id,
                     CachedPromptState(
                         tokens=stored_tokens,
                         cache=prompt_cache,
                     ),
                 )
+                if evicted is not None:
+                    del evicted
+                    gc.collect()
+                    mx.clear_cache()
                 logger.debug(
                     "Cache stored: %d tokens (%d prompt + %d generated)",
                     len(stored_tokens),
