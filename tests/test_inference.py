@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+import olmlx.engine.inference as _inf_mod
 from olmlx.engine.inference import (
     _build_generate_kwargs,
     _extract_images,
@@ -986,8 +987,8 @@ class TestStreamCompletionFallbackJoinLogging:
         assert any(
             "deferring Metal sync" in record.message for record in caplog.records
         )
-        # Lock is held during deferred cleanup — wait for deferred task to release it
-        await asyncio.sleep(0.1)
+        # Wait for deferred cleanup task to complete and release the lock
+        await _inf_mod._deferred_cleanup_task
         assert not _inference_lock.locked(), (
             "_inference_lock must be released by deferred cleanup task"
         )
@@ -1009,8 +1010,7 @@ class TestDeferredInferenceCleanup:
 
         with patch("olmlx.engine.inference._safe_sync") as mock_safe_sync:
             _schedule_deferred_inference_cleanup(mock_stream)
-            # Let the deferred task run
-            await asyncio.sleep(0.1)
+            await _inf_mod._deferred_cleanup_task
 
         # _safe_sync should have been called (after thread exited)
         mock_safe_sync.assert_called_once()
@@ -1033,7 +1033,7 @@ class TestDeferredInferenceCleanup:
             _schedule_deferred_inference_cleanup(mock_stream)
             # Task is running — lock should still be held initially
             assert _inference_lock.locked()
-            # Wait for deferred task to finish
-            await asyncio.sleep(0.1)
+            # Wait for deferred task to complete
+            await _inf_mod._deferred_cleanup_task
 
         assert not _inference_lock.locked()

@@ -120,9 +120,9 @@ def _schedule_deferred_inference_cleanup(stream) -> None:
                     wait = min(30, remaining)
                     await asyncio.to_thread(thread.join, wait)
                 except BaseException:
-                    pass
+                    break  # Exit poll loop; finally will release the lock
             else:
-                logger.info("Deferred inference cleanup: thread exited, syncing Metal")
+                logger.info("Deferred inference cleanup: thread exited cleanly")
         finally:
             if thread is None or not thread.is_alive():
                 _safe_sync()
