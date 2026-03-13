@@ -623,6 +623,37 @@ class TestFullCompletionInner:
 
 class TestGenerateChatVlm:
     @pytest.mark.asyncio
+    async def test_vlm_enable_thinking_warns(self, mock_manager, caplog):
+        """VLM path logs warning when enable_thinking is set."""
+        lm = mock_manager._loaded["qwen3:latest"]
+        lm.is_vlm = True
+
+        mock_mx = MagicMock()
+
+        mock_mlx_vlm = MagicMock()
+        mock_mlx_vlm.apply_chat_template.return_value = "vlm prompt"
+
+        with patch("olmlx.engine.inference.mx", mock_mx):
+            with patch.dict("sys.modules", {"mlx_vlm": mock_mlx_vlm}):
+                with patch(
+                    "olmlx.engine.inference.asyncio.to_thread",
+                    new_callable=AsyncMock,
+                ) as mock_thread:
+                    mock_thread.return_value = "vlm response"
+                    with caplog.at_level(
+                        logging.WARNING, logger="olmlx.engine.inference"
+                    ):
+                        await generate_chat(
+                            mock_manager,
+                            "qwen3",
+                            [{"role": "user", "content": "describe"}],
+                            stream=False,
+                            enable_thinking=True,
+                        )
+
+        assert any("ignored for VLM" in r.message for r in caplog.records)
+
+    @pytest.mark.asyncio
     async def test_vlm_without_tools(self, mock_manager):
         """Test chat with VLM model (no tools)."""
         lm = mock_manager._loaded["qwen3:latest"]

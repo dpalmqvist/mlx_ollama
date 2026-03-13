@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Any
+from typing import Any, Literal
 
 
 class AnthropicToolInputSchema(BaseModel):
@@ -37,7 +37,7 @@ class AnthropicMessage(BaseModel):
 
 
 class AnthropicThinkingParam(BaseModel):
-    type: str  # "enabled" or "disabled"
+    type: Literal["enabled", "disabled"]
     budget_tokens: int | None = None
 
 

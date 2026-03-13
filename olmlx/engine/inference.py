@@ -258,7 +258,10 @@ def _apply_chat_template(
                 exc,
             )
             del kwargs["tools"]
-            kwargs.pop("enable_thinking", None)
+            if kwargs.pop("enable_thinking", None) is not None:
+                logger.warning(
+                    "enable_thinking preference dropped during template fallback"
+                )
             messages = _inject_tools_into_system(messages, tools)
             try:
                 return tokenizer.apply_chat_template(messages, **kwargs)
@@ -780,6 +783,11 @@ async def generate_chat(
     images = _extract_images(messages)
 
     if lm.is_vlm and not tools:
+        if enable_thinking is not None:
+            logger.warning(
+                "enable_thinking=%s ignored for VLM model (not supported by mlx-vlm template)",
+                enable_thinking,
+            )
         prompt = _apply_chat_template_vlm(lm.tokenizer, lm.model, messages, images)
     else:
         # Use text template path when tools are needed, even for VLM-loaded models,

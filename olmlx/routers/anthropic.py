@@ -627,6 +627,11 @@ async def anthropic_messages(req: AnthropicMessagesRequest, request: Request):
     enable_thinking: bool | None = None
     if req.thinking is not None:
         enable_thinking = req.thinking.type == "enabled"
+        if req.thinking.budget_tokens is not None:
+            logger.debug(
+                "budget_tokens=%d received but not supported (thinking is on/off only)",
+                req.thinking.budget_tokens,
+            )
 
     if req.stream:
         result = await generate_chat(

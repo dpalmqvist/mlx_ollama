@@ -1504,6 +1504,17 @@ class TestThinkingParamSchema:
         assert req.thinking.type == "enabled"
         assert req.thinking.budget_tokens == 5000
 
+    def test_thinking_invalid_type_rejected(self):
+        """Typos like 'enable' should be rejected by Pydantic validation."""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            AnthropicMessagesRequest(
+                model="test",
+                messages=[AnthropicMessage(role="user", content="hi")],
+                thinking={"type": "enable"},
+            )
+
 
 class TestThinkingParamRouter:
     @pytest.mark.asyncio
