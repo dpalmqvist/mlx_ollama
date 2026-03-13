@@ -244,6 +244,21 @@ def async_mlx_stream(
     Returns a CancellableStream (started and ready to iterate).
     """
 
+    # Cache the signature check on the event loop thread (not the background
+    # inference thread where gen_factory runs) to avoid any GIL ambiguity.
+    if not is_vlm:
+        global _has_prefill_callback
+        if _has_prefill_callback is None:
+            import inspect
+
+            import mlx_lm
+
+            _has_prefill_callback = (
+                "prompt_progress_callback"
+                in inspect.signature(mlx_lm.stream_generate).parameters
+            )
+    use_prefill_callback = not is_vlm and _has_prefill_callback
+
     def gen_factory(cancel_event: threading.Event):
         if is_vlm:
             import mlx_vlm
@@ -259,19 +274,10 @@ def async_mlx_stream(
         else:
             import mlx_lm
 
-            global _has_prefill_callback
-            if _has_prefill_callback is None:
-                import inspect
-
-                _has_prefill_callback = (
-                    "prompt_progress_callback"
-                    in inspect.signature(mlx_lm.stream_generate).parameters
-                )
-
             gen_kwargs = dict(prompt=prompt, max_tokens=max_tokens, **kwargs)
             gen_kwargs.pop("prompt_progress_callback", None)  # we control this below
 
-            if _has_prefill_callback:
+            if use_prefill_callback:
 
                 def _prefill_progress(progress: float) -> bool:
                     return not cancel_event.is_set()

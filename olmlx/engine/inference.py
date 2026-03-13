@@ -81,6 +81,12 @@ def _safe_sync():
             logger.debug("generation_stream sync failed", exc_info=True)
 
 
+class ServerBusyError(RuntimeError):
+    """Raised when the server is recovering from a previous inference (deferred GPU cleanup)."""
+
+    pass
+
+
 _DEFERRED_CLEANUP_TIMEOUT = 600  # 10 minutes max wait for stuck thread
 
 
@@ -138,6 +144,8 @@ def _schedule_deferred_inference_cleanup(stream) -> None:
             # threads, so this is the "least bad" option vs permanent deadlock.
             _inference_lock.release()
             logger.info("Deferred inference cleanup: lock released")
+            global _deferred_cleanup_task
+            _deferred_cleanup_task = None
 
     _deferred_cleanup_task = asyncio.create_task(_cleanup())
 
@@ -180,7 +188,7 @@ def _tokenize_for_cache(tokenizer: Any, prompt_text: str) -> list[int]:
 async def _inference_locked():
     """Async context manager that acquires the inference lock with Metal sync on entry/exit."""
     if _deferred_cleanup_task is not None and not _deferred_cleanup_task.done():
-        raise RuntimeError(
+        raise ServerBusyError(
             "Server busy: recovering from previous inference — "
             "deferred GPU cleanup in progress"
         )
@@ -473,7 +481,7 @@ async def _stream_completion(
     # Use explicit acquire/release instead of `async with` to prevent
     # CancelledError from releasing the lock before cleanup completes.
     if _deferred_cleanup_task is not None and not _deferred_cleanup_task.done():
-        raise RuntimeError(
+        raise ServerBusyError(
             "Server busy: recovering from previous inference — "
             "deferred GPU cleanup in progress"
         )
@@ -733,13 +741,8 @@ async def _stream_completion(
                 # before drain_and_join() could set it (which would leave the
                 # prefill callback returning True indefinitely).
                 stream.cancel()
-                # Wait for the cancelled drain task to finish before doing a
-                # manual join, to avoid two concurrent thread.join() calls.
-                try:
-                    await asyncio.wait_for(_drain_task, timeout=1.0)
-                except (asyncio.CancelledError, asyncio.TimeoutError, Exception):
-                    pass
-                # Fallback join if drain task didn't handle it.
+                # Fallback join — give the thread a chance to exit before
+                # going to deferred cleanup.
                 if stream._thread is not None and stream._thread.is_alive():
                     try:
                         await asyncio.to_thread(stream._thread.join, 10)
