@@ -24,6 +24,7 @@ class StreamToken:
 _SENTINEL = object()
 _ERROR_KEY = "__error__"
 _QUEUE_PUT_TIMEOUT = 10.0  # seconds
+_has_prefill_callback: bool | None = None
 
 
 class CancellableStream:
@@ -193,7 +194,7 @@ class CancellableStream:
             if join_attempted:
                 try:
                     await asyncio.to_thread(self._thread.join, remaining)
-                except (asyncio.CancelledError, Exception):
+                except Exception:
                     pass
             if self._thread.is_alive():
                 if join_attempted:
@@ -243,6 +244,21 @@ def async_mlx_stream(
     Returns a CancellableStream (started and ready to iterate).
     """
 
+    # Cache the signature check on the event loop thread (not the background
+    # inference thread where gen_factory runs) to avoid any GIL ambiguity.
+    if not is_vlm:
+        global _has_prefill_callback
+        if _has_prefill_callback is None:
+            import inspect
+
+            import mlx_lm
+
+            _has_prefill_callback = (
+                "prompt_progress_callback"
+                in inspect.signature(mlx_lm.stream_generate).parameters
+            )
+    use_prefill_callback = not is_vlm and _has_prefill_callback
+
     def gen_factory(cancel_event: threading.Event):
         if is_vlm:
             import mlx_vlm
@@ -258,13 +274,17 @@ def async_mlx_stream(
         else:
             import mlx_lm
 
-            return mlx_lm.stream_generate(
-                model,
-                tokenizer,
-                prompt=prompt,
-                max_tokens=max_tokens,
-                **kwargs,
-            )
+            gen_kwargs = dict(prompt=prompt, max_tokens=max_tokens, **kwargs)
+            gen_kwargs.pop("prompt_progress_callback", None)  # we control this below
+
+            if use_prefill_callback:
+
+                def _prefill_progress(progress: float) -> bool:
+                    return not cancel_event.is_set()
+
+                gen_kwargs["prompt_progress_callback"] = _prefill_progress
+
+            return mlx_lm.stream_generate(model, tokenizer, **gen_kwargs)
 
     stream = CancellableStream(gen_factory, is_vlm=is_vlm)
     stream.start()

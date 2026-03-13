@@ -58,6 +58,7 @@ _generation_streams = _resolve_generation_streams()
 # crashes or corruption.  A single global lock is an intentional trade-off:
 # we sacrifice parallelism for stability on Apple Silicon.
 _inference_lock = asyncio.Lock()
+_deferred_cleanup_task: asyncio.Task | None = None
 
 
 def _safe_sync():
@@ -78,6 +79,75 @@ def _safe_sync():
             mx.synchronize(stream)
         except Exception:
             logger.debug("generation_stream sync failed", exc_info=True)
+
+
+class ServerBusyError(RuntimeError):
+    """Raised when the server is recovering from a previous inference (deferred GPU cleanup)."""
+
+    pass
+
+
+_DEFERRED_CLEANUP_TIMEOUT = 600  # 10 minutes max wait for stuck thread
+
+
+def _schedule_deferred_inference_cleanup(stream) -> None:
+    """Schedule deferred GPU cleanup when the inference thread is stuck.
+
+    Polls the thread until it exits, then syncs Metal and releases the
+    inference lock.  The lock remains held until the thread finishes to
+    prevent concurrent Metal command buffer access.
+
+    If the thread doesn't exit within _DEFERRED_CLEANUP_TIMEOUT seconds,
+    releases the lock anyway (risk of Metal crash on next inference, but
+    better than permanent deadlock).
+    """
+    global _deferred_cleanup_task
+
+    if _deferred_cleanup_task is not None and not _deferred_cleanup_task.done():
+        logger.error(
+            "Deferred inference cleanup already in progress — "
+            "this should not happen while the inference lock is held"
+        )
+        return  # do not create a second task; the existing one will release the lock
+
+    async def _cleanup():
+        thread = stream._thread
+        deadline = time.monotonic() + _DEFERRED_CLEANUP_TIMEOUT
+        try:
+            while thread is not None and thread.is_alive():
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    logger.error(
+                        "Deferred inference cleanup: thread still alive after %ds — "
+                        "releasing lock anyway (risk of Metal crash on next inference)",
+                        _DEFERRED_CLEANUP_TIMEOUT,
+                    )
+                    break
+                try:
+                    wait = min(30, remaining)
+                    await asyncio.to_thread(thread.join, wait)
+                except BaseException as exc:
+                    logger.warning(
+                        "Deferred inference cleanup: poll loop aborted (%s) — "
+                        "releasing lock (thread may still be alive)",
+                        type(exc).__name__,
+                    )
+                    break  # finally will release the lock
+            else:
+                logger.info("Deferred inference cleanup: thread exited cleanly")
+        finally:
+            if thread is None or not thread.is_alive():
+                _safe_sync()
+            # Note: on timeout/abort with thread still alive, releasing the
+            # lock risks a Metal crash on the next inference (the stuck thread
+            # may still be issuing GPU commands).  Python can't kill CPU-bound
+            # threads, so this is the "least bad" option vs permanent deadlock.
+            _inference_lock.release()
+            logger.info("Deferred inference cleanup: lock released")
+            global _deferred_cleanup_task
+            _deferred_cleanup_task = None
+
+    _deferred_cleanup_task = asyncio.create_task(_cleanup())
 
 
 # Fraction of memory_limit_fraction at which we shed the prompt cache to
@@ -117,7 +187,20 @@ def _tokenize_for_cache(tokenizer: Any, prompt_text: str) -> list[int]:
 @contextlib.asynccontextmanager
 async def _inference_locked():
     """Async context manager that acquires the inference lock with Metal sync on entry/exit."""
+    if _deferred_cleanup_task is not None and not _deferred_cleanup_task.done():
+        raise ServerBusyError(
+            "Server busy: recovering from previous inference — "
+            "deferred GPU cleanup in progress"
+        )
     await _inference_lock.acquire()
+    # Re-check after acquiring — a deferred cleanup task may have been
+    # created between the pre-check and acquire (TOCTOU window).
+    if _deferred_cleanup_task is not None and not _deferred_cleanup_task.done():
+        _inference_lock.release()
+        raise ServerBusyError(
+            "Server busy: recovering from previous inference — "
+            "deferred GPU cleanup in progress"
+        )
     # Sync the default Metal stream so any pending GPU work from the previous
     # inference completes before we start a new one.
     _safe_sync()
@@ -405,7 +488,20 @@ async def _stream_completion(
 ) -> AsyncGenerator[dict, None]:
     # Use explicit acquire/release instead of `async with` to prevent
     # CancelledError from releasing the lock before cleanup completes.
+    if _deferred_cleanup_task is not None and not _deferred_cleanup_task.done():
+        raise ServerBusyError(
+            "Server busy: recovering from previous inference — "
+            "deferred GPU cleanup in progress"
+        )
     await _inference_lock.acquire()
+    # Re-check after acquiring — a deferred cleanup task may have been
+    # created between the pre-check and acquire (TOCTOU window).
+    if _deferred_cleanup_task is not None and not _deferred_cleanup_task.done():
+        _inference_lock.release()
+        raise ServerBusyError(
+            "Server busy: recovering from previous inference — "
+            "deferred GPU cleanup in progress"
+        )
     # Sync default stream before starting — same purpose as _inference_locked entry.
     _safe_sync()
 
@@ -648,26 +744,41 @@ async def _stream_completion(
         # _inference_lock, otherwise the next inference will hit concurrent
         # Metal command buffer access.
         # stream may be None if generator was closed during cache setup.
+        thread_alive = False
         if stream is not None:
+            _drain_task = asyncio.ensure_future(stream.drain_and_join())
             try:
-                await asyncio.shield(stream.drain_and_join())
+                await asyncio.shield(_drain_task)
             except (asyncio.CancelledError, Exception):
-                # Shield was interrupted — async fallback join (avoids blocking
-                # the event loop, unlike a synchronous thread.join).
+                # Shield was interrupted — cancel the inner drain task to
+                # avoid a leaked coroutine that logs misleading warnings.
+                _drain_task.cancel()
+                # Ensure cancel_event is set even if _drain_task was cancelled
+                # before drain_and_join() could set it (which would leave the
+                # prefill callback returning True indefinitely).
+                stream.cancel()
+                # Fallback join — give the thread a chance to exit before
+                # going to deferred cleanup.
                 if stream._thread is not None and stream._thread.is_alive():
                     try:
                         await asyncio.to_thread(stream._thread.join, 10)
                     except (asyncio.CancelledError, Exception):
                         pass
-                if stream._thread is not None and stream._thread.is_alive():
-                    logger.error(
-                        "Fallback thread join timed out after 10s — "
-                        "thread still alive, potential GPU resource leak"
-                    )
-        # Sync default stream after drain to ensure cleanup is complete
-        # before releasing the lock.
-        _safe_sync()
-        _inference_lock.release()
+            thread_alive = stream._thread is not None and stream._thread.is_alive()
+
+        if thread_alive:
+            # Thread is stuck (likely in long prefill).  Defer cleanup to
+            # avoid calling _safe_sync() while the thread is still using
+            # the GPU — that causes an uncatchable Metal assertion crash.
+            logger.warning(
+                "Inference thread still alive after cleanup attempts — "
+                "deferring Metal sync and lock release until thread exits"
+            )
+            _schedule_deferred_inference_cleanup(stream)
+        else:
+            # Normal path — thread exited, safe to sync and release.
+            _safe_sync()
+            _inference_lock.release()
 
 
 async def _full_completion(

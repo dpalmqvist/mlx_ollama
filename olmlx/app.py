@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from olmlx.config import settings
+from olmlx.engine.inference import ServerBusyError
 from olmlx.engine.model_manager import ModelLoadTimeoutError, ModelManager
 from olmlx.engine.registry import ModelRegistry
 from olmlx.models.store import ModelStore
@@ -134,6 +135,19 @@ def create_app() -> FastAPI:
             "api_error",
             "server_error",
             "timeout",
+        )
+
+    @app.exception_handler(ServerBusyError)
+    async def server_busy_error_handler(request: Request, exc: ServerBusyError):
+        msg = str(exc)
+        logger.warning("ServerBusyError on %s: %s", request.url.path, msg)
+        return _make_error_response(
+            request.url.path,
+            503,
+            msg,
+            "overloaded_error",
+            "server_error",
+            "server_busy",
         )
 
     @app.exception_handler(RuntimeError)

@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+import olmlx.engine.inference as _inf_mod
 from olmlx.engine.inference import (
     _build_generate_kwargs,
     _extract_images,
@@ -14,6 +15,7 @@ from olmlx.engine.inference import (
     _inject_tools_into_system,
     _apply_chat_template_text,
     _safe_sync,
+    _schedule_deferred_inference_cleanup,
     generate_chat,
     generate_completion,
     generate_embeddings,
@@ -423,7 +425,7 @@ class TestGenerateCompletion:
 
         mock_stream = MagicMock(spec=CancellableStream)
         mock_stream.drain_and_join = AsyncMock()
-        mock_stream.__aiter__ = MagicMock(return_value=iter(tokens).__iter__())
+        mock_stream._thread = None  # No thread — normal completion path
 
         # Make it a proper async iterator
         token_iter = iter(tokens)
@@ -802,6 +804,7 @@ class TestStreamCancellationHoldsLock:
         lock_held_during_drain = None
 
         mock_stream = MagicMock(spec=CancellableStream)
+        mock_stream._thread = None  # No thread — normal completion path
         token_iter = iter(tokens)
 
         async def anext_impl():
@@ -920,16 +923,20 @@ class TestInferenceLocked:
 
 class TestStreamCompletionFallbackJoinLogging:
     @pytest.mark.asyncio
-    async def test_fallback_join_logs_error_when_thread_alive(
+    async def test_fallback_join_defers_cleanup_when_thread_alive(
         self, mock_manager, caplog
     ):
-        """When shield is interrupted and fallback join times out, should log error."""
+        """When shield is interrupted and fallback join times out, should defer cleanup."""
         mock_mx = MagicMock()
 
         # Create a mock stream that simulates a stuck thread
         mock_stream = MagicMock(spec=CancellableStream)
         mock_thread = MagicMock()
-        mock_thread.is_alive.return_value = True
+        # Thread is alive during cleanup, then exits when deferred task polls
+        alive_calls = [True, True, True, False]
+        mock_thread.is_alive.side_effect = lambda: (
+            alive_calls.pop(0) if alive_calls else False
+        )
         mock_thread.join = MagicMock()  # join returns but thread still "alive"
         mock_stream._thread = mock_thread
 
@@ -966,7 +973,7 @@ class TestStreamCompletionFallbackJoinLogging:
                 "olmlx.engine.inference.async_mlx_stream",
                 return_value=mock_stream,
             ):
-                with caplog.at_level(logging.ERROR, logger="olmlx.engine.inference"):
+                with caplog.at_level(logging.WARNING, logger="olmlx.engine.inference"):
                     gen = await generate_completion(
                         mock_manager,
                         "qwen3",
@@ -977,8 +984,56 @@ class TestStreamCompletionFallbackJoinLogging:
                     async for chunk in gen:
                         chunks.append(chunk)
 
-        assert any("thread still alive" in record.message for record in caplog.records)
-        # Critical invariant: lock must always be released, even on fallback timeout
-        assert not _inference_lock.locked(), (
-            "_inference_lock must be released even when fallback join times out"
+        assert any(
+            "deferring Metal sync" in record.message for record in caplog.records
         )
+        # Wait for deferred cleanup task to complete and release the lock
+        await _inf_mod._deferred_cleanup_task
+        assert not _inference_lock.locked(), (
+            "_inference_lock must be released by deferred cleanup task"
+        )
+
+
+class TestDeferredInferenceCleanup:
+    @pytest.mark.asyncio
+    async def test_safe_sync_called_after_thread_exits(self):
+        """_safe_sync should be called once the thread exits."""
+        mock_stream = MagicMock()
+        mock_thread = MagicMock()
+        # Thread alive on first check (while loop), dead on re-check and finally guard
+        mock_thread.is_alive.side_effect = [True, False, False]
+        mock_thread.join = MagicMock()
+        mock_stream._thread = mock_thread
+
+        # Manually acquire the lock to simulate _stream_completion holding it
+        await _inference_lock.acquire()
+
+        with patch("olmlx.engine.inference._safe_sync") as mock_safe_sync:
+            _schedule_deferred_inference_cleanup(mock_stream)
+            await _inf_mod._deferred_cleanup_task
+
+        # _safe_sync should have been called (after thread exited)
+        mock_safe_sync.assert_called_once()
+        assert not _inference_lock.locked()
+
+    @pytest.mark.asyncio
+    async def test_lock_released_after_thread_exits(self):
+        """The deferred task must release the lock once the thread exits."""
+        mock_stream = MagicMock()
+        mock_thread = MagicMock()
+        # Thread alive on first check, dead on re-check and finally guard
+        mock_thread.is_alive.side_effect = [True, False, False]
+        mock_thread.join = MagicMock()
+        mock_stream._thread = mock_thread
+
+        await _inference_lock.acquire()
+        assert _inference_lock.locked()
+
+        with patch("olmlx.engine.inference._safe_sync"):
+            _schedule_deferred_inference_cleanup(mock_stream)
+            # Task is running — lock should still be held initially
+            assert _inference_lock.locked()
+            # Wait for deferred task to complete
+            await _inf_mod._deferred_cleanup_task
+
+        assert not _inference_lock.locked()
