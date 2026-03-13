@@ -169,6 +169,7 @@ class TestApplyChatTemplateText:
         )
 
     def test_with_tools_supported(self):
+        """Default (enable_thinking=None) + tools → enable_thinking=False (backward compat)."""
         tokenizer = MagicMock()
         tokenizer.apply_chat_template = MagicMock(return_value="prompt with tools")
         messages = [{"role": "user", "content": "hi"}]
@@ -218,6 +219,89 @@ class TestApplyChatTemplateText:
         result = _apply_chat_template_text(tokenizer, messages, tools, caps)
         assert result == "fallback prompt"
         assert call_count[0] == 2
+
+    def test_fallback_preserves_enable_thinking(self):
+        """When tools kwarg fails and falls back to injection, enable_thinking is preserved."""
+        tokenizer = MagicMock()
+        call_count = [0]
+        retry_kwargs = {}
+
+        def side_effect(messages, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1 and "tools" in kwargs:
+                raise TypeError("tools not supported")
+            retry_kwargs.update(kwargs)
+            return "fallback prompt"
+
+        tokenizer.apply_chat_template = side_effect
+        messages = [{"role": "user", "content": "hi"}]
+        tools = [
+            {
+                "type": "function",
+                "function": {"name": "f", "description": "d", "parameters": {}},
+            }
+        ]
+        caps = TemplateCaps(supports_tools=True, supports_enable_thinking=True)
+        result = _apply_chat_template_text(
+            tokenizer, messages, tools, caps, enable_thinking=False
+        )
+        assert result == "fallback prompt"
+        assert retry_kwargs.get("enable_thinking") is False
+        assert "tools" not in retry_kwargs
+
+    def test_enable_thinking_true(self):
+        """Explicit enable_thinking=True → passed through to template."""
+        tokenizer = MagicMock()
+        tokenizer.apply_chat_template = MagicMock(return_value="prompt")
+        messages = [{"role": "user", "content": "hi"}]
+        caps = TemplateCaps(supports_tools=False, supports_enable_thinking=True)
+        _apply_chat_template_text(tokenizer, messages, caps=caps, enable_thinking=True)
+        call_kwargs = tokenizer.apply_chat_template.call_args[1]
+        assert call_kwargs["enable_thinking"] is True
+
+    def test_enable_thinking_false(self):
+        """Explicit enable_thinking=False → passed through to template."""
+        tokenizer = MagicMock()
+        tokenizer.apply_chat_template = MagicMock(return_value="prompt")
+        messages = [{"role": "user", "content": "hi"}]
+        caps = TemplateCaps(supports_tools=False, supports_enable_thinking=True)
+        _apply_chat_template_text(tokenizer, messages, caps=caps, enable_thinking=False)
+        call_kwargs = tokenizer.apply_chat_template.call_args[1]
+        assert call_kwargs["enable_thinking"] is False
+
+    def test_enable_thinking_none_no_tools_defaults_true(self):
+        """enable_thinking=None + no tools → defaults to True."""
+        tokenizer = MagicMock()
+        tokenizer.apply_chat_template = MagicMock(return_value="prompt")
+        messages = [{"role": "user", "content": "hi"}]
+        caps = TemplateCaps(supports_tools=False, supports_enable_thinking=True)
+        _apply_chat_template_text(tokenizer, messages, caps=caps)
+        call_kwargs = tokenizer.apply_chat_template.call_args[1]
+        assert call_kwargs["enable_thinking"] is True
+
+    def test_enable_thinking_true_with_tools(self):
+        """Explicit enable_thinking=True + tools → both tools and enable_thinking=True passed."""
+        tokenizer = MagicMock()
+        tokenizer.apply_chat_template = MagicMock(return_value="prompt")
+        messages = [{"role": "user", "content": "hi"}]
+        tools = [{"type": "function", "function": {"name": "f"}}]
+        caps = TemplateCaps(supports_tools=True, supports_enable_thinking=True)
+        _apply_chat_template_text(
+            tokenizer, messages, tools, caps, enable_thinking=True
+        )
+        call_kwargs = tokenizer.apply_chat_template.call_args[1]
+        assert call_kwargs["tools"] == tools
+        assert call_kwargs["enable_thinking"] is True
+
+    def test_enable_thinking_not_supported(self):
+        """caps.supports_enable_thinking=False → enable_thinking kwarg not passed."""
+        tokenizer = MagicMock()
+        tokenizer.apply_chat_template = MagicMock(return_value="prompt")
+        messages = [{"role": "user", "content": "hi"}]
+        caps = TemplateCaps(supports_tools=False, supports_enable_thinking=False)
+        _apply_chat_template_text(tokenizer, messages, caps=caps, enable_thinking=True)
+        call_kwargs = tokenizer.apply_chat_template.call_args[1]
+        assert "enable_thinking" not in call_kwargs
 
     def test_no_caps_defaults(self):
         tokenizer = MagicMock()
@@ -420,6 +504,62 @@ class TestGenerateChat:
         assert result["text"] == "tool response"
 
 
+class TestGenerateChatEnableThinking:
+    @pytest.mark.asyncio
+    async def test_enable_thinking_passed_to_template(self, mock_manager):
+        """generate_chat(enable_thinking=True) passes it to template application."""
+        mock_mx = MagicMock()
+
+        mock_manager._loaded["qwen3:latest"].tokenizer.apply_chat_template = MagicMock(
+            return_value="formatted prompt"
+        )
+
+        with patch("olmlx.engine.inference.mx", mock_mx):
+            with patch(
+                "olmlx.engine.inference.asyncio.to_thread", new_callable=AsyncMock
+            ) as mock_thread:
+                mock_thread.return_value = "response"
+                await generate_chat(
+                    mock_manager,
+                    "qwen3",
+                    [{"role": "user", "content": "hi"}],
+                    stream=False,
+                    enable_thinking=True,
+                )
+
+        call_kwargs = mock_manager._loaded[
+            "qwen3:latest"
+        ].tokenizer.apply_chat_template.call_args[1]
+        assert call_kwargs["enable_thinking"] is True
+
+    @pytest.mark.asyncio
+    async def test_enable_thinking_false_passed_to_template(self, mock_manager):
+        """generate_chat(enable_thinking=False) passes it to template application."""
+        mock_mx = MagicMock()
+
+        mock_manager._loaded["qwen3:latest"].tokenizer.apply_chat_template = MagicMock(
+            return_value="formatted prompt"
+        )
+
+        with patch("olmlx.engine.inference.mx", mock_mx):
+            with patch(
+                "olmlx.engine.inference.asyncio.to_thread", new_callable=AsyncMock
+            ) as mock_thread:
+                mock_thread.return_value = "response"
+                await generate_chat(
+                    mock_manager,
+                    "qwen3",
+                    [{"role": "user", "content": "hi"}],
+                    stream=False,
+                    enable_thinking=False,
+                )
+
+        call_kwargs = mock_manager._loaded[
+            "qwen3:latest"
+        ].tokenizer.apply_chat_template.call_args[1]
+        assert call_kwargs["enable_thinking"] is False
+
+
 class TestFullCompletionInner:
     @pytest.mark.asyncio
     async def test_result_with_text_attr(self, mock_manager):
@@ -511,6 +651,37 @@ class TestFullCompletionInner:
 
 
 class TestGenerateChatVlm:
+    @pytest.mark.asyncio
+    async def test_vlm_enable_thinking_warns(self, mock_manager, caplog):
+        """VLM path logs warning when enable_thinking is set."""
+        lm = mock_manager._loaded["qwen3:latest"]
+        lm.is_vlm = True
+
+        mock_mx = MagicMock()
+
+        mock_mlx_vlm = MagicMock()
+        mock_mlx_vlm.apply_chat_template.return_value = "vlm prompt"
+
+        with patch("olmlx.engine.inference.mx", mock_mx):
+            with patch.dict("sys.modules", {"mlx_vlm": mock_mlx_vlm}):
+                with patch(
+                    "olmlx.engine.inference.asyncio.to_thread",
+                    new_callable=AsyncMock,
+                ) as mock_thread:
+                    mock_thread.return_value = "vlm response"
+                    with caplog.at_level(
+                        logging.WARNING, logger="olmlx.engine.inference"
+                    ):
+                        await generate_chat(
+                            mock_manager,
+                            "qwen3",
+                            [{"role": "user", "content": "describe"}],
+                            stream=False,
+                            enable_thinking=True,
+                        )
+
+        assert any("ignored for VLM" in r.message for r in caplog.records)
+
     @pytest.mark.asyncio
     async def test_vlm_without_tools(self, mock_manager):
         """Test chat with VLM model (no tools)."""
