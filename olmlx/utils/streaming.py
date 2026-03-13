@@ -24,6 +24,7 @@ class StreamToken:
 _SENTINEL = object()
 _ERROR_KEY = "__error__"
 _QUEUE_PUT_TIMEOUT = 10.0  # seconds
+_has_prefill_callback: bool | None = None
 
 
 class CancellableStream:
@@ -256,16 +257,21 @@ def async_mlx_stream(
                 **kwargs,
             )
         else:
-            import inspect
-
             import mlx_lm
 
-            gen_kwargs = dict(prompt=prompt, max_tokens=max_tokens, **kwargs)
+            global _has_prefill_callback
+            if _has_prefill_callback is None:
+                import inspect
 
-            if (
-                "prompt_progress_callback"
-                in inspect.signature(mlx_lm.stream_generate).parameters
-            ):
+                _has_prefill_callback = (
+                    "prompt_progress_callback"
+                    in inspect.signature(mlx_lm.stream_generate).parameters
+                )
+
+            gen_kwargs = dict(prompt=prompt, max_tokens=max_tokens, **kwargs)
+            gen_kwargs.pop("prompt_progress_callback", None)  # we control this below
+
+            if _has_prefill_callback:
 
                 def _prefill_progress(progress: float) -> bool:
                     return not cancel_event.is_set()

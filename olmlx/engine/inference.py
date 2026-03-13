@@ -179,6 +179,11 @@ def _tokenize_for_cache(tokenizer: Any, prompt_text: str) -> list[int]:
 @contextlib.asynccontextmanager
 async def _inference_locked():
     """Async context manager that acquires the inference lock with Metal sync on entry/exit."""
+    if _deferred_cleanup_task is not None and not _deferred_cleanup_task.done():
+        raise RuntimeError(
+            "Server busy: recovering from previous inference — "
+            "deferred GPU cleanup in progress"
+        )
     await _inference_lock.acquire()
     # Sync the default Metal stream so any pending GPU work from the previous
     # inference completes before we start a new one.
@@ -467,6 +472,11 @@ async def _stream_completion(
 ) -> AsyncGenerator[dict, None]:
     # Use explicit acquire/release instead of `async with` to prevent
     # CancelledError from releasing the lock before cleanup completes.
+    if _deferred_cleanup_task is not None and not _deferred_cleanup_task.done():
+        raise RuntimeError(
+            "Server busy: recovering from previous inference — "
+            "deferred GPU cleanup in progress"
+        )
     await _inference_lock.acquire()
     # Sync default stream before starting — same purpose as _inference_locked entry.
     _safe_sync()
@@ -723,7 +733,13 @@ async def _stream_completion(
                 # before drain_and_join() could set it (which would leave the
                 # prefill callback returning True indefinitely).
                 stream.cancel()
-                # Async fallback join (avoids blocking the event loop).
+                # Wait for the cancelled drain task to finish before doing a
+                # manual join, to avoid two concurrent thread.join() calls.
+                try:
+                    await asyncio.wait_for(_drain_task, timeout=1.0)
+                except (asyncio.CancelledError, asyncio.TimeoutError, Exception):
+                    pass
+                # Fallback join if drain task didn't handle it.
                 if stream._thread is not None and stream._thread.is_alive():
                     try:
                         await asyncio.to_thread(stream._thread.join, 10)

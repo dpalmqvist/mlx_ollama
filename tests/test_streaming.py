@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import olmlx.utils.streaming as streaming_mod
 from olmlx.utils.streaming import (
     CancellableStream,
     StreamToken,
@@ -41,6 +42,13 @@ class TestStreamToken:
 
 
 class TestAsyncMlxStream:
+    @pytest.fixture(autouse=True)
+    def _reset_callback_cache(self):
+        """Reset the cached _has_prefill_callback between tests."""
+        streaming_mod._has_prefill_callback = None
+        yield
+        streaming_mod._has_prefill_callback = None
+
     @pytest.mark.asyncio
     async def test_text_model_stream(self):
         mock_responses = [
@@ -374,6 +382,13 @@ def _fake_stream_generate(
 
 
 class TestPrefillCancelCallback:
+    @pytest.fixture(autouse=True)
+    def _reset_callback_cache(self):
+        """Reset the cached _has_prefill_callback between tests."""
+        streaming_mod._has_prefill_callback = None
+        yield
+        streaming_mod._has_prefill_callback = None
+
     @pytest.mark.asyncio
     async def test_callback_returns_false_when_cancel_set(self):
         """The actual prompt_progress_callback should return False when cancel_event is set."""
