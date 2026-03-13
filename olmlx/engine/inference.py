@@ -81,26 +81,51 @@ def _safe_sync():
             logger.debug("generation_stream sync failed", exc_info=True)
 
 
+_DEFERRED_CLEANUP_TIMEOUT = 600  # 10 minutes max wait for stuck thread
+
+
 def _schedule_deferred_inference_cleanup(stream) -> None:
     """Schedule deferred GPU cleanup when the inference thread is stuck.
 
     Polls the thread until it exits, then syncs Metal and releases the
     inference lock.  The lock remains held until the thread finishes to
     prevent concurrent Metal command buffer access.
+
+    If the thread doesn't exit within _DEFERRED_CLEANUP_TIMEOUT seconds,
+    releases the lock anyway (risk of Metal crash on next inference, but
+    better than permanent deadlock).
     """
     global _deferred_cleanup_task
 
+    if _deferred_cleanup_task is not None and not _deferred_cleanup_task.done():
+        logger.error(
+            "Deferred inference cleanup already in progress — "
+            "this should not happen while the inference lock is held"
+        )
+
     async def _cleanup():
         thread = stream._thread
+        deadline = time.monotonic() + _DEFERRED_CLEANUP_TIMEOUT
         try:
             while thread is not None and thread.is_alive():
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    logger.error(
+                        "Deferred inference cleanup: thread still alive after %ds — "
+                        "releasing lock anyway (risk of Metal crash on next inference)",
+                        _DEFERRED_CLEANUP_TIMEOUT,
+                    )
+                    break
                 try:
-                    await asyncio.to_thread(thread.join, 30)
-                except Exception:
+                    wait = min(30, remaining)
+                    await asyncio.to_thread(thread.join, wait)
+                except BaseException:
                     pass
-            logger.info("Deferred inference cleanup: thread exited, syncing Metal")
+            else:
+                logger.info("Deferred inference cleanup: thread exited, syncing Metal")
         finally:
-            _safe_sync()
+            if thread is None or not thread.is_alive():
+                _safe_sync()
             _inference_lock.release()
             logger.info("Deferred inference cleanup: lock released")
 

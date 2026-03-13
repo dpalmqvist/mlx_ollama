@@ -995,12 +995,12 @@ class TestStreamCompletionFallbackJoinLogging:
 
 class TestDeferredInferenceCleanup:
     @pytest.mark.asyncio
-    async def test_safe_sync_not_called_while_thread_alive(self):
-        """_safe_sync must NOT be called when the thread is still alive."""
+    async def test_safe_sync_called_after_thread_exits(self):
+        """_safe_sync should be called once the thread exits."""
         mock_stream = MagicMock()
         mock_thread = MagicMock()
-        # Thread stays alive for first check, exits on second
-        mock_thread.is_alive.side_effect = [True, False]
+        # Thread alive on first check (while loop), dead on re-check and finally guard
+        mock_thread.is_alive.side_effect = [True, False, False]
         mock_thread.join = MagicMock()
         mock_stream._thread = mock_thread
 
@@ -1021,7 +1021,8 @@ class TestDeferredInferenceCleanup:
         """The deferred task must release the lock once the thread exits."""
         mock_stream = MagicMock()
         mock_thread = MagicMock()
-        mock_thread.is_alive.side_effect = [True, False]
+        # Thread alive on first check, dead on re-check and finally guard
+        mock_thread.is_alive.side_effect = [True, False, False]
         mock_thread.join = MagicMock()
         mock_stream._thread = mock_thread
 
