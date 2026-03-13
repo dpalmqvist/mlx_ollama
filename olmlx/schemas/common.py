@@ -8,7 +8,7 @@ class ModelOptions(BaseModel):
     num_keep: int | None = None
     seed: int | None = None
     num_predict: int | None = Field(None, ge=-1)
-    top_k: int | None = Field(None, ge=1)
+    top_k: int | None = Field(None, ge=0)
     top_p: float | None = Field(None, ge=0, le=1)
     min_p: float | None = Field(None, ge=0, le=1)
     tfs_z: float | None = None

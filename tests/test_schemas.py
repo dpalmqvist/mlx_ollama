@@ -78,9 +78,13 @@ class TestCommonSchemas:
         with pytest.raises(ValidationError, match="top_p"):
             ModelOptions(top_p=-0.1)
 
-    def test_model_options_top_k_rejects_zero(self):
+    def test_model_options_top_k_allows_zero(self):
+        opts = ModelOptions(top_k=0)
+        assert opts.top_k == 0
+
+    def test_model_options_top_k_rejects_negative(self):
         with pytest.raises(ValidationError, match="top_k"):
-            ModelOptions(top_k=0)
+            ModelOptions(top_k=-1)
 
     def test_model_options_min_p_rejects_above_one(self):
         with pytest.raises(ValidationError, match="min_p"):
@@ -497,12 +501,20 @@ class TestAnthropicSchemas:
                 top_p=1.1,
             )
 
-    def test_messages_request_top_k_rejects_zero(self):
+    def test_messages_request_top_k_allows_zero(self):
+        req = AnthropicMessagesRequest(
+            model="test",
+            messages=[AnthropicMessage(role="user", content="hi")],
+            top_k=0,
+        )
+        assert req.top_k == 0
+
+    def test_messages_request_top_k_rejects_negative(self):
         with pytest.raises(ValidationError, match="top_k"):
             AnthropicMessagesRequest(
                 model="test",
                 messages=[AnthropicMessage(role="user", content="hi")],
-                top_k=0,
+                top_k=-1,
             )
 
     def test_messages_request_max_tokens_rejects_zero(self):

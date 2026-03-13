@@ -50,7 +50,7 @@ class AnthropicMessagesRequest(BaseModel):
     stream: bool = False
     temperature: float | None = Field(None, ge=0, le=1)
     top_p: float | None = Field(None, ge=0, le=1)
-    top_k: int | None = Field(None, ge=1)
+    top_k: int | None = Field(None, ge=0)
     stop_sequences: list[str] | None = None
     system: str | list[AnthropicContentBlock] | None = None
     tools: list[AnthropicTool] | None = None

@@ -146,6 +146,24 @@ class TestModelRegistry:
         with pytest.raises(ValueError, match="empty"):
             registry.add_mapping("", "org/model")
 
+    def test_validate_model_name_rejects_absolute_path(self):
+        from olmlx.engine.registry import validate_model_name
+
+        with pytest.raises(ValueError, match="path traversal"):
+            validate_model_name("/etc/passwd")
+
+    def test_resolve_rejects_absolute_path(self, registry):
+        with pytest.raises(ValueError, match="path traversal"):
+            registry.resolve("/etc/passwd")
+
+    def test_add_alias_rejects_empty_alias(self, registry):
+        with pytest.raises(ValueError, match="empty"):
+            registry.add_alias("", "qwen3:latest")
+
+    def test_add_mapping_rejects_empty_hf_path(self, registry):
+        with pytest.raises(ValueError, match="empty"):
+            registry.add_mapping("my-model", "")
+
     def test_list_models_combines_aliases(self, registry, tmp_path):
         registry._aliases_path = tmp_path / "aliases.json"
         registry._aliases["custom:latest"] = "custom/path"
