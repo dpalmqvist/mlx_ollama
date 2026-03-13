@@ -1504,16 +1504,32 @@ class TestThinkingParamSchema:
         assert req.thinking.type == "enabled"
         assert req.thinking.budget_tokens == 5000
 
-    def test_thinking_invalid_type_rejected(self):
-        """Typos like 'enable' should be rejected by Pydantic validation."""
-        from pydantic import ValidationError
+    def test_thinking_adaptive(self):
+        """Schema accepts 'adaptive' type (used by Claude Code)."""
+        req = AnthropicMessagesRequest(
+            model="test",
+            messages=[AnthropicMessage(role="user", content="hi")],
+            thinking={"type": "adaptive"},
+        )
+        assert req.thinking.type == "adaptive"
 
-        with pytest.raises(ValidationError):
-            AnthropicMessagesRequest(
-                model="test",
-                messages=[AnthropicMessage(role="user", content="hi")],
-                thinking={"type": "enable"},
-            )
+    def test_thinking_unknown_type_accepted(self):
+        """Schema accepts unknown types for forward compatibility."""
+        req = AnthropicMessagesRequest(
+            model="test",
+            messages=[AnthropicMessage(role="user", content="hi")],
+            thinking={"type": "some_future_type"},
+        )
+        assert req.thinking.type == "some_future_type"
+
+    def test_thinking_extra_fields_accepted(self):
+        """Unknown fields in thinking param are accepted for forward compatibility."""
+        req = AnthropicMessagesRequest(
+            model="test",
+            messages=[AnthropicMessage(role="user", content="hi")],
+            thinking={"type": "enabled", "budget_tokens": 5000, "new_field": "value"},
+        )
+        assert req.thinking.type == "enabled"
 
 
 class TestThinkingParamRouter:
@@ -1576,6 +1592,52 @@ class TestThinkingParamRouter:
                     "model": "qwen3",
                     "messages": [{"role": "user", "content": "hi"}],
                     "max_tokens": 100,
+                },
+            )
+
+        assert resp.status_code == 200
+        assert mock_gen.call_args.kwargs.get("enable_thinking") is None
+
+    @pytest.mark.asyncio
+    async def test_thinking_adaptive_passes_none(self, app_client):
+        """'adaptive' type maps to enable_thinking=None (model defaults)."""
+        stats = TimingStats(prompt_eval_count=10, eval_count=20)
+        mock_result = {"text": "Hello!", "done": True, "stats": stats}
+
+        with patch(
+            "olmlx.routers.anthropic.generate_chat", new_callable=AsyncMock
+        ) as mock_gen:
+            mock_gen.return_value = mock_result
+            resp = await app_client.post(
+                "/v1/messages",
+                json={
+                    "model": "qwen3",
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "max_tokens": 100,
+                    "thinking": {"type": "adaptive"},
+                },
+            )
+
+        assert resp.status_code == 200
+        assert mock_gen.call_args.kwargs.get("enable_thinking") is None
+
+    @pytest.mark.asyncio
+    async def test_thinking_unknown_type_passes_none(self, app_client):
+        """Unknown thinking types map to enable_thinking=None for forward compat."""
+        stats = TimingStats(prompt_eval_count=10, eval_count=20)
+        mock_result = {"text": "Hello!", "done": True, "stats": stats}
+
+        with patch(
+            "olmlx.routers.anthropic.generate_chat", new_callable=AsyncMock
+        ) as mock_gen:
+            mock_gen.return_value = mock_result
+            resp = await app_client.post(
+                "/v1/messages",
+                json={
+                    "model": "qwen3",
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "max_tokens": 100,
+                    "thinking": {"type": "some_future_type"},
                 },
             )
 

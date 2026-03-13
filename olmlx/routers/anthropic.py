@@ -21,6 +21,11 @@ from olmlx.schemas.anthropic import (
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+_THINKING_TYPE_MAP: dict[str, bool] = {
+    "enabled": True,
+    "disabled": False,
+}
+
 
 def _build_anthropic_model_map() -> list[tuple[str, str]]:
     """Pre-sort anthropic_models by key length descending, filtering invalid entries.
@@ -581,7 +586,7 @@ async def anthropic_count_tokens(req: AnthropicMessagesRequest, request: Request
 
     enable_thinking: bool | None = None
     if req.thinking is not None:
-        enable_thinking = req.thinking.type == "enabled"
+        enable_thinking = _THINKING_TYPE_MAP.get(req.thinking.type)
 
     lm.active_refs += 1
     try:
@@ -626,7 +631,7 @@ async def anthropic_messages(req: AnthropicMessagesRequest, request: Request):
 
     enable_thinking: bool | None = None
     if req.thinking is not None:
-        enable_thinking = req.thinking.type == "enabled"
+        enable_thinking = _THINKING_TYPE_MAP.get(req.thinking.type)
         if req.thinking.budget_tokens is not None:
             logger.debug(
                 "budget_tokens=%d received but not supported (thinking is on/off only)",
