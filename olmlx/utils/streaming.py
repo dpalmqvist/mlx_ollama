@@ -10,12 +10,6 @@ from typing import Any, Callable
 logger = logging.getLogger(__name__)
 
 
-class PrefillCancelled(Exception):
-    """Raised inside prompt_progress_callback when cancel_event is set during prefill."""
-
-    pass
-
-
 @dataclass
 class StreamToken:
     text: str
@@ -88,8 +82,6 @@ class CancellableStream:
                     ).result(timeout=_QUEUE_PUT_TIMEOUT)
                 except Exception:
                     break
-        except PrefillCancelled:
-            logger.debug("Prefill cancelled by cancel_event")
         except Exception as exc:
             tb = traceback.format_exc()
             try:
@@ -267,9 +259,7 @@ def async_mlx_stream(
             import mlx_lm
 
             def _prefill_progress(progress: float) -> bool:
-                if cancel_event.is_set():
-                    raise PrefillCancelled()
-                return True
+                return not cancel_event.is_set()
 
             return mlx_lm.stream_generate(
                 model,

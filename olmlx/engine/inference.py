@@ -119,8 +119,13 @@ def _schedule_deferred_inference_cleanup(stream) -> None:
                 try:
                     wait = min(30, remaining)
                     await asyncio.to_thread(thread.join, wait)
-                except BaseException:
-                    break  # Exit poll loop; finally will release the lock
+                except BaseException as exc:
+                    logger.warning(
+                        "Deferred inference cleanup: poll loop aborted (%s) — "
+                        "releasing lock (thread may still be alive)",
+                        type(exc).__name__,
+                    )
+                    break  # finally will release the lock
             else:
                 logger.info("Deferred inference cleanup: thread exited cleanly")
         finally:
@@ -702,11 +707,14 @@ async def _stream_completion(
         # stream may be None if generator was closed during cache setup.
         thread_alive = False
         if stream is not None:
+            _drain_task = asyncio.ensure_future(stream.drain_and_join())
             try:
-                await asyncio.shield(stream.drain_and_join())
+                await asyncio.shield(_drain_task)
             except (asyncio.CancelledError, Exception):
-                # Shield was interrupted — async fallback join (avoids blocking
-                # the event loop, unlike a synchronous thread.join).
+                # Shield was interrupted — cancel the inner drain task to
+                # avoid a leaked coroutine that logs misleading warnings.
+                _drain_task.cancel()
+                # Async fallback join (avoids blocking the event loop).
                 if stream._thread is not None and stream._thread.is_alive():
                     try:
                         await asyncio.to_thread(stream._thread.join, 10)
