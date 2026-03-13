@@ -1599,8 +1599,8 @@ class TestThinkingParamRouter:
         assert mock_gen.call_args.kwargs.get("enable_thinking") is None
 
     @pytest.mark.asyncio
-    async def test_thinking_adaptive_passes_none(self, app_client):
-        """'adaptive' type maps to enable_thinking=None (model defaults)."""
+    async def test_thinking_adaptive_passes_true(self, app_client):
+        """'adaptive' type maps to enable_thinking=True."""
         stats = TimingStats(prompt_eval_count=10, eval_count=20)
         mock_result = {"text": "Hello!", "done": True, "stats": stats}
 
@@ -1619,7 +1619,7 @@ class TestThinkingParamRouter:
             )
 
         assert resp.status_code == 200
-        assert mock_gen.call_args.kwargs.get("enable_thinking") is None
+        assert mock_gen.call_args.kwargs.get("enable_thinking") is True
 
     @pytest.mark.asyncio
     async def test_thinking_unknown_type_passes_none(self, app_client):

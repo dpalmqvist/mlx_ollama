@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 _THINKING_TYPE_MAP: dict[str, bool] = {
     "enabled": True,
     "disabled": False,
+    "adaptive": True,
 }
 
 
