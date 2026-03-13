@@ -102,6 +102,7 @@ def _schedule_deferred_inference_cleanup(stream) -> None:
             "Deferred inference cleanup already in progress — "
             "this should not happen while the inference lock is held"
         )
+        return  # do not create a second task; the existing one will release the lock
 
     async def _cleanup():
         thread = stream._thread
@@ -131,6 +132,10 @@ def _schedule_deferred_inference_cleanup(stream) -> None:
         finally:
             if thread is None or not thread.is_alive():
                 _safe_sync()
+            # Note: on timeout/abort with thread still alive, releasing the
+            # lock risks a Metal crash on the next inference (the stuck thread
+            # may still be issuing GPU commands).  Python can't kill CPU-bound
+            # threads, so this is the "least bad" option vs permanent deadlock.
             _inference_lock.release()
             logger.info("Deferred inference cleanup: lock released")
 
@@ -714,6 +719,10 @@ async def _stream_completion(
                 # Shield was interrupted — cancel the inner drain task to
                 # avoid a leaked coroutine that logs misleading warnings.
                 _drain_task.cancel()
+                # Ensure cancel_event is set even if _drain_task was cancelled
+                # before drain_and_join() could set it (which would leave the
+                # prefill callback returning True indefinitely).
+                stream.cancel()
                 # Async fallback join (avoids blocking the event loop).
                 if stream._thread is not None and stream._thread.is_alive():
                     try:

@@ -360,11 +360,66 @@ class TestDrainAndJoinTimeout:
         assert not stream._thread.is_alive()
 
 
+def _fake_stream_generate(
+    model,
+    tokenizer,
+    *,
+    prompt=None,
+    max_tokens=512,
+    prompt_progress_callback=None,
+    **kwargs,
+):
+    """Fake stream_generate with prompt_progress_callback in its signature."""
+    return iter([])
+
+
 class TestPrefillCancelCallback:
     @pytest.mark.asyncio
     async def test_callback_returns_false_when_cancel_set(self):
         """The actual prompt_progress_callback should return False when cancel_event is set."""
+        captured = {}
+
+        def capturing_stream_generate(
+            model,
+            tokenizer,
+            *,
+            prompt=None,
+            max_tokens=512,
+            prompt_progress_callback=None,
+            **kwargs,
+        ):
+            captured["prompt_progress_callback"] = prompt_progress_callback
+            return iter([])
+
         mock_mlx_lm = MagicMock()
+        mock_mlx_lm.stream_generate = capturing_stream_generate
+
+        with patch.dict("sys.modules", {"mlx_lm": mock_mlx_lm}):
+            stream = async_mlx_stream(
+                MagicMock(),
+                MagicMock(),
+                "prompt",
+                max_tokens=10,
+                is_vlm=False,
+            )
+            async for _ in stream:
+                pass
+
+        callback = captured["prompt_progress_callback"]
+        assert callback is not None
+
+        # Not cancelled → returns True
+        assert callback(0.5) is True
+
+        # Set the cancel event via the stream's internal event
+        stream._cancel_event.set()
+        assert callback(0.5) is False
+
+    @pytest.mark.asyncio
+    async def test_callback_not_passed_when_unsupported(self):
+        """When mlx_lm.stream_generate lacks prompt_progress_callback, it is not passed."""
+        mock_mlx_lm = MagicMock()
+        # No spec — MagicMock signature won't include prompt_progress_callback
         mock_mlx_lm.stream_generate = MagicMock(return_value=iter([]))
 
         with patch.dict("sys.modules", {"mlx_lm": mock_mlx_lm}):
@@ -378,16 +433,10 @@ class TestPrefillCancelCallback:
             async for _ in stream:
                 pass
 
-        callback = mock_mlx_lm.stream_generate.call_args.kwargs[
+        assert (
             "prompt_progress_callback"
-        ]
-
-        # Not cancelled → returns True
-        assert callback(0.5) is True
-
-        # Set the cancel event via the stream's internal event
-        stream._cancel_event.set()
-        assert callback(0.5) is False
+            not in mock_mlx_lm.stream_generate.call_args.kwargs
+        )
 
     @pytest.mark.asyncio
     async def test_prompt_progress_callback_not_passed_for_vlm(self):

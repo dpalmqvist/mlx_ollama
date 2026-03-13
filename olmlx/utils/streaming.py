@@ -256,19 +256,23 @@ def async_mlx_stream(
                 **kwargs,
             )
         else:
+            import inspect
+
             import mlx_lm
 
-            def _prefill_progress(progress: float) -> bool:
-                return not cancel_event.is_set()
+            gen_kwargs = dict(prompt=prompt, max_tokens=max_tokens, **kwargs)
 
-            return mlx_lm.stream_generate(
-                model,
-                tokenizer,
-                prompt=prompt,
-                max_tokens=max_tokens,
-                prompt_progress_callback=_prefill_progress,
-                **kwargs,
-            )
+            if (
+                "prompt_progress_callback"
+                in inspect.signature(mlx_lm.stream_generate).parameters
+            ):
+
+                def _prefill_progress(progress: float) -> bool:
+                    return not cancel_event.is_set()
+
+                gen_kwargs["prompt_progress_callback"] = _prefill_progress
+
+            return mlx_lm.stream_generate(model, tokenizer, **gen_kwargs)
 
     stream = CancellableStream(gen_factory, is_vlm=is_vlm)
     stream.start()
