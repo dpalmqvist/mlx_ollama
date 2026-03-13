@@ -194,7 +194,7 @@ class CancellableStream:
             if join_attempted:
                 try:
                     await asyncio.to_thread(self._thread.join, remaining)
-                except (asyncio.CancelledError, Exception):
+                except Exception:
                     pass
             if self._thread.is_alive():
                 if join_attempted:

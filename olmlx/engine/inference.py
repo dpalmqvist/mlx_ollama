@@ -193,6 +193,14 @@ async def _inference_locked():
             "deferred GPU cleanup in progress"
         )
     await _inference_lock.acquire()
+    # Re-check after acquiring — a deferred cleanup task may have been
+    # created between the pre-check and acquire (TOCTOU window).
+    if _deferred_cleanup_task is not None and not _deferred_cleanup_task.done():
+        _inference_lock.release()
+        raise ServerBusyError(
+            "Server busy: recovering from previous inference — "
+            "deferred GPU cleanup in progress"
+        )
     # Sync the default Metal stream so any pending GPU work from the previous
     # inference completes before we start a new one.
     _safe_sync()
@@ -486,6 +494,14 @@ async def _stream_completion(
             "deferred GPU cleanup in progress"
         )
     await _inference_lock.acquire()
+    # Re-check after acquiring — a deferred cleanup task may have been
+    # created between the pre-check and acquire (TOCTOU window).
+    if _deferred_cleanup_task is not None and not _deferred_cleanup_task.done():
+        _inference_lock.release()
+        raise ServerBusyError(
+            "Server busy: recovering from previous inference — "
+            "deferred GPU cleanup in progress"
+        )
     # Sync default stream before starting — same purpose as _inference_locked entry.
     _safe_sync()
 
