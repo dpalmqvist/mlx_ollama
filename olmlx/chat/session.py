@@ -1,0 +1,138 @@
+"""Chat session with agent loop for tool use."""
+
+import asyncio
+import logging
+from collections.abc import AsyncGenerator
+from typing import Any
+
+from olmlx.chat.config import ChatConfig
+from olmlx.chat.mcp_client import MCPClientManager
+from olmlx.engine.inference import generate_chat
+from olmlx.engine.model_manager import ModelManager
+from olmlx.engine.tool_parser import parse_model_output
+
+logger = logging.getLogger(__name__)
+
+
+class ChatSession:
+    """Manages conversation history and the agent loop."""
+
+    def __init__(
+        self,
+        config: ChatConfig,
+        manager: ModelManager,
+        mcp: MCPClientManager | None = None,
+    ):
+        self.config = config
+        self.manager = manager
+        self.mcp = mcp
+        self.messages: list[dict] = []
+
+        if config.system_prompt:
+            self.messages.append({"role": "system", "content": config.system_prompt})
+
+    def clear_history(self) -> None:
+        """Clear conversation history, re-adding current system prompt if set."""
+        self.messages.clear()
+        if self.config.system_prompt:
+            self.messages.append({"role": "system", "content": self.config.system_prompt})
+
+    async def send_message(self, user_text: str) -> AsyncGenerator[dict, None]:
+        """Send a user message and run the agent loop.
+
+        Yields event dicts:
+        - {"type": "token", "text": str} — streaming token
+        - {"type": "thinking", "text": str} — thinking block
+        - {"type": "tool_call", "name": str, "arguments": dict, "id": str}
+        - {"type": "tool_result", "name": str, "result": str, "id": str}
+        - {"type": "tool_error", "name": str, "error": str, "id": str}
+        - {"type": "max_turns_exceeded"}
+        - {"type": "done"}
+        """
+        self.messages.append({"role": "user", "content": user_text})
+
+        mcp_tools = None
+        if self.mcp is not None:
+            mcp_tools = self.mcp.get_tools_for_chat() or None
+
+        for turn in range(self.config.max_turns):
+            chunks: list[str] = []
+            async for chunk in await generate_chat(
+                self.manager,
+                self.config.model_name,
+                self.messages,
+                tools=mcp_tools,
+                stream=True,
+                keep_alive="-1",
+                max_tokens=self.config.max_tokens,
+                cache_id="chat",
+                enable_thinking=self.config.thinking if self.config.thinking else None,
+            ):
+                if chunk.get("cache_info"):
+                    continue
+                if chunk.get("done"):
+                    break
+                text = chunk.get("text", "")
+                if text:
+                    chunks.append(text)
+                    yield {"type": "token", "text": text}
+
+            full_text = "".join(chunks)
+
+            thinking, visible_text, tool_uses = parse_model_output(
+                full_text, has_tools=(mcp_tools is not None)
+            )
+
+            if thinking:
+                yield {"type": "thinking", "text": thinking}
+
+            # Build assistant message
+            assistant_msg: dict[str, Any] = {"role": "assistant", "content": visible_text}
+            if tool_uses:
+                assistant_msg["tool_calls"] = [
+                    {
+                        "id": tu["id"],
+                        "type": "function",
+                        "function": {
+                            "name": tu["name"],
+                            "arguments": tu["input"],
+                        },
+                    }
+                    for tu in tool_uses
+                ]
+            self.messages.append(assistant_msg)
+
+            if not tool_uses:
+                break
+
+            # Execute tool calls concurrently
+            async def _exec_tool(tu: dict) -> dict:
+                """Execute a single tool call and return the event + message."""
+                tool_name = tu["name"]
+                tool_input = tu["input"]
+                tool_id = tu["id"]
+                try:
+                    result = await self.mcp.call_tool(tool_name, tool_input)
+                    return {
+                        "call_event": {"type": "tool_call", "name": tool_name, "arguments": tool_input, "id": tool_id},
+                        "result_event": {"type": "tool_result", "name": tool_name, "result": result, "id": tool_id},
+                        "message": {"role": "tool", "tool_call_id": tool_id, "name": tool_name, "content": result},
+                    }
+                except Exception as exc:
+                    error_msg = f"Error calling {tool_name}: {exc}"
+                    return {
+                        "call_event": {"type": "tool_call", "name": tool_name, "arguments": tool_input, "id": tool_id},
+                        "result_event": {"type": "tool_error", "name": tool_name, "error": str(exc), "id": tool_id},
+                        "message": {"role": "tool", "tool_call_id": tool_id, "name": tool_name, "content": error_msg},
+                    }
+
+            results = await asyncio.gather(*(_exec_tool(tu) for tu in tool_uses))
+            for r in results:
+                yield r["call_event"]
+                yield r["result_event"]
+                self.messages.append(r["message"])
+        else:
+            # max_turns reached
+            yield {"type": "max_turns_exceeded"}
+
+        yield {"type": "done"}
