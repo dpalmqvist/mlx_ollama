@@ -2,8 +2,6 @@
 
 import json
 
-import pytest
-
 from olmlx.chat.config import ChatConfig, load_mcp_config
 
 

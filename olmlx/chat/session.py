@@ -84,7 +84,6 @@ class ChatSession:
 
         for turn in range(self.config.max_turns):
             chunks: list[str] = []
-            repetition_stopped = False
             async for chunk in await generate_chat(
                 self.manager,
                 self.config.model_name,
@@ -107,7 +106,6 @@ class ChatSession:
                     yield {"type": "token", "text": text}
                     if _detect_repetition(chunks):
                         logger.warning("Repetitive output detected, stopping generation")
-                        repetition_stopped = True
                         break
 
             full_text = "".join(chunks)

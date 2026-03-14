@@ -398,7 +398,7 @@ class TestSkillIntegration:
     def test_use_skill_tool_included(self, tmp_path):
         """When skills are provided, use_skill tool should be available."""
         skills = self._make_skills(tmp_path)
-        session = _make_session(skills=skills)
+        _make_session(skills=skills)
         # The skill tool definition should exist
         tool_def = skills.get_tool_definition()
         assert tool_def is not None

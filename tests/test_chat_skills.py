@@ -1,9 +1,6 @@
 """Tests for olmlx.chat.skills."""
 
-import pytest
-from pathlib import Path
-
-from olmlx.chat.skills import Skill, SkillManager, _parse_skill_file, load_skills_from_dir
+from olmlx.chat.skills import SkillManager, _parse_skill_file, load_skills_from_dir
 
 
 class TestParseSkillFile:
