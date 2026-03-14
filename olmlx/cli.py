@@ -300,6 +300,8 @@ def cmd_chat(args):
         max_turns=args.max_turns,
         thinking=not args.no_thinking,
         mcp_enabled=not args.no_mcp,
+        repeat_penalty=args.repeat_penalty,
+        repeat_last_n=args.repeat_last_n,
     )
     if args.mcp_config:
         chat_kwargs["mcp_config_path"] = Path(args.mcp_config)
@@ -472,6 +474,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     chat_p.add_argument("--max-tokens", type=int, default=4096)
     chat_p.add_argument("--max-turns", type=int, default=25)
+    chat_p.add_argument(
+        "--repeat-penalty", type=float, default=1.1,
+        help="Repetition penalty (1.0 = disabled, default: 1.1)",
+    )
+    chat_p.add_argument(
+        "--repeat-last-n", type=int, default=64,
+        help="Context window for repetition penalty (default: 64)",
+    )
 
     cfg = sub.add_parser("config", help="Show configuration")
     cfg_sub = cfg.add_subparsers(dest="config_command")

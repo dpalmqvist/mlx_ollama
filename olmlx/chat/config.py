@@ -16,6 +16,8 @@ class ChatConfig:
     max_turns: int = 25
     thinking: bool = True
     mcp_enabled: bool = True
+    repeat_penalty: float = 1.1
+    repeat_last_n: int = 64
     mcp_config_path: Path = field(
         default_factory=lambda: Path.home() / ".olmlx" / "mcp.json"
     )

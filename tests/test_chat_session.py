@@ -281,3 +281,104 @@ class TestClearHistory:
         session.clear_history()
         assert len(session.messages) == 1
         assert session.messages[0]["content"] == "New prompt."
+
+    def test_clear_invalidates_prompt_cache(self):
+        """clear_history should invalidate the prompt cache for the chat model."""
+        session = _make_session(model_name="qwen3:8b")
+        session.clear_history()
+        session.manager.invalidate_prompt_cache.assert_called_with("qwen3:8b", "chat")
+
+
+class TestRepetitionOptions:
+    @pytest.mark.asyncio
+    async def test_passes_repeat_penalty_to_generate_chat(self):
+        """ChatSession should pass repeat_penalty and repeat_last_n as options."""
+        config = ChatConfig(
+            model_name="test:latest",
+            repeat_penalty=1.2,
+            repeat_last_n=128,
+        )
+        manager = MagicMock()
+        session = ChatSession(config=config, manager=manager)
+
+        captured_kwargs = {}
+
+        async def fake_stream(*args, **kwargs):
+            captured_kwargs.update(kwargs)
+            yield {"text": "Hello", "done": False}
+            yield {"text": "", "done": True, "stats": MagicMock()}
+
+        with patch("olmlx.chat.session.generate_chat", side_effect=lambda *a, **kw: fake_stream(*a, **kw)):
+            async for _ in session.send_message("Hi"):
+                pass
+
+        assert captured_kwargs["options"] == {
+            "repeat_penalty": 1.2,
+            "repeat_last_n": 128,
+        }
+
+    @pytest.mark.asyncio
+    async def test_default_repeat_penalty(self):
+        """Default config should pass repeat_penalty=1.1, repeat_last_n=64."""
+        session = _make_session()
+
+        captured_kwargs = {}
+
+        async def fake_stream(*args, **kwargs):
+            captured_kwargs.update(kwargs)
+            yield {"text": "Hello", "done": False}
+            yield {"text": "", "done": True, "stats": MagicMock()}
+
+        with patch("olmlx.chat.session.generate_chat", side_effect=lambda *a, **kw: fake_stream(*a, **kw)):
+            async for _ in session.send_message("Hi"):
+                pass
+
+        assert captured_kwargs["options"]["repeat_penalty"] == 1.1
+        assert captured_kwargs["options"]["repeat_last_n"] == 64
+
+
+class TestRepetitionDetection:
+    @pytest.mark.asyncio
+    async def test_stops_on_repetitive_output(self):
+        """Generation should stop early when repetitive output is detected."""
+        session = _make_session()
+
+        repeated_phrase = "I am repeating myself. "
+
+        async def fake_stream(*args, **kwargs):
+            # Emit the same phrase many times to trigger detection
+            for _ in range(50):
+                yield {"text": repeated_phrase, "done": False}
+            yield {"text": "", "done": True, "stats": MagicMock()}
+
+        with patch("olmlx.chat.session.generate_chat", side_effect=lambda *a, **kw: fake_stream(*a, **kw)):
+            events = []
+            async for event in session.send_message("Say something"):
+                events.append(event)
+
+        token_events = [e for e in events if e["type"] == "token"]
+        # Should have stopped well before all 50 chunks were emitted
+        assert len(token_events) < 50
+
+        # Should still have a done event
+        done_events = [e for e in events if e["type"] == "done"]
+        assert len(done_events) == 1
+
+    @pytest.mark.asyncio
+    async def test_no_false_positive_on_normal_output(self):
+        """Normal varied output should not trigger repetition detection."""
+        session = _make_session()
+
+        async def fake_stream(*args, **kwargs):
+            yield {"text": "The quick brown fox ", "done": False}
+            yield {"text": "jumps over the lazy dog. ", "done": False}
+            yield {"text": "This is a normal response.", "done": False}
+            yield {"text": "", "done": True, "stats": MagicMock()}
+
+        with patch("olmlx.chat.session.generate_chat", side_effect=lambda *a, **kw: fake_stream(*a, **kw)):
+            events = []
+            async for event in session.send_message("Tell me something"):
+                events.append(event)
+
+        token_events = [e for e in events if e["type"] == "token"]
+        assert len(token_events) == 3  # All tokens should come through

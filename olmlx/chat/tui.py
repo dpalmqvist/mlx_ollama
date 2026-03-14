@@ -2,9 +2,9 @@
 
 import json
 import logging
+import sys
 
 from rich.console import Console
-from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.text import Text
@@ -118,39 +118,35 @@ class ChatTUI:
 class StreamContext:
     """Context manager for streaming display.
 
-    Uses plain Text during streaming to avoid O(n^2) Markdown re-parsing.
-    Renders final Markdown on exit.
+    Writes tokens directly to stdout during streaming so output scrolls
+    naturally (Rich.Live truncates at terminal height, hiding long output).
+    Prints a final Markdown-rendered version after the stream ends.
     """
 
     def __init__(self, console: Console, initial_text: str = ""):
         self.console = console
         self._chunks: list[str] = [initial_text] if initial_text else []
-        self.live: Live | None = None
+        self._started = False
 
     def __enter__(self):
-        initial = "".join(self._chunks)
-        self.live = Live(
-            Text(initial),
-            console=self.console,
-            refresh_per_second=10,
-        )
-        self.live.__enter__()
+        if self._chunks:
+            sys.stdout.write("".join(self._chunks))
+            sys.stdout.flush()
+        self._started = True
         return self
 
     def __exit__(self, *args):
-        if self.live is not None:
-            # Render final output as Markdown
-            text = self.get_text()
-            if text:
-                self.live.update(Markdown(text))
-            self.live.__exit__(*args)
-            self.live = None
+        if self._started:
+            # End the streaming line
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+            self._started = False
 
     def update(self, token: str) -> None:
-        """Append a token and refresh the display."""
+        """Append a token and write it directly to stdout."""
         self._chunks.append(token)
-        if self.live is not None:
-            self.live.update(Text("".join(self._chunks)))
+        sys.stdout.write(token)
+        sys.stdout.flush()
 
     def get_text(self) -> str:
         """Return the accumulated text."""

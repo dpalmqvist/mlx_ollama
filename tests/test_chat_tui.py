@@ -1,6 +1,5 @@
 """Tests for olmlx.chat.tui."""
 
-from unittest.mock import MagicMock, patch
 from io import StringIO
 
 from rich.console import Console

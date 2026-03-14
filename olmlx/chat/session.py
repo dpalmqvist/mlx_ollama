@@ -32,10 +32,11 @@ class ChatSession:
             self.messages.append({"role": "system", "content": config.system_prompt})
 
     def clear_history(self) -> None:
-        """Clear conversation history, re-adding current system prompt if set."""
+        """Clear conversation history and prompt cache, re-adding current system prompt if set."""
         self.messages.clear()
         if self.config.system_prompt:
             self.messages.append({"role": "system", "content": self.config.system_prompt})
+        self.manager.invalidate_prompt_cache(self.config.model_name, "chat")
 
     async def send_message(self, user_text: str) -> AsyncGenerator[dict, None]:
         """Send a user message and run the agent loop.
@@ -55,12 +56,19 @@ class ChatSession:
         if self.mcp is not None:
             mcp_tools = self.mcp.get_tools_for_chat() or None
 
+        options = {
+            "repeat_penalty": self.config.repeat_penalty,
+            "repeat_last_n": self.config.repeat_last_n,
+        }
+
         for turn in range(self.config.max_turns):
             chunks: list[str] = []
+            repetition_stopped = False
             async for chunk in await generate_chat(
                 self.manager,
                 self.config.model_name,
                 self.messages,
+                options=options,
                 tools=mcp_tools,
                 stream=True,
                 keep_alive="-1",
@@ -76,6 +84,10 @@ class ChatSession:
                 if text:
                     chunks.append(text)
                     yield {"type": "token", "text": text}
+                    if _detect_repetition(chunks):
+                        logger.warning("Repetitive output detected, stopping generation")
+                        repetition_stopped = True
+                        break
 
             full_text = "".join(chunks)
 
@@ -136,3 +148,40 @@ class ChatSession:
             yield {"type": "max_turns_exceeded"}
 
         yield {"type": "done"}
+
+
+def _detect_repetition(
+    chunks: list[str], min_phrase_len: int = 20, min_repeats: int = 4
+) -> bool:
+    """Detect if the accumulated text contains a repeating phrase.
+
+    Checks if any substring of length >= min_phrase_len repeats
+    min_repeats or more times consecutively in the recent text.
+    """
+    text = "".join(chunks)
+    if len(text) < min_phrase_len * min_repeats:
+        return False
+
+    # Only check the tail to keep it fast
+    tail = text[-1000:] if len(text) > 1000 else text
+
+    # Try different phrase lengths from short to long
+    for phrase_len in range(min_phrase_len, len(tail) // min_repeats + 1):
+        # Take the last phrase_len chars as candidate
+        candidate = tail[-phrase_len:]
+        if not candidate.strip():
+            continue
+        # Count consecutive occurrences from the end
+        count = 0
+        pos = len(tail)
+        while pos >= phrase_len:
+            segment = tail[pos - phrase_len : pos]
+            if segment == candidate:
+                count += 1
+                pos -= phrase_len
+            else:
+                break
+        if count >= min_repeats:
+            return True
+
+    return False
