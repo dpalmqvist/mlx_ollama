@@ -302,17 +302,23 @@ def cmd_chat(args):
         mcp_enabled=not args.no_mcp,
         repeat_penalty=args.repeat_penalty,
         repeat_last_n=args.repeat_last_n,
+        skills_enabled=not args.no_skills,
     )
     if args.mcp_config:
         chat_kwargs["mcp_config_path"] = Path(args.mcp_config)
+    if args.skills_dir:
+        chat_kwargs["skills_dir"] = Path(args.skills_dir)
     config = ChatConfig(**chat_kwargs)
 
     async def _run_chat():
+        from olmlx.chat.skills import SkillManager
+
         store = _create_store()
         manager = ModelManager(store.registry, store)
 
         tui = ChatTUI()
         mcp = None
+        skills = None
 
         try:
             tui.console.print(f"[dim]Loading {model_name}...[/dim]")
@@ -324,7 +330,15 @@ def cmd_chat(args):
                     mcp = MCPClientManager()
                     await mcp.connect_all(mcp_cfg)
 
-            session = ChatSession(config=config, manager=manager, mcp=mcp)
+            if config.skills_enabled:
+                skills = SkillManager(config.skills_dir)
+                skills.load()
+                if skills.list_skills():
+                    tui.console.print(
+                        f"[dim]Loaded {len(skills.list_skills())} skill(s)[/dim]"
+                    )
+
+            session = ChatSession(config=config, manager=manager, mcp=mcp, skills=skills)
             tools = mcp.get_tools_for_chat() if mcp else []
             tui.display_welcome(model_name, tools)
 
@@ -349,6 +363,14 @@ def cmd_chat(args):
                         tui.console.print("[dim]History cleared[/dim]")
                     elif command == "/tools":
                         tui.display_tools(tools)
+                    elif command == "/skills":
+                        if skills and skills.list_skills():
+                            tui.console.print("[bold]Skills:[/bold]")
+                            for s in skills.list_skills():
+                                desc = f" — {s.description}" if s.description else ""
+                                tui.console.print(f"  [cyan]{s.name}[/cyan]{desc}")
+                        else:
+                            tui.console.print("[dim]No skills loaded[/dim]")
                     elif command == "/system":
                         if arg:
                             config.system_prompt = arg
@@ -481,6 +503,12 @@ def build_parser() -> argparse.ArgumentParser:
     chat_p.add_argument(
         "--repeat-last-n", type=int, default=64,
         help="Context window for repetition penalty (default: 64)",
+    )
+    chat_p.add_argument(
+        "--no-skills", action="store_true", default=False, help="Disable skills"
+    )
+    chat_p.add_argument(
+        "--skills-dir", help="Skills directory (default: ~/.olmlx/skills)"
     )
 
     cfg = sub.add_parser("config", help="Show configuration")

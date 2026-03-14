@@ -7,6 +7,7 @@ from typing import Any
 
 from olmlx.chat.config import ChatConfig
 from olmlx.chat.mcp_client import MCPClientManager
+from olmlx.chat.skills import SkillManager
 from olmlx.engine.inference import generate_chat
 from olmlx.engine.model_manager import ModelManager
 from olmlx.engine.tool_parser import parse_model_output
@@ -22,20 +23,35 @@ class ChatSession:
         config: ChatConfig,
         manager: ModelManager,
         mcp: MCPClientManager | None = None,
+        skills: SkillManager | None = None,
     ):
         self.config = config
         self.manager = manager
         self.mcp = mcp
+        self.skills = skills
         self.messages: list[dict] = []
 
-        if config.system_prompt:
-            self.messages.append({"role": "system", "content": config.system_prompt})
+        system_prompt = self._build_system_prompt()
+        if system_prompt:
+            self.messages.append({"role": "system", "content": system_prompt})
+
+    def _build_system_prompt(self) -> str | None:
+        """Combine user system prompt with skill index."""
+        parts = []
+        if self.config.system_prompt:
+            parts.append(self.config.system_prompt)
+        if self.skills:
+            index = self.skills.get_skill_index_text()
+            if index:
+                parts.append(index)
+        return "\n\n".join(parts) if parts else None
 
     def clear_history(self) -> None:
         """Clear conversation history and prompt cache, re-adding current system prompt if set."""
         self.messages.clear()
-        if self.config.system_prompt:
-            self.messages.append({"role": "system", "content": self.config.system_prompt})
+        system_prompt = self._build_system_prompt()
+        if system_prompt:
+            self.messages.append({"role": "system", "content": system_prompt})
         self.manager.invalidate_prompt_cache(self.config.model_name, "chat")
 
     async def send_message(self, user_text: str) -> AsyncGenerator[dict, None]:
@@ -55,6 +71,11 @@ class ChatSession:
         mcp_tools = None
         if self.mcp is not None:
             mcp_tools = self.mcp.get_tools_for_chat() or None
+
+        # Merge skill tool into the tools list
+        skill_tool = self.skills.get_tool_definition() if self.skills else None
+        if skill_tool:
+            mcp_tools = (mcp_tools or []) + [skill_tool]
 
         options = {
             "repeat_penalty": self.config.repeat_penalty,
@@ -124,7 +145,10 @@ class ChatSession:
                 tool_input = tu["input"]
                 tool_id = tu["id"]
                 try:
-                    result = await self.mcp.call_tool(tool_name, tool_input)
+                    if tool_name == "use_skill" and self.skills:
+                        result = self.skills.handle_use_skill(tool_input)
+                    else:
+                        result = await self.mcp.call_tool(tool_name, tool_input)
                     return {
                         "call_event": {"type": "tool_call", "name": tool_name, "arguments": tool_input, "id": tool_id},
                         "result_event": {"type": "tool_result", "name": tool_name, "result": result, "id": tool_id},

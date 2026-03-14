@@ -21,6 +21,10 @@ class ChatConfig:
     mcp_config_path: Path = field(
         default_factory=lambda: Path.home() / ".olmlx" / "mcp.json"
     )
+    skills_enabled: bool = True
+    skills_dir: Path = field(
+        default_factory=lambda: Path.home() / ".olmlx" / "skills"
+    )
 
 
 def load_mcp_config(path: Path) -> dict:

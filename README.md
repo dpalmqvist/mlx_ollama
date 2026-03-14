@@ -73,6 +73,7 @@ olmlx chat qwen3:8b --no-thinking --no-mcp
 | `/exit` | Quit the chat |
 | `/clear` | Clear conversation history |
 | `/tools` | Show available MCP tools |
+| `/skills` | Show loaded skills |
 | `/system <prompt>` | Set or show the system prompt |
 | `/model <name>` | Switch to a different model |
 
@@ -97,6 +98,51 @@ Configure MCP servers in `~/.olmlx/mcp.json` using the same format as Claude Des
 ```
 
 Entries with `command` use stdio transport; entries with `url` use SSE transport. When tools are available, the model can call them and the results are automatically fed back for the model to continue — a full agent loop.
+
+### Skills
+
+Skills are markdown files that provide specialized instructions the model can load on demand. Instead of stuffing everything into the system prompt, skill descriptions are listed briefly and the model uses a `use_skill` tool to load the full content only when relevant.
+
+```bash
+# Create the skills directory and copy the examples
+mkdir -p ~/.olmlx/skills
+cp examples/skills/*.md ~/.olmlx/skills/
+
+# Chat with skills enabled (default)
+olmlx chat qwen3:8b
+
+# List loaded skills in chat
+/skills
+
+# Disable skills
+olmlx chat qwen3:8b --no-skills
+
+# Use a custom skills directory
+olmlx chat qwen3:8b --skills-dir /path/to/skills
+```
+
+Skill files use a simple frontmatter format:
+
+```markdown
+---
+name: code-review
+description: Structured code review focusing on correctness, clarity, and maintainability
+---
+
+When reviewing code, follow this structured approach...
+```
+
+The `name` field is required; `description` is optional but recommended — it's shown in the system prompt so the model knows when to use each skill.
+
+**Included example skills** (in `examples/skills/`):
+
+| Skill | Description |
+|---|---|
+| `code-review` | Structured review: correctness, clarity, maintainability, security |
+| `explain` | Explain code or concepts, adapting depth to the question |
+| `commit-message` | Write clear conventional commit messages from diffs |
+| `debug` | Systematic debugging: reproduce, isolate, fix, verify |
+| `refactor` | Safe refactoring — improve structure without changing behavior |
 
 ## Auto-start on Login (macOS)
 

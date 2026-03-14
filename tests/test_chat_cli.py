@@ -53,6 +53,16 @@ class TestChatParser:
         args = parser.parse_args(["chat", "qwen3:8b", "--mcp-config", "/tmp/mcp.json"])
         assert args.mcp_config == "/tmp/mcp.json"
 
+    def test_chat_no_skills(self):
+        parser = build_parser()
+        args = parser.parse_args(["chat", "qwen3:8b", "--no-skills"])
+        assert args.no_skills is True
+
+    def test_chat_skills_dir(self):
+        parser = build_parser()
+        args = parser.parse_args(["chat", "qwen3:8b", "--skills-dir", "/tmp/skills"])
+        assert args.skills_dir == "/tmp/skills"
+
     def test_chat_defaults(self):
         parser = build_parser()
         args = parser.parse_args(["chat", "qwen3:8b"])
@@ -62,6 +72,8 @@ class TestChatParser:
         assert args.max_turns == 25
         assert args.system is None
         assert args.mcp_config is None
+        assert args.no_skills is False
+        assert args.skills_dir is None
 
 
 class TestCliMainChat:

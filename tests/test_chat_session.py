@@ -5,11 +5,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from olmlx.chat.config import ChatConfig
 from olmlx.chat.session import ChatSession
+from olmlx.chat.skills import SkillManager
 
 
 def _make_session(
     *,
     mcp=None,
+    skills=None,
     model_name="test:latest",
     thinking=True,
     max_turns=25,
@@ -22,7 +24,7 @@ def _make_session(
         system_prompt=system_prompt,
     )
     manager = MagicMock()
-    return ChatSession(config=config, manager=manager, mcp=mcp)
+    return ChatSession(config=config, manager=manager, mcp=mcp, skills=skills)
 
 
 class TestChatSessionInit:
@@ -382,3 +384,125 @@ class TestRepetitionDetection:
 
         token_events = [e for e in events if e["type"] == "token"]
         assert len(token_events) == 3  # All tokens should come through
+
+
+class TestSkillIntegration:
+    def _make_skills(self, tmp_path):
+        (tmp_path / "review.md").write_text(
+            "---\nname: code-review\ndescription: Code review guidelines\n---\n\nReview carefully."
+        )
+        mgr = SkillManager(tmp_path)
+        mgr.load()
+        return mgr
+
+    def test_use_skill_tool_included(self, tmp_path):
+        """When skills are provided, use_skill tool should be available."""
+        skills = self._make_skills(tmp_path)
+        session = _make_session(skills=skills)
+        # The skill tool definition should exist
+        tool_def = skills.get_tool_definition()
+        assert tool_def is not None
+        assert tool_def["function"]["name"] == "use_skill"
+
+    def test_skill_index_in_system_prompt(self, tmp_path):
+        """Skill index should appear in the system prompt."""
+        skills = self._make_skills(tmp_path)
+        session = _make_session(skills=skills, system_prompt="Be helpful.")
+        system_msgs = [m for m in session.messages if m["role"] == "system"]
+        assert len(system_msgs) == 1
+        assert "code-review" in system_msgs[0]["content"]
+        assert "Be helpful." in system_msgs[0]["content"]
+
+    def test_skill_index_in_system_prompt_no_user_prompt(self, tmp_path):
+        """Skill index should be the system prompt when no user prompt given."""
+        skills = self._make_skills(tmp_path)
+        session = _make_session(skills=skills)
+        system_msgs = [m for m in session.messages if m["role"] == "system"]
+        assert len(system_msgs) == 1
+        assert "code-review" in system_msgs[0]["content"]
+
+    @pytest.mark.asyncio
+    async def test_use_skill_handled_locally(self, tmp_path):
+        """use_skill calls should be handled by SkillManager, not MCP."""
+        skills = self._make_skills(tmp_path)
+        session = _make_session(skills=skills)
+        call_count = 0
+
+        async def fake_generate(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                yield {
+                    "text": '<tool_call>{"name": "use_skill", "arguments": {"name": "code-review"}}</tool_call>',
+                    "done": False,
+                }
+                yield {"text": "", "done": True, "stats": MagicMock()}
+            else:
+                yield {"text": "I will review the code carefully.", "done": False}
+                yield {"text": "", "done": True, "stats": MagicMock()}
+
+        with patch("olmlx.chat.session.generate_chat", side_effect=lambda *a, **kw: fake_generate()):
+            events = []
+            async for event in session.send_message("Review my code"):
+                events.append(event)
+
+        result_events = [e for e in events if e["type"] == "tool_result"]
+        assert len(result_events) == 1
+        assert "Review carefully." in result_events[0]["result"]
+
+    @pytest.mark.asyncio
+    async def test_mcp_and_skills_together(self, tmp_path):
+        """Both MCP tools and use_skill should work together."""
+        skills = self._make_skills(tmp_path)
+        mcp = MagicMock()
+        mcp.get_tools_for_chat.return_value = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "read_file",
+                    "description": "Read a file",
+                    "parameters": {"type": "object", "properties": {"path": {"type": "string"}}},
+                },
+            }
+        ]
+        mcp.call_tool = AsyncMock(return_value="file contents")
+
+        session = _make_session(skills=skills, mcp=mcp)
+        call_count = 0
+
+        async def fake_generate(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                yield {
+                    "text": '<tool_call>{"name": "read_file", "arguments": {"path": "/tmp/x"}}</tool_call>',
+                    "done": False,
+                }
+                yield {"text": "", "done": True, "stats": MagicMock()}
+            else:
+                yield {"text": "Done", "done": False}
+                yield {"text": "", "done": True, "stats": MagicMock()}
+
+        with patch("olmlx.chat.session.generate_chat", side_effect=lambda *a, **kw: fake_generate()):
+            events = []
+            async for event in session.send_message("Read a file"):
+                events.append(event)
+
+        # MCP tool should have been called
+        mcp.call_tool.assert_awaited_once()
+
+    def test_no_skills_no_system_prompt_injection(self):
+        """Without skills, system prompt should be unchanged."""
+        session = _make_session(system_prompt="Be helpful.")
+        assert len(session.messages) == 1
+        assert session.messages[0]["content"] == "Be helpful."
+
+    def test_clear_history_preserves_skill_index(self, tmp_path):
+        """After clear_history, skill index should still be in system prompt."""
+        skills = self._make_skills(tmp_path)
+        session = _make_session(skills=skills, system_prompt="Be helpful.")
+        session.messages.append({"role": "user", "content": "Hi"})
+        session.clear_history()
+        system_msgs = [m for m in session.messages if m["role"] == "system"]
+        assert len(system_msgs) == 1
+        assert "code-review" in system_msgs[0]["content"]
