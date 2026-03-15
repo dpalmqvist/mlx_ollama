@@ -25,7 +25,14 @@ from olmlx.schemas.embed import (
     EmbeddingsRequest,
 )
 from olmlx.schemas.generate import GenerateRequest, GenerateResponse
-from olmlx.schemas.manage import CopyRequest, CreateRequest, DeleteRequest
+from olmlx.schemas.manage import (
+    AbortRequest,
+    CopyRequest,
+    CreateRequest,
+    DeleteRequest,
+    UnloadRequest,
+    WarmupRequest,
+)
 from olmlx.schemas.models import (
     ModelDetails,
     ModelInfo,
@@ -113,6 +120,10 @@ class TestCommonSchemas:
     def test_model_options_num_ctx_rejects_zero(self):
         with pytest.raises(ValidationError, match="num_ctx"):
             ModelOptions(num_ctx=0)
+
+    def test_model_options_has_docstring(self):
+        assert ModelOptions.__doc__ is not None
+        assert "Ollama" in ModelOptions.__doc__
 
 
 class TestGenerateSchemas:
@@ -219,6 +230,34 @@ class TestManageSchemas:
         req = CreateRequest(model="test")
         assert req.modelfile is None
         assert req.stream is True
+
+    def test_delete_request_rejects_empty_model(self):
+        with pytest.raises(ValidationError, match="model"):
+            DeleteRequest(model="")
+
+    def test_create_request_rejects_empty_model(self):
+        with pytest.raises(ValidationError, match="model"):
+            CreateRequest(model="")
+
+    def test_warmup_request_rejects_empty_model(self):
+        with pytest.raises(ValidationError, match="model"):
+            WarmupRequest(model="")
+
+    def test_abort_request_rejects_empty_model(self):
+        with pytest.raises(ValidationError, match="model"):
+            AbortRequest(model="")
+
+    def test_unload_request_rejects_empty_model(self):
+        with pytest.raises(ValidationError, match="model"):
+            UnloadRequest(model="")
+
+    def test_copy_request_rejects_empty_source(self):
+        with pytest.raises(ValidationError, match="source"):
+            CopyRequest(source="", destination="b")
+
+    def test_copy_request_rejects_empty_destination(self):
+        with pytest.raises(ValidationError, match="destination"):
+            CopyRequest(source="a", destination="")
 
 
 class TestStatusSchemas:

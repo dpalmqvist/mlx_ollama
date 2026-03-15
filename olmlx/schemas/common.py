@@ -2,8 +2,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class ModelOptions(BaseModel):
-    model_config = ConfigDict(extra="allow")
     """Ollama model options / parameters."""
+
+    model_config = ConfigDict(extra="allow")
 
     num_keep: int | None = None
     seed: int | None = None
