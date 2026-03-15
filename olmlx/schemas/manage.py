@@ -1,17 +1,19 @@
 from pydantic import BaseModel
 
+from olmlx.schemas.common import ModelName
+
 
 class CopyRequest(BaseModel):
-    source: str
-    destination: str
+    source: ModelName
+    destination: ModelName
 
 
 class DeleteRequest(BaseModel):
-    model: str
+    model: ModelName
 
 
 class CreateRequest(BaseModel):
-    model: str
+    model: ModelName
     modelfile: str | None = None
     stream: bool = True
     path: str | None = None
@@ -19,13 +21,13 @@ class CreateRequest(BaseModel):
 
 
 class WarmupRequest(BaseModel):
-    model: str
+    model: ModelName
     keep_alive: str | None = None
 
 
 class AbortRequest(BaseModel):
-    model: str
+    model: ModelName
 
 
 class UnloadRequest(BaseModel):
-    model: str
+    model: ModelName

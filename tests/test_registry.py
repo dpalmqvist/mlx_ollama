@@ -59,6 +59,15 @@ class TestModelRegistry:
         registry.remove("test")
         assert "test:latest" not in registry._aliases
 
+    def test_remove_mapping(self, registry, tmp_path, monkeypatch):
+        models_json = tmp_path / "models_rm.json"
+        monkeypatch.setattr("olmlx.engine.registry.settings.models_config", models_json)
+        registry._aliases_path = tmp_path / "aliases.json"
+        registry.add_mapping("removable", "org/removable-model")
+        assert registry.resolve("removable") == "org/removable-model"
+        registry.remove("removable")
+        assert registry.resolve("removable") is None
+
     def test_alias_priority_over_mapping(self, registry, tmp_path):
         registry._aliases_path = tmp_path / "aliases.json"
         registry._aliases["qwen3:latest"] = "custom/override"

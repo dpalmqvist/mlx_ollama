@@ -1,9 +1,14 @@
+from typing import Annotated
+
 from pydantic import BaseModel, ConfigDict, Field
+
+ModelName = Annotated[str, Field(min_length=1, max_length=256)]
 
 
 class ModelOptions(BaseModel):
-    model_config = ConfigDict(extra="allow")
     """Ollama model options / parameters."""
+
+    model_config = ConfigDict(extra="allow")
 
     num_keep: int | None = None
     seed: int | None = None
