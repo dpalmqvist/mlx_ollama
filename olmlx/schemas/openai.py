@@ -13,7 +13,7 @@ class OpenAIChatMessage(BaseModel):
 
 
 class OpenAIChatRequest(BaseModel):
-    model: str
+    model: str = Field(..., min_length=1, max_length=256)
     messages: list[OpenAIChatMessage]
     temperature: float | None = Field(None, ge=0, le=2)
     top_p: float | None = Field(None, ge=0, le=1)
@@ -55,7 +55,7 @@ class OpenAIChatResponse(BaseModel):
 
 
 class OpenAICompletionRequest(BaseModel):
-    model: str
+    model: str = Field(..., min_length=1, max_length=256)
     prompt: str | list[str]
     temperature: float | None = Field(None, ge=0, le=2)
     top_p: float | None = Field(None, ge=0, le=1)
@@ -102,7 +102,7 @@ class OpenAIModelList(BaseModel):
 
 
 class OpenAIEmbeddingRequest(BaseModel):
-    model: str
+    model: str = Field(..., min_length=1, max_length=256)
     input: str | list[str]
     encoding_format: str = "float"
 

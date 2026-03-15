@@ -172,6 +172,18 @@ class TestModelRegistry:
         with pytest.raises(ValueError, match="HuggingFace path.*path traversal"):
             registry.add_mapping("my-model", "../evil/path")
 
+    def test_validate_model_name_rejects_null_bytes(self):
+        from olmlx.engine.registry import validate_model_name
+
+        with pytest.raises(ValueError, match="null bytes"):
+            validate_model_name("legit\x00evil")
+
+    def test_validate_hf_path_rejects_null_bytes(self):
+        from olmlx.engine.registry import validate_hf_path
+
+        with pytest.raises(ValueError, match="null bytes"):
+            validate_hf_path("org/model\x00evil")
+
     def test_validate_model_name_rejects_bare_dotdot(self):
         from olmlx.engine.registry import validate_model_name
 

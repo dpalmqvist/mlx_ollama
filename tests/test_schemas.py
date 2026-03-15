@@ -102,9 +102,13 @@ class TestCommonSchemas:
         opts = ModelOptions(num_predict=-1)
         assert opts.num_predict == -1
 
-    def test_model_options_num_predict_rejects_below_negative_one(self):
+    def test_model_options_num_predict_allows_negative_two(self):
+        opts = ModelOptions(num_predict=-2)
+        assert opts.num_predict == -2
+
+    def test_model_options_num_predict_rejects_below_negative_two(self):
         with pytest.raises(ValidationError, match="num_predict"):
-            ModelOptions(num_predict=-2)
+            ModelOptions(num_predict=-3)
 
     def test_model_options_num_ctx_rejects_zero(self):
         with pytest.raises(ValidationError, match="num_ctx"):

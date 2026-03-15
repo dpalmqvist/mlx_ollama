@@ -44,7 +44,7 @@ class AnthropicThinkingParam(BaseModel):
 
 
 class AnthropicMessagesRequest(BaseModel):
-    model: str
+    model: str = Field(..., min_length=1, max_length=256)
     messages: list[AnthropicMessage]
     max_tokens: int = Field(4096, ge=1)
     stream: bool = False

@@ -30,6 +30,8 @@ def validate_model_name(name: str) -> None:
     """Validate a model name. Raises ValueError for invalid names."""
     if not name or not name.strip():
         raise ValueError("Model name must not be empty")
+    if "\x00" in name:
+        raise ValueError("Model name must not contain null bytes")
     if (
         name == ".."
         or name.startswith("/")
@@ -46,6 +48,8 @@ def validate_hf_path(hf_path: str) -> None:
     """Validate a HuggingFace repo path. Raises ValueError for invalid paths."""
     if not hf_path or not hf_path.strip():
         raise ValueError("HuggingFace path must not be empty")
+    if "\x00" in hf_path:
+        raise ValueError("HuggingFace path must not contain null bytes")
     if (
         hf_path == ".."
         or hf_path.startswith("/")
