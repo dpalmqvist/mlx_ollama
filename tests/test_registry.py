@@ -164,6 +164,10 @@ class TestModelRegistry:
         with pytest.raises(ValueError, match="HuggingFace path must not be empty"):
             registry.add_mapping("my-model", "")
 
+    def test_add_mapping_rejects_long_hf_path(self, registry):
+        with pytest.raises(ValueError, match="512"):
+            registry.add_mapping("my-model", "a" * 513)
+
     def test_add_mapping_rejects_hf_path_traversal(self, registry):
         with pytest.raises(ValueError, match="HuggingFace path.*path traversal"):
             registry.add_mapping("my-model", "../evil/path")

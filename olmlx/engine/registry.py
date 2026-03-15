@@ -56,6 +56,10 @@ def validate_hf_path(hf_path: str) -> None:
         raise ValueError(
             f"HuggingFace path {hf_path!r} contains path traversal sequence"
         )
+    if len(hf_path) > 512:
+        raise ValueError(
+            f"HuggingFace path must be at most 512 characters, got {len(hf_path)}"
+        )
 
 
 class ModelRegistry:

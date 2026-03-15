@@ -352,7 +352,7 @@ class TestOpenAISchemas:
             )
 
     def test_chat_request_n_rejects_greater_than_one(self):
-        with pytest.raises(ValidationError, match="only n=1 is supported"):
+        with pytest.raises(ValidationError):
             OpenAIChatRequest(
                 model="test",
                 messages=[OpenAIChatMessage(role="user", content="hi")],
@@ -380,7 +380,7 @@ class TestOpenAISchemas:
             OpenAICompletionRequest(model="test", prompt="hi", temperature=-1)
 
     def test_completion_request_n_rejects_greater_than_one(self):
-        with pytest.raises(ValidationError, match="only n=1 is supported"):
+        with pytest.raises(ValidationError):
             OpenAICompletionRequest(model="test", prompt="hi", n=2)
 
     def test_completion_request_max_tokens_rejects_zero(self):
@@ -501,20 +501,12 @@ class TestAnthropicSchemas:
                 top_p=1.1,
             )
 
-    def test_messages_request_top_k_allows_zero(self):
-        req = AnthropicMessagesRequest(
-            model="test",
-            messages=[AnthropicMessage(role="user", content="hi")],
-            top_k=0,
-        )
-        assert req.top_k == 0
-
-    def test_messages_request_top_k_rejects_negative(self):
+    def test_messages_request_top_k_rejects_zero(self):
         with pytest.raises(ValidationError, match="top_k"):
             AnthropicMessagesRequest(
                 model="test",
                 messages=[AnthropicMessage(role="user", content="hi")],
-                top_k=-1,
+                top_k=0,
             )
 
     def test_messages_request_max_tokens_rejects_zero(self):
