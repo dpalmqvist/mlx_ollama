@@ -31,7 +31,8 @@ def validate_model_name(name: str) -> None:
     if not name or not name.strip():
         raise ValueError("Model name must not be empty")
     if (
-        name.startswith("/")
+        name == ".."
+        or name.startswith("/")
         or "/../" in name
         or name.startswith("../")
         or name.endswith("/..")
@@ -46,7 +47,8 @@ def validate_hf_path(hf_path: str) -> None:
     if not hf_path or not hf_path.strip():
         raise ValueError("HuggingFace path must not be empty")
     if (
-        hf_path.startswith("/")
+        hf_path == ".."
+        or hf_path.startswith("/")
         or "/../" in hf_path
         or hf_path.startswith("../")
         or hf_path.endswith("/..")

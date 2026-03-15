@@ -1,6 +1,14 @@
 from pydantic import BaseModel, Field, field_validator
 
 
+def _validate_n_is_one(v: int) -> int:
+    if v != 1:
+        raise ValueError(
+            "only n=1 is supported; this server returns a single completion"
+        )
+    return v
+
+
 # --- Chat Completions ---
 
 
@@ -28,14 +36,7 @@ class OpenAIChatRequest(BaseModel):
     tool_choice: str | dict | None = None
     seed: int | None = None
 
-    @field_validator("n")
-    @classmethod
-    def n_must_be_one(cls, v: int) -> int:
-        if v != 1:
-            raise ValueError(
-                "n > 1 is not supported; this server returns a single completion"
-            )
-        return v
+    _validate_n = field_validator("n")(_validate_n_is_one)
 
 
 class OpenAIUsage(BaseModel):
@@ -76,14 +77,7 @@ class OpenAICompletionRequest(BaseModel):
     frequency_penalty: float = Field(0.0, ge=-2, le=2)
     seed: int | None = None
 
-    @field_validator("n")
-    @classmethod
-    def n_must_be_one(cls, v: int) -> int:
-        if v != 1:
-            raise ValueError(
-                "n > 1 is not supported; this server returns a single completion"
-            )
-        return v
+    _validate_n = field_validator("n")(_validate_n_is_one)
 
 
 class OpenAICompletionChoice(BaseModel):

@@ -14,7 +14,7 @@ class ModelOptions(BaseModel):
     tfs_z: float | None = None
     typical_p: float | None = None
     repeat_last_n: int | None = Field(None, ge=-1)
-    temperature: float | None = Field(None, ge=0)
+    temperature: float | None = Field(None, ge=0)  # no upper bound (Ollama compat)
     repeat_penalty: float | None = None
     presence_penalty: float | None = None
     frequency_penalty: float | None = None

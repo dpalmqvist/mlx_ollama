@@ -168,6 +168,12 @@ class TestModelRegistry:
         with pytest.raises(ValueError, match="HuggingFace path.*path traversal"):
             registry.add_mapping("my-model", "../evil/path")
 
+    def test_validate_model_name_rejects_bare_dotdot(self):
+        from olmlx.engine.registry import validate_model_name
+
+        with pytest.raises(ValueError, match="path traversal"):
+            validate_model_name("..")
+
     def test_validate_model_name_allows_double_dots_in_name(self):
         from olmlx.engine.registry import validate_model_name
 
