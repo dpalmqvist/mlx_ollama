@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import sys
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -75,17 +76,17 @@ class MCPClientManager:
             try:
                 await session.initialize()
             except BaseException:
-                await session_cm.__aexit__(None, None, None)
+                await session_cm.__aexit__(*sys.exc_info())
                 raise
         except BaseException:
-            await transport_cm.__aexit__(None, None, None)
+            await transport_cm.__aexit__(*sys.exc_info())
             raise
 
         try:
             await self._discover_tools(name, session)
         except BaseException:
-            await session_cm.__aexit__(None, None, None)
-            await transport_cm.__aexit__(None, None, None)
+            await session_cm.__aexit__(*sys.exc_info())
+            await transport_cm.__aexit__(*sys.exc_info())
             raise
         self._servers[name] = {
             "session": session,

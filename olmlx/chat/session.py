@@ -87,6 +87,7 @@ class ChatSession:
         for turn in range(self.config.max_turns):
             accumulated = ""
             visible_len = 0
+            token_count = 0
             repetition_stopped = False
             async for chunk in await generate_chat(
                 self.manager,
@@ -107,13 +108,15 @@ class ChatSession:
                 text = chunk.get("text", "")
                 if text:
                     accumulated += text
+                    token_count += 1
                     # Suppress <think>...</think> from streaming output
                     visible = _strip_thinking(accumulated)
                     if len(visible) > visible_len:
                         delta = visible[visible_len:]
                         visible_len = len(visible)
                         yield {"type": "token", "text": delta}
-                    if _detect_repetition(accumulated):
+                    # Throttle: only check every 10 tokens to reduce overhead
+                    if token_count % 10 == 0 and _detect_repetition(accumulated):
                         logger.warning(
                             "Repetitive output detected, stopping generation"
                         )
