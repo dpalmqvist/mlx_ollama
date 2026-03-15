@@ -161,8 +161,17 @@ class TestModelRegistry:
             registry.add_alias("", "qwen3:latest")
 
     def test_add_mapping_rejects_empty_hf_path(self, registry):
-        with pytest.raises(ValueError, match="empty"):
+        with pytest.raises(ValueError, match="HuggingFace path must not be empty"):
             registry.add_mapping("my-model", "")
+
+    def test_add_mapping_rejects_hf_path_traversal(self, registry):
+        with pytest.raises(ValueError, match="HuggingFace path.*path traversal"):
+            registry.add_mapping("my-model", "../evil/path")
+
+    def test_validate_model_name_allows_double_dots_in_name(self):
+        from olmlx.engine.registry import validate_model_name
+
+        validate_model_name("gpt2..medium")  # should not raise
 
     def test_list_models_combines_aliases(self, registry, tmp_path):
         registry._aliases_path = tmp_path / "aliases.json"

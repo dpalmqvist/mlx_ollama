@@ -352,7 +352,7 @@ class TestOpenAISchemas:
             )
 
     def test_chat_request_n_rejects_greater_than_one(self):
-        with pytest.raises(ValidationError, match="n"):
+        with pytest.raises(ValidationError, match="not supported"):
             OpenAIChatRequest(
                 model="test",
                 messages=[OpenAIChatMessage(role="user", content="hi")],
@@ -380,7 +380,7 @@ class TestOpenAISchemas:
             OpenAICompletionRequest(model="test", prompt="hi", temperature=-1)
 
     def test_completion_request_n_rejects_greater_than_one(self):
-        with pytest.raises(ValidationError, match="n"):
+        with pytest.raises(ValidationError, match="not supported"):
             OpenAICompletionRequest(model="test", prompt="hi", n=2)
 
     def test_completion_request_max_tokens_rejects_zero(self):

@@ -30,10 +30,30 @@ def validate_model_name(name: str) -> None:
     """Validate a model name. Raises ValueError for invalid names."""
     if not name or not name.strip():
         raise ValueError("Model name must not be empty")
-    if ".." in name or name.startswith("/"):
+    if (
+        name.startswith("/")
+        or "/../" in name
+        or name.startswith("../")
+        or name.endswith("/..")
+    ):
         raise ValueError(f"Model name {name!r} contains path traversal sequence")
     if len(name) > 256:
         raise ValueError(f"Model name must be at most 256 characters, got {len(name)}")
+
+
+def validate_hf_path(hf_path: str) -> None:
+    """Validate a HuggingFace repo path. Raises ValueError for invalid paths."""
+    if not hf_path or not hf_path.strip():
+        raise ValueError("HuggingFace path must not be empty")
+    if (
+        hf_path.startswith("/")
+        or "/../" in hf_path
+        or hf_path.startswith("../")
+        or hf_path.endswith("/..")
+    ):
+        raise ValueError(
+            f"HuggingFace path {hf_path!r} contains path traversal sequence"
+        )
 
 
 class ModelRegistry:
@@ -98,7 +118,7 @@ class ModelRegistry:
     def add_mapping(self, name: str, hf_path: str):
         """Add a name → HF path mapping and persist to models.json."""
         validate_model_name(name)
-        validate_model_name(hf_path)
+        validate_hf_path(hf_path)
         normalized = self.normalize_name(name)
         if self._mappings.get(normalized) == hf_path:
             return  # already exists
