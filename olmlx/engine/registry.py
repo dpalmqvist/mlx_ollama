@@ -60,12 +60,12 @@ def validate_hf_path(hf_path: str) -> None:
         raise ValueError(
             f"HuggingFace path {hf_path!r} contains path traversal sequence"
         )
-    if hf_path.count("/") != 1:
-        raise ValueError(f"HuggingFace path {hf_path!r} must be in 'owner/repo' format")
     if len(hf_path) > 512:
         raise ValueError(
             f"HuggingFace path must be at most 512 characters, got {len(hf_path)}"
         )
+    if hf_path.count("/") != 1:
+        raise ValueError(f"HuggingFace path {hf_path!r} must be in 'owner/repo' format")
 
 
 class ModelRegistry:
