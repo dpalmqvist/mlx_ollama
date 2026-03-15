@@ -87,8 +87,38 @@ class TestAgentLoop:
         assert len(thinking_events) == 1
         assert "Let me think" in thinking_events[0]["text"]
 
+        # Token events should NOT contain raw <think> tags
+        token_events = [e for e in events if e["type"] == "token"]
+        token_text = "".join(e["text"] for e in token_events)
+        assert "<think>" not in token_text
+        assert "</think>" not in token_text
+        assert "The answer is 42" in token_text
+
         # Assistant message should have the visible text only
         assert session.messages[-1]["content"] == "The answer is 42"
+
+    @pytest.mark.asyncio
+    async def test_thinking_streamed_incrementally(self):
+        """Thinking tokens streamed across multiple chunks should be suppressed."""
+        session = _make_session()
+
+        async def fake_stream(*args, **kwargs):
+            yield {"text": "<think>", "done": False}
+            yield {"text": "Let me ", "done": False}
+            yield {"text": "think", "done": False}
+            yield {"text": "</think>", "done": False}
+            yield {"text": "The answer", "done": False}
+            yield {"text": "", "done": True, "stats": MagicMock()}
+
+        with patch("olmlx.chat.session.generate_chat", return_value=fake_stream()):
+            events = []
+            async for event in session.send_message("Q"):
+                events.append(event)
+
+        token_events = [e for e in events if e["type"] == "token"]
+        token_text = "".join(e["text"] for e in token_events)
+        assert "<think>" not in token_text
+        assert "The answer" in token_text
 
     @pytest.mark.asyncio
     async def test_tool_call_agent_loop(self):
@@ -100,7 +130,10 @@ class TestAgentLoop:
                 "function": {
                     "name": "read_file",
                     "description": "Read a file",
-                    "parameters": {"type": "object", "properties": {"path": {"type": "string"}}},
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"path": {"type": "string"}},
+                    },
                 },
             }
         ]
@@ -124,7 +157,10 @@ class TestAgentLoop:
                 yield {"text": "The file contains: file contents here", "done": False}
                 yield {"text": "", "done": True, "stats": MagicMock()}
 
-        with patch("olmlx.chat.session.generate_chat", side_effect=lambda *a, **kw: fake_generate()):
+        with patch(
+            "olmlx.chat.session.generate_chat",
+            side_effect=lambda *a, **kw: fake_generate(),
+        ):
             events = []
             async for event in session.send_message("Read /tmp/test.txt"):
                 events.append(event)
@@ -170,7 +206,10 @@ class TestAgentLoop:
             }
             yield {"text": "", "done": True, "stats": MagicMock()}
 
-        with patch("olmlx.chat.session.generate_chat", side_effect=lambda *a, **kw: fake_generate()):
+        with patch(
+            "olmlx.chat.session.generate_chat",
+            side_effect=lambda *a, **kw: fake_generate(),
+        ):
             events = []
             async for event in session.send_message("Keep pinging"):
                 events.append(event)
@@ -211,7 +250,10 @@ class TestAgentLoop:
                 yield {"text": "The tool failed, sorry.", "done": False}
                 yield {"text": "", "done": True, "stats": MagicMock()}
 
-        with patch("olmlx.chat.session.generate_chat", side_effect=lambda *a, **kw: fake_generate()):
+        with patch(
+            "olmlx.chat.session.generate_chat",
+            side_effect=lambda *a, **kw: fake_generate(),
+        ):
             events = []
             async for event in session.send_message("Use the tool"):
                 events.append(event)
@@ -236,7 +278,10 @@ class TestAgentLoop:
             yield {"text": "Hi", "done": False}
             yield {"text": "", "done": True, "stats": MagicMock()}
 
-        with patch("olmlx.chat.session.generate_chat", side_effect=lambda *a, **kw: fake_stream(*a, **kw)):
+        with patch(
+            "olmlx.chat.session.generate_chat",
+            side_effect=lambda *a, **kw: fake_stream(*a, **kw),
+        ):
             events = []
             async for event in session.send_message("Hello"):
                 events.append(event)
@@ -247,7 +292,11 @@ class TestAgentLoop:
         session = _make_session()
 
         async def fake_stream(*args, **kwargs):
-            yield {"cache_info": True, "cache_read_tokens": 100, "cache_creation_tokens": 50}
+            yield {
+                "cache_info": True,
+                "cache_read_tokens": 100,
+                "cache_creation_tokens": 50,
+            }
             yield {"text": "Hello", "done": False}
             yield {"text": "", "done": True, "stats": MagicMock()}
 
@@ -310,7 +359,10 @@ class TestRepetitionOptions:
             yield {"text": "Hello", "done": False}
             yield {"text": "", "done": True, "stats": MagicMock()}
 
-        with patch("olmlx.chat.session.generate_chat", side_effect=lambda *a, **kw: fake_stream(*a, **kw)):
+        with patch(
+            "olmlx.chat.session.generate_chat",
+            side_effect=lambda *a, **kw: fake_stream(*a, **kw),
+        ):
             async for _ in session.send_message("Hi"):
                 pass
 
@@ -331,7 +383,10 @@ class TestRepetitionOptions:
             yield {"text": "Hello", "done": False}
             yield {"text": "", "done": True, "stats": MagicMock()}
 
-        with patch("olmlx.chat.session.generate_chat", side_effect=lambda *a, **kw: fake_stream(*a, **kw)):
+        with patch(
+            "olmlx.chat.session.generate_chat",
+            side_effect=lambda *a, **kw: fake_stream(*a, **kw),
+        ):
             async for _ in session.send_message("Hi"):
                 pass
 
@@ -353,7 +408,10 @@ class TestRepetitionDetection:
                 yield {"text": repeated_phrase, "done": False}
             yield {"text": "", "done": True, "stats": MagicMock()}
 
-        with patch("olmlx.chat.session.generate_chat", side_effect=lambda *a, **kw: fake_stream(*a, **kw)):
+        with patch(
+            "olmlx.chat.session.generate_chat",
+            side_effect=lambda *a, **kw: fake_stream(*a, **kw),
+        ):
             events = []
             async for event in session.send_message("Say something"):
                 events.append(event)
@@ -377,7 +435,10 @@ class TestRepetitionDetection:
             yield {"text": "This is a normal response.", "done": False}
             yield {"text": "", "done": True, "stats": MagicMock()}
 
-        with patch("olmlx.chat.session.generate_chat", side_effect=lambda *a, **kw: fake_stream(*a, **kw)):
+        with patch(
+            "olmlx.chat.session.generate_chat",
+            side_effect=lambda *a, **kw: fake_stream(*a, **kw),
+        ):
             events = []
             async for event in session.send_message("Tell me something"):
                 events.append(event)
@@ -441,7 +502,10 @@ class TestSkillIntegration:
                 yield {"text": "I will review the code carefully.", "done": False}
                 yield {"text": "", "done": True, "stats": MagicMock()}
 
-        with patch("olmlx.chat.session.generate_chat", side_effect=lambda *a, **kw: fake_generate()):
+        with patch(
+            "olmlx.chat.session.generate_chat",
+            side_effect=lambda *a, **kw: fake_generate(),
+        ):
             events = []
             async for event in session.send_message("Review my code"):
                 events.append(event)
@@ -461,7 +525,10 @@ class TestSkillIntegration:
                 "function": {
                     "name": "read_file",
                     "description": "Read a file",
-                    "parameters": {"type": "object", "properties": {"path": {"type": "string"}}},
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"path": {"type": "string"}},
+                    },
                 },
             }
         ]
@@ -483,7 +550,10 @@ class TestSkillIntegration:
                 yield {"text": "Done", "done": False}
                 yield {"text": "", "done": True, "stats": MagicMock()}
 
-        with patch("olmlx.chat.session.generate_chat", side_effect=lambda *a, **kw: fake_generate()):
+        with patch(
+            "olmlx.chat.session.generate_chat",
+            side_effect=lambda *a, **kw: fake_generate(),
+        ):
             events = []
             async for event in session.send_message("Read a file"):
                 events.append(event)

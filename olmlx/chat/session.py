@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import re
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -85,6 +86,7 @@ class ChatSession:
 
         for turn in range(self.config.max_turns):
             accumulated = ""
+            visible_len = 0
             repetition_stopped = False
             async for chunk in await generate_chat(
                 self.manager,
@@ -105,7 +107,12 @@ class ChatSession:
                 text = chunk.get("text", "")
                 if text:
                     accumulated += text
-                    yield {"type": "token", "text": text}
+                    # Suppress <think>...</think> from streaming output
+                    visible = _strip_thinking(accumulated)
+                    if len(visible) > visible_len:
+                        delta = visible[visible_len:]
+                        visible_len = len(visible)
+                        yield {"type": "token", "text": delta}
                     if _detect_repetition(accumulated):
                         logger.warning(
                             "Repetitive output detected, stopping generation"
@@ -210,6 +217,24 @@ class ChatSession:
             yield {"type": "max_turns_exceeded"}
 
         yield {"type": "done"}
+
+
+_THINK_BLOCK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
+
+
+def _strip_thinking(text: str) -> str:
+    """Remove complete and in-progress <think> blocks from text.
+
+    Strips closed ``<think>...</think>`` blocks and truncates at any
+    unclosed ``<think>`` tag so thinking content is never shown.
+    """
+    # Remove complete blocks
+    result = _THINK_BLOCK_RE.sub("", text)
+    # Truncate at any unclosed <think>
+    idx = result.find("<think>")
+    if idx != -1:
+        result = result[:idx]
+    return result
 
 
 def _detect_repetition(
