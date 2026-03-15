@@ -176,6 +176,14 @@ class TestModelRegistry:
         with pytest.raises(ValueError, match="empty"):
             registry.remove("")
 
+    def test_add_mapping_rejects_hf_path_extra_slashes(self, registry):
+        with pytest.raises(ValueError, match="owner/repo"):
+            registry.add_mapping("my-model", "org/model/extra")
+
+    def test_resolve_rejects_hf_path_extra_slashes(self, registry):
+        with pytest.raises(ValueError, match="owner/repo"):
+            registry.resolve("org/model/extra")
+
     def test_add_mapping_rejects_hf_path_traversal(self, registry):
         with pytest.raises(ValueError, match="HuggingFace path.*path traversal"):
             registry.add_mapping("my-model", "../evil/path")
