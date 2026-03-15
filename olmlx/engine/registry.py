@@ -60,6 +60,8 @@ def validate_hf_path(hf_path: str) -> None:
         raise ValueError(
             f"HuggingFace path {hf_path!r} contains path traversal sequence"
         )
+    if "/" not in hf_path or hf_path.startswith("/") or hf_path.endswith("/"):
+        raise ValueError(f"HuggingFace path {hf_path!r} must be in 'owner/repo' format")
     if len(hf_path) > 512:
         raise ValueError(
             f"HuggingFace path must be at most 512 characters, got {len(hf_path)}"
@@ -140,6 +142,7 @@ class ModelRegistry:
 
     def remove(self, name: str):
         """Remove a model alias."""
+        validate_model_name(name)
         normalized = self.normalize_name(name)
         self._aliases.pop(normalized, None)
         self._save_aliases()
