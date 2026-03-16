@@ -593,9 +593,9 @@ async def _stream_completion(
         )
         if memory_too_high:
             logger.warning(
-                "Memory pressure high, invalidating prompt cache to prevent OOM"
+                "Memory pressure high, evicting prompt caches to free GPU memory"
             )
-            lm.prompt_cache_store.clear()
+            lm.prompt_cache_store.evict_all_to_disk()
             gc.collect()
             mx.clear_cache()
             memory_too_high = _is_memory_pressure_high()

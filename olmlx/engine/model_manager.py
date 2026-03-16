@@ -7,9 +7,11 @@ import json
 import logging
 import os
 import re
+import shutil
 import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import mlx.core as mx
@@ -22,6 +24,15 @@ if TYPE_CHECKING:
     from olmlx.models.store import ModelStore
 
 logger = logging.getLogger(__name__)
+
+try:
+    from mlx_lm.models.cache import (
+        load_prompt_cache,
+        save_prompt_cache,
+    )
+except ImportError:  # pragma: no cover
+    save_prompt_cache = None  # type: ignore[assignment]
+    load_prompt_cache = None  # type: ignore[assignment]
 
 # Exceptions from mlx-lm.load() that indicate the model simply isn't
 # compatible with mlx-lm and should be retried with mlx-vlm.  Errors like
@@ -49,24 +60,138 @@ class CachedPromptState:
 
 
 class PromptCacheStore:
-    """LRU store for per-agent KV caches."""
+    """LRU store for per-agent KV caches with optional disk offload.
 
-    def __init__(self, max_slots: int) -> None:
+    When disk_path and model_name are provided, evicted caches are saved to
+    disk instead of deleted.  On cache miss, the disk is checked before
+    returning None.
+    """
+
+    def __init__(
+        self,
+        max_slots: int,
+        disk_path: Path | None = None,
+        model_name: str = "",
+        disk_max_bytes: int | None = None,
+    ) -> None:
         self._max_slots = max_slots
         self._entries: OrderedDict[str, CachedPromptState] = OrderedDict()
+        self._disk_path = disk_path
+        self._model_name = model_name
+        self._disk_max_bytes = disk_max_bytes
+
+    @property
+    def _disk_enabled(self) -> bool:
+        return (
+            self._disk_path is not None
+            and self._model_name != ""
+            and save_prompt_cache is not None
+            and load_prompt_cache is not None
+        )
+
+    def _disk_dir(self) -> Path:
+        """Return the model-specific disk cache directory."""
+        assert self._disk_path is not None
+        return self._disk_path / self._model_name
+
+    def _disk_file_path(self, cache_id: str) -> Path:
+        """Return the disk file path for a given cache_id."""
+        safe_name = re.sub(r"[^\w\-.]", "_", cache_id) or "_default"
+        return self._disk_dir() / f"{safe_name}.safetensors"
+
+    def _save_to_disk(self, cache_id: str, state: CachedPromptState) -> None:
+        """Save a cache entry to disk."""
+        if not self._disk_enabled:
+            return
+        try:
+            disk_dir = self._disk_dir()
+            disk_dir.mkdir(parents=True, exist_ok=True)
+            file_path = self._disk_file_path(cache_id)
+            metadata = {"tokens": json.dumps(state.tokens)}
+            save_prompt_cache(str(file_path), state.cache, metadata)
+            logger.info(
+                "Saved evicted cache '%s' to disk (%s)",
+                cache_id,
+                file_path,
+            )
+            self._cleanup_disk()
+        except Exception:
+            logger.warning(
+                "Failed to save cache '%s' to disk",
+                cache_id,
+                exc_info=True,
+            )
+
+    def _load_from_disk(self, cache_id: str) -> CachedPromptState | None:
+        """Try to load a cache entry from disk. Returns None if not found."""
+        if not self._disk_enabled:
+            return None
+        file_path = self._disk_file_path(cache_id)
+        if not file_path.exists():
+            return None
+        try:
+            cache, metadata = load_prompt_cache(str(file_path), return_metadata=True)
+            tokens = json.loads(metadata.get("tokens", "[]"))
+            # Remove disk file after successful load
+            file_path.unlink(missing_ok=True)
+            state = CachedPromptState(tokens=tokens, cache=cache)
+            # Store in memory
+            self._entries[cache_id] = state
+            self._entries.move_to_end(cache_id)
+            logger.info(
+                "Restored cache '%s' from disk (%d tokens)",
+                cache_id,
+                len(tokens),
+            )
+            return state
+        except Exception:
+            logger.warning(
+                "Failed to load cache '%s' from disk",
+                cache_id,
+                exc_info=True,
+            )
+            # Remove corrupt file
+            file_path.unlink(missing_ok=True)
+            return None
+
+    def _cleanup_disk(self) -> None:
+        """Remove oldest disk cache files if total size exceeds the limit."""
+        if self._disk_max_bytes is None or self._disk_path is None:
+            return
+        disk_dir = self._disk_dir()
+        if not disk_dir.exists():
+            return
+        # Single stat pass: collect (path, size, mtime) to avoid double-stat
+        file_info = []
+        for f in disk_dir.glob("*.safetensors"):
+            st = f.stat()
+            file_info.append((f, st.st_size, st.st_mtime))
+        file_info.sort(key=lambda x: x[2])  # sort by mtime
+        total = sum(size for _, size, _ in file_info)
+        while total > self._disk_max_bytes and file_info:
+            path, size, _ = file_info.pop(0)
+            total -= size
+            path.unlink()
+            logger.info("Disk cache cleanup: removed %s", path)
 
     def get(self, cache_id: str) -> CachedPromptState | None:
-        """Get a cache entry, promoting it to MRU. Returns None if missing."""
+        """Get a cache entry, promoting it to MRU.
+
+        Checks memory first, then disk.  Returns None if not found in either.
+        """
         state = self._entries.get(cache_id)
         if state is not None:
             self._entries.move_to_end(cache_id)
-        return state
+            return state
+        # Memory miss — try disk
+        return self._load_from_disk(cache_id)
 
     def set(self, cache_id: str, state: CachedPromptState) -> CachedPromptState | None:
         """Set a cache entry, evicting LRU if at capacity.
 
         Returns the displaced CachedPromptState when its GPU resources need
         cleanup (different .cache object), or None when no cleanup is needed.
+        Evicted entries are saved to disk if disk offload is enabled.
         """
         if cache_id in self._entries:
             self._entries.move_to_end(cache_id)
@@ -74,18 +199,37 @@ class PromptCacheStore:
             self._entries[cache_id] = state
             return old if old.cache is not state.cache else None
         evicted: CachedPromptState | None = None
+        evicted_id: str | None = None
         if len(self._entries) >= self._max_slots:
-            _, evicted = self._entries.popitem(last=False)
+            evicted_id, evicted = self._entries.popitem(last=False)
         self._entries[cache_id] = state
+        # Save evicted entry to disk
+        if evicted is not None and evicted_id is not None:
+            self._save_to_disk(evicted_id, evicted)
         return evicted
 
     def remove(self, cache_id: str) -> None:
         """Remove a specific cache entry."""
         self._entries.pop(cache_id, None)
 
-    def clear(self) -> None:
-        """Remove all cache entries."""
+    def evict_all_to_disk(self) -> None:
+        """Save all in-memory entries to disk, then clear memory.
+
+        Used during memory pressure to free GPU memory while preserving
+        cache state on disk for later restoration.
+        """
+        if self._disk_enabled:
+            for cache_id, state in list(self._entries.items()):
+                self._save_to_disk(cache_id, state)
         self._entries.clear()
+
+    def clear(self) -> None:
+        """Remove all cache entries and disk cache files."""
+        self._entries.clear()
+        if self._disk_path is not None and self._model_name:
+            disk_dir = self._disk_dir()
+            if disk_dir.exists():
+                shutil.rmtree(disk_dir, ignore_errors=True)
 
     def __len__(self) -> int:
         return len(self._entries)
@@ -103,11 +247,26 @@ class LoadedModel:
     expires_at: float | None = None
     size_bytes: int = 0
     active_refs: int = 0
-    prompt_cache_store: PromptCacheStore = field(
-        default_factory=lambda: PromptCacheStore(
-            max_slots=settings.prompt_cache_max_slots
-        )
-    )
+    prompt_cache_store: PromptCacheStore = field(default=None)  # type: ignore[assignment]
+
+    def __post_init__(self):
+        if self.prompt_cache_store is None:
+            disk_path = (
+                Path(settings.prompt_cache_disk_path).expanduser()
+                if settings.prompt_cache_disk
+                else None
+            )
+            disk_max_bytes = (
+                int(settings.prompt_cache_disk_max_gb * 1024**3)
+                if settings.prompt_cache_disk
+                else None
+            )
+            self.prompt_cache_store = PromptCacheStore(
+                max_slots=settings.prompt_cache_max_slots,
+                disk_path=disk_path,
+                model_name=self.name,
+                disk_max_bytes=disk_max_bytes,
+            )
 
     @property
     def text_tokenizer(self) -> Any:
