@@ -450,6 +450,7 @@ def cmd_chat(args):
 
                 # Collect events while streaming tokens
                 pending_events = []
+                confirmed_tool_ids: set[str] = set()
                 stream_ctx = tui.stream_response()
                 active_stream_ctx = stream_ctx
                 try:
@@ -463,6 +464,9 @@ def cmd_chat(args):
                                 stream_ctx.update(event["text"])
                             elif event["type"] == "token":
                                 stream_ctx.update(event["text"])
+                            elif event["type"] == "tool_approved":
+                                # Track confirmed IDs to avoid duplicate display
+                                confirmed_tool_ids.add(event["id"])
                             else:
                                 pending_events.append(event)
                 finally:
@@ -471,17 +475,20 @@ def cmd_chat(args):
                 # Display collected events
                 for event in pending_events:
                     if event["type"] == "tool_call":
-                        tui.display_tool_call(event["name"], event["arguments"])
+                        # Skip display for confirmed tools — already shown
+                        # by confirm_tool_call during the prompt
+                        if event["id"] not in confirmed_tool_ids:
+                            tui.display_tool_call(event["name"], event["arguments"])
                     elif event["type"] == "tool_result":
                         tui.display_tool_result(event["name"], event["result"])
                     elif event["type"] == "tool_error":
                         tui.display_tool_error(event["name"], event["error"])
                     elif event["type"] == "tool_denied":
                         # Only show panel for policy-denied tools; user-denied
-                        # tools were already shown inline at the confirm prompt
+                        # tools were already shown at the confirm prompt
                         if event.get("reason") != "user":
                             tui.display_tool_denied(event["name"])
-                    elif event["type"] in ("tool_confirmation_needed", "tool_approved"):
+                    elif event["type"] == "tool_confirmation_needed":
                         pass  # handled inline by decider callback
                     elif event["type"] == "max_turns_exceeded":
                         tui.display_error("Max tool turns reached")

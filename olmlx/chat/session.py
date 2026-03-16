@@ -279,10 +279,14 @@ class ChatSession:
             if not tool_uses or repetition_stopped:
                 break
 
-            # Classify tools by safety policy
-            # Separate local tools (skills, builtins) from MCP tools.
-            # Local tools are always allowed — they're handled in-process
-            # and their names aren't attacker-controlled via MCP.
+            # Classify tools by safety policy.
+            # Local tools (skills, builtins) bypass the safety policy
+            # because they run in-process and were already trusted by
+            # the user when configured. Note: tool names come from model
+            # output (not MCP directly), so a prompt injection could
+            # cause the model to emit a local tool name — but local
+            # tools are no more dangerous than the model calling them
+            # without the safety layer.
             local_tools = []
             remote_tools = []
             for tu in tool_uses:
@@ -300,12 +304,7 @@ class ChatSession:
                 allow, confirm, deny = local_tools + remote_tools, [], []
 
             async def _exec_tool(tu: dict) -> dict:
-                """Execute a single tool call and return the event + message.
-
-                This function catches all exceptions internally so that
-                TaskGroup never sees an unhandled exception from tool
-                execution.
-                """
+                """Execute a single tool call and return the event + message."""
                 tool_name = tu["name"]
                 tool_input = tu["input"]
                 tool_id = tu["id"]
@@ -361,88 +360,62 @@ class ChatSession:
                         },
                     }
 
-            # Build a map of tool_id -> result for call-order output
-            tool_id_order = [tu["id"] for tu in tool_uses]
-            denied_by_id: dict[str, dict] = {}
-            exec_result_by_id: dict[str, dict] = {}
-
-            # Record denied tools (events yielded later in call order)
+            # Handle denied tools
             for tu in deny:
-                denied_by_id[tu["id"]] = {
-                    "event": {
-                        "type": "tool_denied",
-                        "name": tu["name"],
-                        "arguments": tu["input"],
-                        "id": tu["id"],
-                        "reason": "policy",
-                    },
-                    "message": {
+                yield {
+                    "type": "tool_denied",
+                    "name": tu["name"],
+                    "arguments": tu["input"],
+                    "id": tu["id"],
+                    "reason": "policy",
+                }
+                self.messages.append(
+                    {
                         "role": "tool",
                         "tool_call_id": tu["id"],
                         "name": tu["name"],
                         "content": f"Tool '{tu['name']}' is blocked by safety policy",
-                    },
+                    }
+                )
+
+            # Prompt for confirmation on confirm tools
+            approved = []
+            for tu in confirm:
+                yield {
+                    "type": "tool_confirmation_needed",
+                    "name": tu["name"],
+                    "arguments": tu["input"],
+                    "id": tu["id"],
                 }
-
-            # Launch allow tools concurrently with confirm prompts.
-            # This is safe because allow tools are explicitly marked safe
-            # by the user in config (or are local tools like use_skill).
-            # TaskGroup cancels all tasks on any failure.
-            allow_tasks: dict[str, asyncio.Task] = {}
-            async with asyncio.TaskGroup() as tg:
-                for tu in allow:
-                    allow_tasks[tu["id"]] = tg.create_task(_exec_tool(tu))
-
-                # Prompt for confirmation on confirm tools
-                approved = []
-                for tu in confirm:
+                if await self.tool_safety.check_and_confirm(tu["name"], tu["input"]):
+                    approved.append(tu)
                     yield {
-                        "type": "tool_confirmation_needed",
+                        "type": "tool_approved",
+                        "name": tu["name"],
+                        "id": tu["id"],
+                    }
+                else:
+                    yield {
+                        "type": "tool_denied",
                         "name": tu["name"],
                         "arguments": tu["input"],
                         "id": tu["id"],
+                        "reason": "user",
                     }
-                    if await self.tool_safety.check_and_confirm(
-                        tu["name"], tu["input"]
-                    ):
-                        approved.append(tu)
-                        yield {
-                            "type": "tool_approved",
+                    self.messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tu["id"],
                             "name": tu["name"],
-                            "id": tu["id"],
+                            "content": f"Tool '{tu['name']}' was not approved",
                         }
-                    else:
-                        denied_by_id[tu["id"]] = {
-                            "event": {
-                                "type": "tool_denied",
-                                "name": tu["name"],
-                                "arguments": tu["input"],
-                                "id": tu["id"],
-                                "reason": "user",
-                            },
-                            "message": {
-                                "role": "tool",
-                                "tool_call_id": tu["id"],
-                                "name": tu["name"],
-                                "content": f"Tool '{tu['name']}' was not approved",
-                            },
-                        }
+                    )
 
-                # Execute approved tools
-                for tu in approved:
-                    allow_tasks[tu["id"]] = tg.create_task(_exec_tool(tu))
-
-            # Collect execution results
-            for tid, task in allow_tasks.items():
-                exec_result_by_id[tid] = task.result()
-
-            # Yield events and append messages in original call order
-            for tid in tool_id_order:
-                if tid in denied_by_id:
-                    yield denied_by_id[tid]["event"]
-                    self.messages.append(denied_by_id[tid]["message"])
-                elif tid in exec_result_by_id:
-                    r = exec_result_by_id[tid]
+            # Execute allowed + approved tools concurrently
+            to_execute = allow + approved
+            if to_execute:
+                results = await asyncio.gather(*(_exec_tool(tu) for tu in to_execute))
+                for r in results:
                     yield r["call_event"]
                     yield r["result_event"]
                     self.messages.append(r["message"])
