@@ -79,17 +79,22 @@ class ChatSession:
         if self.mcp is not None:
             mcp_tools = self.mcp.get_tools_for_chat() or None
 
-        # Merge built-in tool definitions
+        # Merge built-in tool definitions, skipping collisions with MCP tools
         if self.builtin:
             builtin_defs = self.builtin.get_tool_definitions()
             if mcp_tools:
                 mcp_names = {t["function"]["name"] for t in mcp_tools}
+                filtered = []
                 for d in builtin_defs:
                     n = d["function"]["name"]
                     if n in mcp_names:
                         logger.warning(
-                            "Built-in tool %r shadows MCP tool with the same name", n
+                            "Built-in tool %r skipped: MCP tool with same name takes precedence",
+                            n,
                         )
+                    else:
+                        filtered.append(d)
+                builtin_defs = filtered
             mcp_tools = (mcp_tools or []) + builtin_defs
 
         # Merge skill tool into the tools list

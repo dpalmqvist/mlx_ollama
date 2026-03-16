@@ -75,32 +75,36 @@ async def _handle_read_file(args: dict) -> str:
     path = args.get("path", "")
     offset = args.get("offset", 1)
     limit = args.get("limit")
-
-    try:
-        size = os.path.getsize(path)
-        if size > _READ_FILE_MAX_BYTES:
-            return f"Error: file is {size} bytes (limit is {_READ_FILE_MAX_BYTES}). Use offset/limit for large files."
-    except OSError as exc:
-        return f"Error reading file: {exc}"
-
     start = max(offset - 1, 0)
 
-    try:
-        with open(path) as f:
+    def _read() -> list[str]:
+        with open(path, errors="replace") as f:
+            # Check file size after opening to avoid TOCTOU
+            f.seek(0, 2)
+            size = f.tell()
+            if size > _READ_FILE_MAX_BYTES:
+                raise ValueError(
+                    f"file is {size} bytes (limit is {_READ_FILE_MAX_BYTES}). "
+                    "Use offset/limit for large files."
+                )
+            f.seek(0)
             # Skip lines before offset
             for _ in range(start):
                 if not f.readline():
                     break
             if limit is not None:
-                selected = []
+                lines = []
                 for _ in range(limit):
                     line = f.readline()
                     if not line:
                         break
-                    selected.append(line)
-            else:
-                selected = f.readlines()
-    except OSError as exc:
+                    lines.append(line)
+                return lines
+            return f.readlines()
+
+    try:
+        selected = await asyncio.to_thread(_read)
+    except (OSError, ValueError) as exc:
         return f"Error reading file: {exc}"
 
     numbered = []
@@ -113,9 +117,12 @@ async def _handle_write_file(args: dict) -> str:
     path = Path(args.get("path", ""))
     content = args.get("content", "")
 
-    try:
+    def _write():
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content)
+        path.write_text(content, encoding="utf-8")
+
+    try:
+        await asyncio.to_thread(_write)
     except OSError as exc:
         return f"Error writing file: {exc}"
 
@@ -127,24 +134,21 @@ async def _handle_edit_file(args: dict) -> str:
     old_text = args.get("old_text", "")
     new_text = args.get("new_text", "")
 
+    def _edit() -> str:
+        content = path.read_text(encoding="utf-8", errors="replace")
+        count = content.count(old_text)
+        if count == 0:
+            return "Error: old_text not found in file."
+        if count > 1:
+            return f"Error: old_text found {count} times (multiple matches). Provide more context to make it unique."
+        new_content = content.replace(old_text, new_text, 1)
+        path.write_text(new_content, encoding="utf-8")
+        return "Applied edit successfully."
+
     try:
-        content = path.read_text()
+        return await asyncio.to_thread(_edit)
     except OSError as exc:
-        return f"Error reading file: {exc}"
-
-    count = content.count(old_text)
-    if count == 0:
-        return "Error: old_text not found in file."
-    if count > 1:
-        return f"Error: old_text found {count} times (multiple matches). Provide more context to make it unique."
-
-    new_content = content.replace(old_text, new_text, 1)
-    try:
-        path.write_text(new_content)
-    except OSError as exc:
-        return f"Error writing file: {exc}"
-
-    return "Applied edit successfully."
+        return f"Error: {exc}"
 
 
 async def _handle_glob(args: dict) -> str:
@@ -268,30 +272,53 @@ async def _handle_bash(args: dict) -> str:
 
 async def _handle_create_plan(args: dict, plans_dir: Path) -> str:
     content = args.get("content", "")
-    plans_dir.mkdir(parents=True, exist_ok=True)
-    plan_path = plans_dir / "plan.md"
-    plan_path.write_text(content)
-    return f"Plan created at {plan_path}"
+
+    def _create():
+        plans_dir.mkdir(parents=True, exist_ok=True)
+        plan_path = plans_dir / "plan.md"
+        plan_path.write_text(content, encoding="utf-8")
+        return f"Plan created at {plan_path}"
+
+    try:
+        return await asyncio.to_thread(_create)
+    except OSError as exc:
+        return f"Error writing plan: {exc}"
 
 
 async def _handle_update_plan(args: dict, plans_dir: Path) -> str:
     content = args.get("content", "")
     plan_path = plans_dir / "plan.md"
-    if not plan_path.exists():
-        return "Error: No plan found. Use create_plan first."
-    plan_path.write_text(content)
-    return f"Plan updated at {plan_path}"
+
+    def _update():
+        if not plan_path.exists():
+            return "Error: No plan found. Use create_plan first."
+        plan_path.write_text(content, encoding="utf-8")
+        return f"Plan updated at {plan_path}"
+
+    try:
+        return await asyncio.to_thread(_update)
+    except OSError as exc:
+        return f"Error writing plan: {exc}"
 
 
 async def _handle_read_plan(args: dict, plans_dir: Path) -> str:
     plan_path = plans_dir / "plan.md"
-    if not plan_path.exists():
-        return "No plan found. Use create_plan to create one."
-    return plan_path.read_text()
+
+    def _read():
+        if not plan_path.exists():
+            return "No plan found. Use create_plan to create one."
+        return plan_path.read_text(encoding="utf-8", errors="replace")
+
+    try:
+        return await asyncio.to_thread(_read)
+    except OSError as exc:
+        return f"Error reading plan: {exc}"
 
 
 async def _handle_web_fetch(args: dict) -> str:
     url = args.get("url", "")
+    # NOTE: Scheme check does not prevent SSRF to link-local/loopback via DNS.
+    # Acceptable for single-user local chat; revisit before any multi-user deployment.
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme not in ("http", "https"):
         return f"Error: unsupported URL scheme {parsed.scheme!r}. Only http and https are allowed."
