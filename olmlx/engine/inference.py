@@ -59,6 +59,7 @@ _generation_streams = _resolve_generation_streams()
 # we sacrifice parallelism for stability on Apple Silicon.
 _inference_lock = asyncio.Lock()
 _deferred_cleanup_task: asyncio.Task | None = None
+_queue_depth = 0
 
 
 def _safe_sync():
@@ -88,6 +89,26 @@ class ServerBusyError(RuntimeError):
 
 
 _DEFERRED_CLEANUP_TIMEOUT = 600  # 10 minutes max wait for stuck thread
+_DEFERRED_WAIT_TIMEOUT = 30.0  # max wait for deferred cleanup before rejecting
+
+
+async def _await_deferred_cleanup():
+    """Wait for any in-progress deferred GPU cleanup to complete.
+
+    Raises ServerBusyError if cleanup doesn't finish within _DEFERRED_WAIT_TIMEOUT.
+    Uses asyncio.shield to avoid cancelling the cleanup task itself.
+    """
+    if _deferred_cleanup_task is not None and not _deferred_cleanup_task.done():
+        logger.info("Waiting for deferred GPU cleanup to complete")
+        try:
+            await asyncio.wait_for(
+                asyncio.shield(_deferred_cleanup_task),
+                timeout=_DEFERRED_WAIT_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            raise ServerBusyError(
+                f"Server busy: deferred GPU cleanup did not complete within {_DEFERRED_WAIT_TIMEOUT}s"
+            )
 
 
 def _schedule_deferred_inference_cleanup(stream) -> None:
@@ -187,20 +208,35 @@ def _tokenize_for_cache(tokenizer: Any, prompt_text: str) -> list[int]:
 @contextlib.asynccontextmanager
 async def _inference_locked():
     """Async context manager that acquires the inference lock with Metal sync on entry/exit."""
-    if _deferred_cleanup_task is not None and not _deferred_cleanup_task.done():
-        raise ServerBusyError(
-            "Server busy: recovering from previous inference — "
-            "deferred GPU cleanup in progress"
-        )
-    await _inference_lock.acquire()
+    global _queue_depth
+    await _await_deferred_cleanup()
+    _queue_depth += 1
+    if _queue_depth > 1:
+        logger.info("Request queued for inference lock (queue depth: %d)", _queue_depth)
+    try:
+        if settings.inference_queue_timeout is not None:
+            try:
+                await asyncio.wait_for(
+                    _inference_lock.acquire(),
+                    timeout=settings.inference_queue_timeout,
+                )
+            except asyncio.TimeoutError:
+                raise ServerBusyError(
+                    f"Server busy: inference queue timeout after {settings.inference_queue_timeout}s"
+                )
+        else:
+            await _inference_lock.acquire()
+    except BaseException:
+        _queue_depth -= 1
+        raise
+    _queue_depth -= 1
     # Re-check after acquiring — a deferred cleanup task may have been
     # created between the pre-check and acquire (TOCTOU window).
-    if _deferred_cleanup_task is not None and not _deferred_cleanup_task.done():
+    try:
+        await _await_deferred_cleanup()
+    except BaseException:
         _inference_lock.release()
-        raise ServerBusyError(
-            "Server busy: recovering from previous inference — "
-            "deferred GPU cleanup in progress"
-        )
+        raise
     # Sync the default Metal stream so any pending GPU work from the previous
     # inference completes before we start a new one.
     _safe_sync()
@@ -488,20 +524,24 @@ async def _stream_completion(
 ) -> AsyncGenerator[dict, None]:
     # Use explicit acquire/release instead of `async with` to prevent
     # CancelledError from releasing the lock before cleanup completes.
-    if _deferred_cleanup_task is not None and not _deferred_cleanup_task.done():
-        raise ServerBusyError(
-            "Server busy: recovering from previous inference — "
-            "deferred GPU cleanup in progress"
-        )
-    await _inference_lock.acquire()
+    global _queue_depth
+    await _await_deferred_cleanup()
+    _queue_depth += 1
+    if _queue_depth > 1:
+        logger.info("Streaming request queued for inference lock (queue depth: %d)", _queue_depth)
+    try:
+        await _inference_lock.acquire()
+    except BaseException:
+        _queue_depth -= 1
+        raise
+    _queue_depth -= 1
     # Re-check after acquiring — a deferred cleanup task may have been
     # created between the pre-check and acquire (TOCTOU window).
-    if _deferred_cleanup_task is not None and not _deferred_cleanup_task.done():
+    try:
+        await _await_deferred_cleanup()
+    except BaseException:
         _inference_lock.release()
-        raise ServerBusyError(
-            "Server busy: recovering from previous inference — "
-            "deferred GPU cleanup in progress"
-        )
+        raise
     # Sync default stream before starting — same purpose as _inference_locked entry.
     _safe_sync()
 
