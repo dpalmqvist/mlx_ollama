@@ -4,8 +4,7 @@ import asyncio
 import glob as glob_module
 import html.parser
 import logging
-import re
-import subprocess
+import urllib.parse
 import urllib.request
 from collections.abc import Callable, Coroutine
 from pathlib import Path
@@ -39,15 +38,15 @@ class _HTMLTextExtractor(html.parser.HTMLParser):
     def __init__(self):
         super().__init__()
         self._pieces: list[str] = []
-        self._skip = False
+        self._skip = 0
 
     def handle_starttag(self, tag, attrs):
         if tag in ("script", "style", "noscript"):
-            self._skip = True
+            self._skip += 1
 
     def handle_endtag(self, tag):
         if tag in ("script", "style", "noscript"):
-            self._skip = False
+            self._skip = max(0, self._skip - 1)
 
     def handle_data(self, data):
         if not self._skip:
@@ -149,30 +148,45 @@ async def _handle_grep(args: dict) -> str:
     pattern = args.get("pattern", "")
     path = args.get("path", ".")
 
+    async def _run_search(cmd: list[str]) -> tuple[str, str, int]:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+        return (
+            stdout.decode(errors="replace"),
+            stderr.decode(errors="replace"),
+            proc.returncode,
+        )
+
     # Try rg first, fall back to grep
     try:
-        rg = subprocess.run(
-            ["rg", "-n", "--no-heading", pattern, path],
-            capture_output=True, text=True, timeout=30,
+        stdout, stderr, rc = await _run_search(
+            ["rg", "-n", "--no-heading", pattern, path]
         )
-        if rg.returncode == 0:
-            output = rg.stdout
-        elif rg.returncode == 1:
+        if rc == 0:
+            output = stdout
+        elif rc == 1:
             return "No matches found."
         else:
-            raise FileNotFoundError("rg failed")
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        # rg not available, fall back to grep
+            return f"Error: {stderr.strip() or 'rg returned exit code ' + str(rc)}"
+    except FileNotFoundError:
+        # rg not installed, fall back to grep
         try:
-            grep = subprocess.run(
-                ["grep", "-rn", pattern, path],
-                capture_output=True, text=True, timeout=30,
+            stdout, stderr, rc = await _run_search(
+                ["grep", "-rn", pattern, path]
             )
-            output = grep.stdout
-            if not output:
+            if not stdout:
                 return "No matches found."
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            return "Error: search tools (rg, grep) not available or timed out."
+            output = stdout
+        except FileNotFoundError:
+            return "Error: search tools (rg, grep) not available."
+        except asyncio.TimeoutError:
+            return "Error: search timed out."
+    except asyncio.TimeoutError:
+        return "Error: search timed out."
 
     if len(output) > _GREP_MAX_BYTES:
         output = output[:_GREP_MAX_BYTES] + "\n... truncated"
@@ -239,6 +253,9 @@ async def _handle_read_plan(args: dict, plans_dir: Path) -> str:
 
 async def _handle_web_fetch(args: dict) -> str:
     url = args.get("url", "")
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        return f"Error: unsupported URL scheme {parsed.scheme!r}. Only http and https are allowed."
     try:
         with urllib.request.urlopen(url, timeout=30) as resp:
             charset = resp.headers.get_content_charset() or "utf-8"

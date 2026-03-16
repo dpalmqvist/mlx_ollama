@@ -243,6 +243,28 @@ class TestPlanTools:
         assert "no plan" in result.lower() or "not found" in result.lower() or "error" in result.lower()
 
 
+class TestWebFetchSchemeValidation:
+    @pytest.mark.asyncio
+    async def test_rejects_file_scheme(self, manager):
+        result = await manager.call_tool("web_fetch", {"url": "file:///etc/passwd"})
+        assert "unsupported" in result.lower() or "error" in result.lower()
+        assert "http" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_rejects_ftp_scheme(self, manager):
+        result = await manager.call_tool("web_fetch", {"url": "ftp://example.com/file"})
+        assert "unsupported" in result.lower() or "error" in result.lower()
+
+
+class TestHTMLExtractorNested:
+    def test_nested_skip_tags(self):
+        from olmlx.chat.builtin_tools import _strip_html
+        html = "<noscript><style>css</style>hidden text</noscript>visible"
+        result = _strip_html(html)
+        assert "hidden text" not in result
+        assert "visible" in result
+
+
 class TestWebFetch:
     @pytest.mark.asyncio
     async def test_web_fetch_strips_html(self, manager):
