@@ -285,25 +285,6 @@ class ChatSession:
             else:
                 allow, confirm, deny = tool_uses, [], []
 
-            # Handle denied tools
-            for tu in deny:
-                error_msg = f"Tool '{tu['name']}' is blocked by safety policy"
-                yield {
-                    "type": "tool_denied",
-                    "name": tu["name"],
-                    "arguments": tu["input"],
-                    "id": tu["id"],
-                    "reason": "policy",
-                }
-                self.messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tu["id"],
-                        "name": tu["name"],
-                        "content": error_msg,
-                    }
-                )
-
             async def _exec_tool(tu: dict) -> dict:
                 """Execute a single tool call and return the event + message."""
                 tool_name = tu["name"]
@@ -361,49 +342,89 @@ class ChatSession:
                         },
                     }
 
-            # Launch allow tools immediately (don't wait for confirm prompts)
-            allow_tasks = [asyncio.create_task(_exec_tool(tu)) for tu in allow]
+            # Build a map of tool_id -> result for call-order output
+            tool_id_order = [tu["id"] for tu in tool_uses]
+            denied_by_id: dict[str, dict] = {}
+            exec_result_by_id: dict[str, dict] = {}
 
-            # Prompt for confirmation on confirm tools
-            approved = []
-            for tu in confirm:
-                yield {
-                    "type": "tool_confirmation_needed",
-                    "name": tu["name"],
-                    "arguments": tu["input"],
-                    "id": tu["id"],
-                }
-                if await self.tool_safety.check_and_confirm(tu["name"], tu["input"]):
-                    approved.append(tu)
-                    yield {
-                        "type": "tool_approved",
-                        "name": tu["name"],
-                        "id": tu["id"],
-                    }
-                else:
-                    yield {
+            # Record denied tools (events yielded later in call order)
+            for tu in deny:
+                denied_by_id[tu["id"]] = {
+                    "event": {
                         "type": "tool_denied",
                         "name": tu["name"],
                         "arguments": tu["input"],
                         "id": tu["id"],
-                        "reason": "user",
-                    }
-                    self.messages.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": tu["id"],
-                            "name": tu["name"],
-                            "content": f"Tool '{tu['name']}' was not approved",
-                        }
-                    )
+                        "reason": "policy",
+                    },
+                    "message": {
+                        "role": "tool",
+                        "tool_call_id": tu["id"],
+                        "name": tu["name"],
+                        "content": f"Tool '{tu['name']}' is blocked by safety policy",
+                    },
+                }
 
-            # Await allow results + execute approved tools concurrently
-            approved_tasks = [asyncio.create_task(_exec_tool(tu)) for tu in approved]
-            all_results = await asyncio.gather(*allow_tasks, *approved_tasks)
-            for r in all_results:
-                yield r["call_event"]
-                yield r["result_event"]
-                self.messages.append(r["message"])
+            # Launch allow tools concurrently with confirm prompts
+            # TaskGroup cancels all tasks on any failure
+            allow_tasks: dict[str, asyncio.Task] = {}
+            async with asyncio.TaskGroup() as tg:
+                for tu in allow:
+                    allow_tasks[tu["id"]] = tg.create_task(_exec_tool(tu))
+
+                # Prompt for confirmation on confirm tools
+                approved = []
+                for tu in confirm:
+                    yield {
+                        "type": "tool_confirmation_needed",
+                        "name": tu["name"],
+                        "arguments": tu["input"],
+                        "id": tu["id"],
+                    }
+                    if await self.tool_safety.check_and_confirm(
+                        tu["name"], tu["input"]
+                    ):
+                        approved.append(tu)
+                        yield {
+                            "type": "tool_approved",
+                            "name": tu["name"],
+                            "id": tu["id"],
+                        }
+                    else:
+                        denied_by_id[tu["id"]] = {
+                            "event": {
+                                "type": "tool_denied",
+                                "name": tu["name"],
+                                "arguments": tu["input"],
+                                "id": tu["id"],
+                                "reason": "user",
+                            },
+                            "message": {
+                                "role": "tool",
+                                "tool_call_id": tu["id"],
+                                "name": tu["name"],
+                                "content": f"Tool '{tu['name']}' was not approved",
+                            },
+                        }
+
+                # Execute approved tools
+                for tu in approved:
+                    allow_tasks[tu["id"]] = tg.create_task(_exec_tool(tu))
+
+            # Collect execution results
+            for tid, task in allow_tasks.items():
+                exec_result_by_id[tid] = task.result()
+
+            # Yield events and append messages in original call order
+            for tid in tool_id_order:
+                if tid in denied_by_id:
+                    yield denied_by_id[tid]["event"]
+                    self.messages.append(denied_by_id[tid]["message"])
+                elif tid in exec_result_by_id:
+                    r = exec_result_by_id[tid]
+                    yield r["call_event"]
+                    yield r["result_event"]
+                    self.messages.append(r["message"])
         else:
             # max_turns reached
             yield {"type": "max_turns_exceeded"}
