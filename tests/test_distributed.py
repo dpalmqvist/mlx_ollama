@@ -175,6 +175,7 @@ class TestCoordinatorWorkerIntegration:
                 coordinator_host="127.0.0.1",
                 port=actual_port,
             )
+            worker.send_ready()
             req = worker.wait_for_inference()
             received_requests.append(req)
             worker.close()
@@ -217,6 +218,7 @@ class TestCoordinatorWorkerIntegration:
                 coordinator_host="127.0.0.1",
                 port=actual_port,
             )
+            worker.send_ready()
             req = worker.wait_for_inference()
             received_requests.append(req)
             worker.close()
@@ -243,6 +245,32 @@ class TestCoordinatorWorkerIntegration:
         finally:
             coordinator.close()
 
+    def test_coordinator_wait_for_ready_timeout(self):
+        """Coordinator times out if worker connects but never sends ready."""
+        from olmlx.engine.distributed import DistributedWorker, DistributedCoordinator
+
+        coordinator = DistributedCoordinator(world_size=2, port=0)
+        actual_port = coordinator.port
+
+        def worker_fn():
+            worker = DistributedWorker(
+                coordinator_host="127.0.0.1",
+                port=actual_port,
+            )
+            # Deliberately do NOT send ready
+            time.sleep(2)
+            worker.close()
+
+        t = threading.Thread(target=worker_fn)
+        t.start()
+
+        try:
+            with pytest.raises(TimeoutError, match="ready"):
+                coordinator.wait_for_workers(timeout=0.5)
+        finally:
+            coordinator.close()
+            t.join(timeout=5.0)
+
     def test_multiple_broadcasts(self):
         from olmlx.engine.distributed import (
             DistributedCoordinator,
@@ -260,6 +288,7 @@ class TestCoordinatorWorkerIntegration:
                 coordinator_host="127.0.0.1",
                 port=actual_port,
             )
+            worker.send_ready()
             while True:
                 req = worker.wait_for_inference()
                 if req is None:

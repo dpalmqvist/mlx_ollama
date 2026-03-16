@@ -130,6 +130,7 @@ def _launch_distributed_workers():
         print(f"  Launching worker rank {rank} on {host} (log: {log_file})")
         log_fh = open(log_file, "w")
         subprocess.Popen(cmd, stdout=log_fh, stderr=log_fh)
+        log_fh.close()
 
 
 def _find_executable() -> str:

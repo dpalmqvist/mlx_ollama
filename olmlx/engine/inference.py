@@ -715,10 +715,12 @@ async def _stream_completion(
             }
 
         # Broadcast to distributed workers before starting generation
-        if isinstance(prompt, list):
-            _maybe_broadcast_distributed(lm, prompt, max_tokens, gen_kwargs)
-        elif isinstance(prompt, str) and prompt_tokens is not None:
-            _maybe_broadcast_distributed(lm, prompt_tokens, max_tokens, gen_kwargs)
+        if _distributed_coordinator is not None:
+            if isinstance(prompt, list):
+                _maybe_broadcast_distributed(lm, prompt, max_tokens, gen_kwargs)
+            else:
+                tokens = prompt_tokens if prompt_tokens is not None else _tokenize_for_cache(lm.text_tokenizer, prompt)
+                _maybe_broadcast_distributed(lm, tokens, max_tokens, gen_kwargs)
 
         stream = async_mlx_stream(
             lm.model,

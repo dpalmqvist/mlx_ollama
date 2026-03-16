@@ -59,7 +59,9 @@ async def lifespan(app: FastAPI):
             world_size=world_size,
             port=experimental.distributed_sideband_port,
         )
-        coordinator.wait_for_workers(timeout=60.0)
+        import asyncio
+
+        await asyncio.to_thread(coordinator.wait_for_workers, 60.0)
         set_distributed_coordinator(coordinator)
 
     manager = ModelManager(registry, store, distributed_group=distributed_group)

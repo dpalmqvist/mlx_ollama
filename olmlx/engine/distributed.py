@@ -86,16 +86,19 @@ def _recv_exact(sock: socket.socket, n: int) -> bytes | None:
 class DistributedCoordinator:
     """Rank 0 sideband server that broadcasts inference params to workers."""
 
-    def __init__(self, world_size: int, port: int = 32400) -> None:
+    def __init__(
+        self, world_size: int, port: int = 32400, bind: str = "0.0.0.0"
+    ) -> None:
         self._world_size = world_size
         self._workers: list[socket.socket] = []
         self._server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self._server.bind(("0.0.0.0", port))
+        self._server.bind((bind, port))
         self._server.listen(world_size - 1)
         self._port = self._server.getsockname()[1]
         logger.info(
-            "Distributed coordinator listening on port %d (expecting %d workers)",
+            "Distributed coordinator listening on %s:%d (expecting %d workers)",
+            bind,
             self._port,
             world_size - 1,
         )
@@ -105,30 +108,66 @@ class DistributedCoordinator:
         return self._port
 
     def wait_for_workers(self, timeout: float = 30.0) -> None:
-        """Block until all N-1 workers connect."""
+        """Block until all N-1 workers connect and report ready.
+
+        Workers must send a {"action": "ready"} message after loading and
+        sharding their model. This prevents the coordinator from broadcasting
+        inference before workers are actually ready.
+        """
         expected = self._world_size - 1
         start = time.monotonic()
-        while len(self._workers) < expected:
+        pending: list[socket.socket] = []
+
+        # Phase 1: accept TCP connections
+        while len(pending) < expected:
             remaining = timeout - (time.monotonic() - start)
             if remaining <= 0:
                 raise TimeoutError(
                     f"Timed out waiting for workers to connect "
-                    f"({len(self._workers)}/{expected} connected)"
+                    f"({len(pending)}/{expected} connected)"
                 )
             self._server.settimeout(remaining)
             try:
                 conn, addr = self._server.accept()
-                self._workers.append(conn)
+                pending.append(conn)
                 logger.info(
                     "Worker connected from %s (%d/%d)",
                     addr,
-                    len(self._workers),
+                    len(pending),
                     expected,
                 )
             except socket.timeout:
                 raise TimeoutError(
                     f"Timed out waiting for workers to connect "
-                    f"({len(self._workers)}/{expected} connected)"
+                    f"({len(pending)}/{expected} connected)"
+                )
+
+        # Phase 2: wait for "ready" message from each worker
+        for i, conn in enumerate(pending):
+            remaining = timeout - (time.monotonic() - start)
+            if remaining <= 0:
+                raise TimeoutError(
+                    f"Timed out waiting for workers to report ready "
+                    f"({len(self._workers)}/{expected} ready)"
+                )
+            conn.settimeout(remaining)
+            try:
+                msg = _recv_message(conn)
+                if msg is None or msg.get("action") != "ready":
+                    raise TimeoutError(
+                        f"Worker {i+1} sent unexpected message instead of ready: {msg}"
+                    )
+                self._workers.append(conn)
+                conn.settimeout(None)
+                logger.info(
+                    "Worker %d/%d ready",
+                    len(self._workers),
+                    expected,
+                )
+            except socket.timeout:
+                raise TimeoutError(
+                    f"Timed out waiting for workers to report ready "
+                    f"({len(self._workers)}/{expected} ready)"
                 )
         self._server.settimeout(None)
 
@@ -183,6 +222,10 @@ class DistributedWorker:
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._sock.connect((coordinator_host, port))
         logger.info("Connected to coordinator at %s:%d", coordinator_host, port)
+
+    def send_ready(self) -> None:
+        """Signal to coordinator that this worker has loaded and sharded its model."""
+        _send_message(self._sock, {"action": "ready"})
 
     def wait_for_inference(self) -> InferenceRequest | None:
         """Block until next broadcast. Returns None on shutdown."""

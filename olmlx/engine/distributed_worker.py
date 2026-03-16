@@ -70,7 +70,8 @@ def worker_main() -> None:
         sys.exit(1)
 
     model.shard(group)
-    logger.info("Model sharded, entering inference loop")
+    worker.send_ready()
+    logger.info("Model sharded, ready signal sent, entering inference loop")
 
     # Main loop: wait for broadcast → run stream_generate → repeat
     try:
