@@ -980,19 +980,29 @@ class TestInferenceLockedWaitsDeferredCleanup:
 
     @pytest.mark.asyncio
     async def test_waits_for_deferred_cleanup_post_lock(self):
-        """_inference_locked() should wait for deferred cleanup even after acquiring lock."""
-        # Simulate a cleanup task that starts between pre-check and acquire
+        """_inference_locked() should wait for deferred cleanup created during lock acquisition (TOCTOU)."""
         cleanup_done = asyncio.Event()
 
         async def cleanup():
             await asyncio.sleep(0.05)
             cleanup_done.set()
 
-        with patch("olmlx.engine.inference.mx"):
-            # Start with no task, then set one up to test post-lock check
+        # Wrap _acquire_inference_lock to inject a deferred task after lock
+        # is acquired but before the post-lock _await_deferred_cleanup runs.
+        original_acquire = _inf_mod._acquire_inference_lock
+
+        async def acquire_then_inject():
+            await original_acquire()
             _inf_mod._deferred_cleanup_task = asyncio.create_task(cleanup())
-            async with _inference_locked():
-                pass
+
+        with patch("olmlx.engine.inference.mx"):
+            _inf_mod._deferred_cleanup_task = None
+            with patch(
+                "olmlx.engine.inference._acquire_inference_lock",
+                side_effect=acquire_then_inject,
+            ):
+                async with _inference_locked():
+                    pass
             assert cleanup_done.is_set()
         _inf_mod._deferred_cleanup_task = None
 

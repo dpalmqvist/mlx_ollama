@@ -708,7 +708,8 @@ async def anthropic_messages(req: AnthropicMessagesRequest, request: Request):
                             cache_creation,
                         )
                         # Emit message_start immediately with cache stats
-                        yield _emit_message_start()
+                        if not message_started:
+                            yield _emit_message_start()
                         # Replay any pings that arrived before cache_info
                         for ping in pending_pings:
                             yield ping

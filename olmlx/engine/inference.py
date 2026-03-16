@@ -229,7 +229,7 @@ async def _inference_locked():
     global _queue_depth
     await _await_deferred_cleanup()
     _queue_depth += 1
-    if _queue_depth > 1:
+    if _queue_depth >= 1:
         logger.info("Request queued for inference lock (queue depth: %d)", _queue_depth)
     try:
         await _acquire_inference_lock()
@@ -534,7 +534,7 @@ async def _stream_completion(
     global _queue_depth
     await _await_deferred_cleanup()
     _queue_depth += 1
-    if _queue_depth > 1:
+    if _queue_depth >= 1:
         logger.info(
             "Streaming request queued for inference lock (queue depth: %d)",
             _queue_depth,
