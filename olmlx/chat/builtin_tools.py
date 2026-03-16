@@ -19,6 +19,8 @@ _GLOB_MAX_RESULTS = 500
 _GREP_MAX_BYTES = 50_000
 # Default bash timeout
 _BASH_DEFAULT_TIMEOUT = 120
+# Maximum output for bash
+_BASH_MAX_BYTES = 100_000
 # Maximum characters for web_fetch output
 _WEB_FETCH_MAX_CHARS = 10_000
 
@@ -100,7 +102,7 @@ async def _handle_write_file(args: dict) -> str:
     except OSError as exc:
         return f"Error writing file: {exc}"
 
-    return f"Wrote {len(content)} bytes to {path}"
+    return f"Wrote {len(content.encode())} bytes to {path}"
 
 
 async def _handle_edit_file(args: dict) -> str:
@@ -177,9 +179,12 @@ async def _handle_grep(args: dict) -> str:
             stdout, stderr, rc = await _run_search(
                 ["grep", "-rn", pattern, path]
             )
-            if not stdout:
+            if rc == 0:
+                output = stdout
+            elif rc == 1:
                 return "No matches found."
-            output = stdout
+            else:
+                return f"Error: {stderr.strip() or 'grep returned exit code ' + str(rc)}"
         except FileNotFoundError:
             return "Error: search tools (rg, grep) not available."
         except asyncio.TimeoutError:
@@ -202,14 +207,19 @@ async def _handle_bash(args: dict) -> str:
             command,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            start_new_session=True,
         )
         stdout, stderr = await asyncio.wait_for(
             proc.communicate(), timeout=timeout,
         )
     except asyncio.TimeoutError:
         try:
-            proc.kill()
-        except ProcessLookupError:
+            import os
+            import signal
+
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            await proc.wait()
+        except (ProcessLookupError, OSError):
             pass
         return f"Command timed out after {timeout}s."
     except OSError as exc:
@@ -217,9 +227,15 @@ async def _handle_bash(args: dict) -> str:
 
     parts = []
     if stdout:
-        parts.append(stdout.decode(errors="replace"))
+        text = stdout.decode(errors="replace")
+        if len(text) > _BASH_MAX_BYTES:
+            text = text[:_BASH_MAX_BYTES] + "\n... (truncated)"
+        parts.append(text)
     if stderr:
-        parts.append(f"STDERR:\n{stderr.decode(errors='replace')}")
+        text = stderr.decode(errors="replace")
+        if len(text) > _BASH_MAX_BYTES:
+            text = text[:_BASH_MAX_BYTES] + "\n... (truncated)"
+        parts.append(f"STDERR:\n{text}")
     if proc.returncode != 0:
         parts.append(f"Exit code: {proc.returncode}")
 
@@ -255,10 +271,17 @@ async def _handle_web_fetch(args: dict) -> str:
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme not in ("http", "https"):
         return f"Error: unsupported URL scheme {parsed.scheme!r}. Only http and https are allowed."
-    try:
+
+    # Cap raw read to avoid unbounded memory use
+    max_read = _WEB_FETCH_MAX_CHARS * 10
+
+    def _fetch() -> str:
         with urllib.request.urlopen(url, timeout=30) as resp:
             charset = resp.headers.get_content_charset() or "utf-8"
-            raw = resp.read().decode(charset, errors="replace")
+            return resp.read(max_read).decode(charset, errors="replace")
+
+    try:
+        raw = await asyncio.to_thread(_fetch)
     except Exception as exc:
         return f"Error fetching URL: {exc}"
 
@@ -273,7 +296,7 @@ async def _handle_web_search(args: dict) -> str:
     max_results = args.get("max_results", 5)
 
     try:
-        results = _web_search_impl(query, max_results=max_results)
+        results = await asyncio.to_thread(_web_search_impl, query, max_results)
     except ImportError:
         return "Error: duckduckgo-search is not installed. Install it with: pip install duckduckgo-search"
     except Exception as exc:

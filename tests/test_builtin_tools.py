@@ -212,6 +212,14 @@ class TestBash:
         })
         assert "timeout" in result.lower() or "timed out" in result.lower()
 
+    @pytest.mark.asyncio
+    async def test_bash_output_truncated(self, manager):
+        result = await manager.call_tool("bash", {
+            "command": "python3 -c \"print('x' * 200000)\"",
+        })
+        assert "truncated" in result.lower()
+        assert len(result) < 150_000
+
 
 class TestPlanTools:
     @pytest.mark.asyncio
