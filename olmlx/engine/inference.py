@@ -215,7 +215,7 @@ async def _acquire_inference_lock():
     """
     timeout = settings.inference_queue_timeout
     if isinstance(timeout, (int, float)) and timeout > 0:
-        acquire_task = asyncio.ensure_future(_inference_lock.acquire())
+        acquire_task = asyncio.create_task(_inference_lock.acquire())
         done, _ = await asyncio.wait({acquire_task}, timeout=timeout)
         if not done:
             acquire_task.cancel()
@@ -224,7 +224,7 @@ async def _acquire_inference_lock():
             try:
                 await acquire_task
                 _inference_lock.release()
-            except (asyncio.CancelledError, Exception):
+            except asyncio.CancelledError:
                 pass
             raise ServerBusyError(
                 f"Server busy: inference queue timeout after {timeout}s"

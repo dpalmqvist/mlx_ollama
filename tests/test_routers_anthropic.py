@@ -1765,3 +1765,43 @@ class TestStreamSseEarlyMessageStart:
         text = resp.text
         assert '"cache_read_input_tokens": 100' in text
         assert '"cache_creation_input_tokens": 50' in text
+
+    @pytest.mark.asyncio
+    async def test_pings_delivered_between_message_start_and_content(self, app_client):
+        """Pings during prefill should appear between message_start and content_block_start."""
+        import re
+
+        async def mock_stream(*args, **kwargs):
+            async def gen():
+                yield {
+                    "cache_info": True,
+                    "cache_read_tokens": 0,
+                    "cache_creation_tokens": 200,
+                }
+                # Long prefill — pings arrive here
+                await asyncio.sleep(12)
+                yield {"text": "Done", "done": False}
+                yield {"text": "", "done": True, "stats": TimingStats(eval_count=1)}
+
+            return gen()
+
+        with patch("olmlx.routers.anthropic.generate_chat", side_effect=mock_stream):
+            resp = await app_client.post(
+                "/v1/messages",
+                json={
+                    "model": "qwen3",
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "max_tokens": 100,
+                    "stream": True,
+                },
+            )
+
+        assert resp.status_code == 200
+        text = resp.text
+        events = re.findall(r"event: (\w+)", text)
+        assert events[0] == "message_start"
+        content_idx = events.index("content_block_start")
+        between = events[1:content_idx]
+        assert any(e == "ping" for e in between), (
+            f"Expected pings between message_start and content_block_start, got: {between}"
+        )
