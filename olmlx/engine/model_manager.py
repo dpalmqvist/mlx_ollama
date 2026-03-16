@@ -77,7 +77,7 @@ class PromptCacheStore:
         self._max_slots = max_slots
         self._entries: OrderedDict[str, CachedPromptState] = OrderedDict()
         self._disk_path = disk_path
-        self._model_name = model_name
+        self._model_name = model_name.replace("/", "--")
         self._disk_max_bytes = disk_max_bytes
 
     @property
@@ -135,9 +135,8 @@ class PromptCacheStore:
             # Remove disk file after successful load
             file_path.unlink(missing_ok=True)
             state = CachedPromptState(tokens=tokens, cache=cache)
-            # Store in memory
-            self._entries[cache_id] = state
-            self._entries.move_to_end(cache_id)
+            # Store in memory via set() to respect max_slots capacity
+            self.set(cache_id, state)
             logger.info(
                 "Restored cache '%s' from disk (%d tokens)",
                 cache_id,
@@ -171,7 +170,7 @@ class PromptCacheStore:
         while total > self._disk_max_bytes and file_info:
             path, size, _ = file_info.pop(0)
             total -= size
-            path.unlink()
+            path.unlink(missing_ok=True)
             logger.info("Disk cache cleanup: removed %s", path)
 
     def get(self, cache_id: str) -> CachedPromptState | None:

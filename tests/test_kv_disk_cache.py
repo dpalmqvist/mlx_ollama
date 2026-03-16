@@ -135,6 +135,31 @@ class TestPromptCacheStoreDiskLoad:
                 assert result is None
                 assert "corrupt file" in caplog.text
 
+    def test_disk_load_respects_max_slots(self, tmp_path):
+        """Loading from disk must not exceed max_slots capacity."""
+        store = PromptCacheStore(
+            max_slots=1,
+            disk_path=tmp_path,
+            model_name="test-model",
+        )
+        # One entry already in memory
+        store.set("a", _make_state(1))
+        assert len(store) == 1
+
+        # Simulate "b" on disk
+        with patch(
+            "olmlx.engine.model_manager.load_prompt_cache",
+            return_value=(["kv_b"], {"tokens": "[2]"}),
+        ):
+            disk_file = store._disk_file_path("b")
+            disk_file.parent.mkdir(parents=True, exist_ok=True)
+            disk_file.touch()
+
+            result = store.get("b")
+            assert result is not None
+            # Must not exceed max_slots
+            assert len(store) <= 1
+
     def test_disk_file_deleted_after_load(self, tmp_path):
         """After loading from disk, the disk file should be removed."""
         store = PromptCacheStore(
@@ -248,8 +273,20 @@ class TestPromptCacheStoreDiskFilePath:
         )
         path = store._disk_file_path("agent/with:special chars")
         # Should not contain path separators in the filename
-        assert "/" not in path.name or "\\" not in path.name
+        assert "/" not in path.name and "\\" not in path.name
         assert path.suffix == ".safetensors"
+
+    def test_disk_dir_sanitizes_model_name_with_slash(self, tmp_path):
+        """Model names like 'Qwen/Qwen3-8B' should not create nested dirs."""
+        store = PromptCacheStore(
+            max_slots=2,
+            disk_path=tmp_path,
+            model_name="Qwen/Qwen3-8B",
+        )
+        disk_dir = store._disk_dir()
+        # Should be a single directory, not nested Qwen/Qwen3-8B
+        assert disk_dir.parent == tmp_path
+        assert "/" not in disk_dir.name
 
 
 class TestPromptCacheStoreEvictAllToDisk:
