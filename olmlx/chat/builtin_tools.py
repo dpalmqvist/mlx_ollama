@@ -6,9 +6,8 @@ import html.parser
 import logging
 import urllib.parse
 import urllib.request
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any
 
 from olmlx.chat.config import ChatConfig
 

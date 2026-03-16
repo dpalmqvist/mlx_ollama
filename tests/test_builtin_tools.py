@@ -1,10 +1,7 @@
 """Tests for olmlx.chat.builtin_tools."""
 
-import asyncio
-import os
-import re
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -354,7 +351,7 @@ class TestSessionIntegration:
     @pytest.mark.asyncio
     async def test_builtin_tool_routed_correctly(self, tmp_path):
         """Built-in tool calls should be routed to BuiltinToolManager, not MCP."""
-        from unittest.mock import AsyncMock, MagicMock, patch
+        from unittest.mock import MagicMock, patch
         from olmlx.chat.session import ChatSession
 
         test_file = tmp_path / "test.txt"
