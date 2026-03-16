@@ -1048,6 +1048,30 @@ class TestInferenceQueueTimeout:
             fresh_lock.release()
 
 
+class TestStreamCompletionQueueTimeout:
+    @pytest.mark.asyncio
+    async def test_streaming_lock_acquisition_times_out(self, mock_manager):
+        """_stream_completion() should raise ServerBusyError when queue timeout expires."""
+        from olmlx.engine.inference import ServerBusyError, _stream_completion
+
+        fresh_lock = asyncio.Lock()
+        _inf_mod._queue_depth = 0
+        _inf_mod._deferred_cleanup_task = None
+        with (
+            patch("olmlx.engine.inference.mx"),
+            patch("olmlx.engine.inference._inference_lock", fresh_lock),
+            patch("olmlx.engine.inference.settings") as mock_settings,
+        ):
+            mock_settings.inference_queue_timeout = 0.05
+            await fresh_lock.acquire()
+            lm = mock_manager._loaded["qwen3:latest"]
+            with pytest.raises(ServerBusyError, match="queue timeout"):
+                gen = _stream_completion(lm, "prompt", 100, {}, TimingStats())
+                async for _ in gen:
+                    pass
+            fresh_lock.release()
+
+
 class TestStreamCompletionFallbackJoinLogging:
     @pytest.mark.asyncio
     async def test_fallback_join_defers_cleanup_when_thread_alive(

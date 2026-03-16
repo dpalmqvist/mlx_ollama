@@ -59,6 +59,7 @@ _generation_streams = _resolve_generation_streams()
 # we sacrifice parallelism for stability on Apple Silicon.
 _inference_lock = asyncio.Lock()
 _deferred_cleanup_task: asyncio.Task | None = None
+# Tracks requests waiting for _inference_lock (not the _await_deferred_cleanup wait).
 _queue_depth = 0
 
 
@@ -205,6 +206,23 @@ def _tokenize_for_cache(tokenizer: Any, prompt_text: str) -> list[int]:
     return tokenizer.encode(prompt_text, add_special_tokens=add_special)
 
 
+async def _acquire_inference_lock():
+    """Acquire the inference lock with optional timeout from settings."""
+    timeout = settings.inference_queue_timeout
+    if isinstance(timeout, (int, float)) and timeout > 0:
+        try:
+            await asyncio.wait_for(
+                _inference_lock.acquire(),
+                timeout=timeout,
+            )
+        except asyncio.TimeoutError:
+            raise ServerBusyError(
+                f"Server busy: inference queue timeout after {timeout}s"
+            )
+    else:
+        await _inference_lock.acquire()
+
+
 @contextlib.asynccontextmanager
 async def _inference_locked():
     """Async context manager that acquires the inference lock with Metal sync on entry/exit."""
@@ -214,18 +232,7 @@ async def _inference_locked():
     if _queue_depth > 1:
         logger.info("Request queued for inference lock (queue depth: %d)", _queue_depth)
     try:
-        if settings.inference_queue_timeout is not None:
-            try:
-                await asyncio.wait_for(
-                    _inference_lock.acquire(),
-                    timeout=settings.inference_queue_timeout,
-                )
-            except asyncio.TimeoutError:
-                raise ServerBusyError(
-                    f"Server busy: inference queue timeout after {settings.inference_queue_timeout}s"
-                )
-        else:
-            await _inference_lock.acquire()
+        await _acquire_inference_lock()
     except BaseException:
         _queue_depth -= 1
         raise
@@ -528,9 +535,12 @@ async def _stream_completion(
     await _await_deferred_cleanup()
     _queue_depth += 1
     if _queue_depth > 1:
-        logger.info("Streaming request queued for inference lock (queue depth: %d)", _queue_depth)
+        logger.info(
+            "Streaming request queued for inference lock (queue depth: %d)",
+            _queue_depth,
+        )
     try:
-        await _inference_lock.acquire()
+        await _acquire_inference_lock()
     except BaseException:
         _queue_depth -= 1
         raise
