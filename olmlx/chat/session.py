@@ -81,7 +81,16 @@ class ChatSession:
 
         # Merge built-in tool definitions
         if self.builtin:
-            mcp_tools = (mcp_tools or []) + self.builtin.get_tool_definitions()
+            builtin_defs = self.builtin.get_tool_definitions()
+            if mcp_tools:
+                mcp_names = {t["function"]["name"] for t in mcp_tools}
+                for d in builtin_defs:
+                    n = d["function"]["name"]
+                    if n in mcp_names:
+                        logger.warning(
+                            "Built-in tool %r shadows MCP tool with the same name", n
+                        )
+            mcp_tools = (mcp_tools or []) + builtin_defs
 
         # Merge skill tool into the tools list
         skill_tool = self.skills.get_tool_definition() if self.skills else None

@@ -214,11 +214,14 @@ class TestBash:
 
     @pytest.mark.asyncio
     async def test_bash_output_truncated(self, manager):
+        # Generate output larger than _BASH_MAX_BYTES (100KB)
+        # python3 writes all at once, avoiding pipe buffer issues
         result = await manager.call_tool("bash", {
-            "command": "python3 -c \"print('x' * 200000)\"",
+            "command": "python3 -c \"import sys; sys.stdout.write('x' * 200_000); sys.stdout.flush()\"",
+            "timeout": 10,
         })
         assert "truncated" in result.lower()
-        assert len(result) < 150_000
+        assert len(result) <= 110_000
 
 
 class TestPlanTools:
@@ -271,16 +274,21 @@ class TestHTMLExtractorNested:
 
 
 class TestWebFetch:
+    def _mock_opener(self, html_bytes):
+        """Create a mock opener that returns the given HTML bytes."""
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = html_bytes
+        mock_resp.headers.get_content_charset.return_value = "utf-8"
+        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_opener = MagicMock()
+        mock_opener.open.return_value = mock_resp
+        return mock_opener
+
     @pytest.mark.asyncio
     async def test_web_fetch_strips_html(self, manager):
         html = "<html><body><h1>Title</h1><p>Content here</p></body></html>"
-        with patch("urllib.request.urlopen") as mock_urlopen:
-            mock_resp = MagicMock()
-            mock_resp.read.return_value = html.encode()
-            mock_resp.headers.get_content_charset.return_value = "utf-8"
-            mock_resp.__enter__ = MagicMock(return_value=mock_resp)
-            mock_resp.__exit__ = MagicMock(return_value=False)
-            mock_urlopen.return_value = mock_resp
+        with patch("urllib.request.build_opener", return_value=self._mock_opener(html.encode())):
             result = await manager.call_tool("web_fetch", {"url": "https://example.com"})
         assert "Title" in result
         assert "Content here" in result
@@ -290,13 +298,7 @@ class TestWebFetch:
     async def test_web_fetch_truncates(self, manager):
         long_text = "x" * 20000
         html = f"<html><body>{long_text}</body></html>"
-        with patch("urllib.request.urlopen") as mock_urlopen:
-            mock_resp = MagicMock()
-            mock_resp.read.return_value = html.encode()
-            mock_resp.headers.get_content_charset.return_value = "utf-8"
-            mock_resp.__enter__ = MagicMock(return_value=mock_resp)
-            mock_resp.__exit__ = MagicMock(return_value=False)
-            mock_urlopen.return_value = mock_resp
+        with patch("urllib.request.build_opener", return_value=self._mock_opener(html.encode())):
             result = await manager.call_tool("web_fetch", {"url": "https://example.com"})
         assert len(result) <= 11000  # 10k + some overhead for truncation message
 

@@ -4,6 +4,8 @@ import asyncio
 import glob as glob_module
 import html.parser
 import logging
+import os
+import signal
 import urllib.parse
 import urllib.request
 from collections.abc import Callable
@@ -13,6 +15,8 @@ from olmlx.chat.config import ChatConfig
 
 logger = logging.getLogger(__name__)
 
+# Maximum file size for read_file (10 MB)
+_READ_FILE_MAX_BYTES = 10 * 1024 * 1024
 # Maximum results for glob
 _GLOB_MAX_RESULTS = 500
 # Maximum output for grep
@@ -73,18 +77,31 @@ async def _handle_read_file(args: dict) -> str:
     limit = args.get("limit")
 
     try:
-        with open(path) as f:
-            lines = f.readlines()
+        size = os.path.getsize(path)
+        if size > _READ_FILE_MAX_BYTES:
+            return f"Error: file is {size} bytes (limit is {_READ_FILE_MAX_BYTES}). Use offset/limit for large files."
     except OSError as exc:
         return f"Error reading file: {exc}"
 
-    # Apply offset (1-based)
     start = max(offset - 1, 0)
-    if limit is not None:
-        end = start + limit
-        selected = lines[start:end]
-    else:
-        selected = lines[start:]
+
+    try:
+        with open(path) as f:
+            # Skip lines before offset
+            for _ in range(start):
+                if not f.readline():
+                    break
+            if limit is not None:
+                selected = []
+                for _ in range(limit):
+                    line = f.readline()
+                    if not line:
+                        break
+                    selected.append(line)
+            else:
+                selected = f.readlines()
+    except OSError as exc:
+        return f"Error reading file: {exc}"
 
     numbered = []
     for i, line in enumerate(selected, start=start + 1):
@@ -149,23 +166,28 @@ async def _handle_grep(args: dict) -> str:
     pattern = args.get("pattern", "")
     path = args.get("path", ".")
 
+    # Max lines to return from search to bound output at the source
+    max_count = "1000"
+
     async def _run_search(cmd: list[str]) -> tuple[str, str, int]:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+        stdout_bytes, stderr_bytes = await asyncio.wait_for(
+            proc.communicate(), timeout=30,
+        )
         return (
-            stdout.decode(errors="replace"),
-            stderr.decode(errors="replace"),
+            stdout_bytes.decode(errors="replace"),
+            stderr_bytes.decode(errors="replace"),
             proc.returncode,
         )
 
     # Try rg first, fall back to grep
     try:
         stdout, stderr, rc = await _run_search(
-            ["rg", "-n", "--no-heading", pattern, path]
+            ["rg", "-n", "--no-heading", "-m", max_count, pattern, path]
         )
         if rc == 0:
             output = stdout
@@ -177,7 +199,7 @@ async def _handle_grep(args: dict) -> str:
         # rg not installed, fall back to grep
         try:
             stdout, stderr, rc = await _run_search(
-                ["grep", "-rn", pattern, path]
+                ["grep", "-rn", "-m", max_count, pattern, path]
             )
             if rc == 0:
                 output = stdout
@@ -209,14 +231,12 @@ async def _handle_bash(args: dict) -> str:
             stderr=asyncio.subprocess.PIPE,
             start_new_session=True,
         )
+
         stdout, stderr = await asyncio.wait_for(
             proc.communicate(), timeout=timeout,
         )
     except asyncio.TimeoutError:
         try:
-            import os
-            import signal
-
             os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
             await proc.wait()
         except (ProcessLookupError, OSError):
@@ -275,8 +295,20 @@ async def _handle_web_fetch(args: dict) -> str:
     # Cap raw read to avoid unbounded memory use
     max_read = _WEB_FETCH_MAX_CHARS * 10
 
+    class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+        """Block redirects to non-HTTP(S) URLs to prevent SSRF."""
+
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            p = urllib.parse.urlparse(newurl)
+            if p.scheme not in ("http", "https"):
+                raise urllib.error.URLError(
+                    f"Redirect to non-HTTP(S) URL blocked: {newurl}"
+                )
+            return super().redirect_request(req, fp, code, msg, headers, newurl)
+
     def _fetch() -> str:
-        with urllib.request.urlopen(url, timeout=30) as resp:
+        opener = urllib.request.build_opener(_SafeRedirectHandler)
+        with opener.open(url, timeout=30) as resp:
             charset = resp.headers.get_content_charset() or "utf-8"
             return resp.read(max_read).decode(charset, errors="replace")
 
