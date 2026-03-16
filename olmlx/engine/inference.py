@@ -207,15 +207,25 @@ def _tokenize_for_cache(tokenizer: Any, prompt_text: str) -> list[int]:
 
 
 async def _acquire_inference_lock():
-    """Acquire the inference lock with optional timeout from settings."""
+    """Acquire the inference lock with optional timeout from settings.
+
+    Uses asyncio.wait() instead of asyncio.wait_for() to avoid a known
+    Python 3.11 race where wait_for can deliver the lock and then cancel,
+    leaving the lock permanently held with no owner.
+    """
     timeout = settings.inference_queue_timeout
     if isinstance(timeout, (int, float)) and timeout > 0:
-        try:
-            await asyncio.wait_for(
-                _inference_lock.acquire(),
-                timeout=timeout,
-            )
-        except asyncio.TimeoutError:
+        acquire_task = asyncio.ensure_future(_inference_lock.acquire())
+        done, _ = await asyncio.wait({acquire_task}, timeout=timeout)
+        if not done:
+            acquire_task.cancel()
+            # If acquire completed between wait() returning and cancel(),
+            # we now own the lock — must release it before raising.
+            try:
+                await acquire_task
+                _inference_lock.release()
+            except (asyncio.CancelledError, Exception):
+                pass
             raise ServerBusyError(
                 f"Server busy: inference queue timeout after {timeout}s"
             )
@@ -229,7 +239,7 @@ async def _inference_locked():
     global _queue_depth
     await _await_deferred_cleanup()
     _queue_depth += 1
-    if _queue_depth >= 1:
+    if _queue_depth > 1:
         logger.info("Request queued for inference lock (queue depth: %d)", _queue_depth)
     try:
         await _acquire_inference_lock()
@@ -534,7 +544,7 @@ async def _stream_completion(
     global _queue_depth
     await _await_deferred_cleanup()
     _queue_depth += 1
-    if _queue_depth >= 1:
+    if _queue_depth > 1:
         logger.info(
             "Streaming request queued for inference lock (queue depth: %d)",
             _queue_depth,

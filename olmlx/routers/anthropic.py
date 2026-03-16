@@ -710,6 +710,13 @@ async def anthropic_messages(req: AnthropicMessagesRequest, request: Request):
                         # Emit message_start immediately with cache stats
                         if not message_started:
                             yield _emit_message_start()
+                        else:
+                            logger.warning(
+                                "Duplicate cache_info received after message_start "
+                                "(read=%d, creation=%d) — stats dropped",
+                                cache_read,
+                                cache_creation,
+                            )
                         # Replay any pings that arrived before cache_info
                         for ping in pending_pings:
                             yield ping
