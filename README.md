@@ -25,7 +25,7 @@ On first run, `~/.olmlx/models.json` is created with example model mappings.
 ### Option 2: From source
 
 ```bash
-git clone <repo-url> && cd mlx-for-claude
+git clone <repo-url> && cd olmlx
 uv sync --no-editable
 uv run olmlx
 ```
