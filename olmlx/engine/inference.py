@@ -97,16 +97,14 @@ async def _await_deferred_cleanup():
     """Wait for any in-progress deferred GPU cleanup to complete.
 
     Raises ServerBusyError if cleanup doesn't finish within _DEFERRED_WAIT_TIMEOUT.
-    Uses asyncio.shield to avoid cancelling the cleanup task itself.
+    Uses asyncio.wait() to avoid Python 3.11 wait_for race conditions.
     """
     if _deferred_cleanup_task is not None and not _deferred_cleanup_task.done():
         logger.info("Waiting for deferred GPU cleanup to complete")
-        try:
-            await asyncio.wait_for(
-                asyncio.shield(_deferred_cleanup_task),
-                timeout=_DEFERRED_WAIT_TIMEOUT,
-            )
-        except asyncio.TimeoutError:
+        done, _ = await asyncio.wait(
+            {_deferred_cleanup_task}, timeout=_DEFERRED_WAIT_TIMEOUT
+        )
+        if not done:
             raise ServerBusyError(
                 f"Server busy: deferred GPU cleanup did not complete within {_DEFERRED_WAIT_TIMEOUT}s"
             )
@@ -216,7 +214,18 @@ async def _acquire_inference_lock():
     timeout = settings.inference_queue_timeout
     if isinstance(timeout, (int, float)) and timeout > 0:
         acquire_task = asyncio.create_task(_inference_lock.acquire())
-        done, _ = await asyncio.wait({acquire_task}, timeout=timeout)
+        try:
+            done, _ = await asyncio.wait({acquire_task}, timeout=timeout)
+        except BaseException:
+            # Caller was cancelled (e.g. client disconnect, TaskGroup teardown).
+            # Clean up the orphaned acquire task to prevent a lock leak.
+            acquire_task.cancel()
+            try:
+                await acquire_task
+                _inference_lock.release()
+            except asyncio.CancelledError:
+                pass
+            raise
         if not done:
             acquire_task.cancel()
             # If acquire completed between wait() returning and cancel(),

@@ -1778,14 +1778,17 @@ class TestStreamSseEarlyMessageStart:
                     "cache_read_tokens": 0,
                     "cache_creation_tokens": 200,
                 }
-                # Long prefill — pings arrive here
-                await asyncio.sleep(12)
+                # Short delay with fast ping interval to avoid 12s wall-clock wait
+                await asyncio.sleep(0.3)
                 yield {"text": "Done", "done": False}
                 yield {"text": "", "done": True, "stats": TimingStats(eval_count=1)}
 
             return gen()
 
-        with patch("olmlx.routers.anthropic.generate_chat", side_effect=mock_stream):
+        with (
+            patch("olmlx.routers.anthropic.generate_chat", side_effect=mock_stream),
+            patch("olmlx.routers.anthropic.KEEPALIVE_PING_INTERVAL", 0.1),
+        ):
             resp = await app_client.post(
                 "/v1/messages",
                 json={
