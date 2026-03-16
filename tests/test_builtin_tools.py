@@ -37,9 +37,17 @@ class TestBuiltinToolManagerSkeleton:
         names = manager.tool_names
         assert isinstance(names, set)
         expected = {
-            "read_file", "write_file", "edit_file", "glob", "grep",
-            "bash", "web_search", "web_fetch",
-            "create_plan", "update_plan", "read_plan",
+            "read_file",
+            "write_file",
+            "edit_file",
+            "glob",
+            "grep",
+            "bash",
+            "web_search",
+            "web_fetch",
+            "create_plan",
+            "update_plan",
+            "read_plan",
         }
         assert names == expected
 
@@ -63,9 +71,14 @@ class TestReadFile:
     async def test_read_file_offset_limit(self, manager, tmp_path):
         f = tmp_path / "lines.txt"
         f.write_text("\n".join(f"line {i}" for i in range(1, 11)))
-        result = await manager.call_tool("read_file", {
-            "path": str(f), "offset": 3, "limit": 2,
-        })
+        result = await manager.call_tool(
+            "read_file",
+            {
+                "path": str(f),
+                "offset": 3,
+                "limit": 2,
+            },
+        )
         assert "3\tline 3" in result
         assert "4\tline 4" in result
         assert "5\tline 5" not in result
@@ -73,7 +86,9 @@ class TestReadFile:
 
     @pytest.mark.asyncio
     async def test_read_file_not_found(self, manager, tmp_path):
-        result = await manager.call_tool("read_file", {"path": str(tmp_path / "nope.txt")})
+        result = await manager.call_tool(
+            "read_file", {"path": str(tmp_path / "nope.txt")}
+        )
         assert "Error" in result or "error" in result
 
 
@@ -81,18 +96,26 @@ class TestWriteFile:
     @pytest.mark.asyncio
     async def test_write_file_creates(self, manager, tmp_path):
         f = tmp_path / "new.txt"
-        result = await manager.call_tool("write_file", {
-            "path": str(f), "content": "hello world",
-        })
+        result = await manager.call_tool(
+            "write_file",
+            {
+                "path": str(f),
+                "content": "hello world",
+            },
+        )
         assert f.read_text() == "hello world"
         assert "Wrote" in result
 
     @pytest.mark.asyncio
     async def test_write_file_creates_parent_dirs(self, manager, tmp_path):
         f = tmp_path / "sub" / "deep" / "file.txt"
-        await manager.call_tool("write_file", {
-            "path": str(f), "content": "nested",
-        })
+        await manager.call_tool(
+            "write_file",
+            {
+                "path": str(f),
+                "content": "nested",
+            },
+        )
         assert f.read_text() == "nested"
 
 
@@ -101,11 +124,14 @@ class TestEditFile:
     async def test_edit_file_single_match(self, manager, tmp_path):
         f = tmp_path / "code.py"
         f.write_text("def hello():\n    return 'world'\n")
-        result = await manager.call_tool("edit_file", {
-            "path": str(f),
-            "old_text": "return 'world'",
-            "new_text": "return 'universe'",
-        })
+        result = await manager.call_tool(
+            "edit_file",
+            {
+                "path": str(f),
+                "old_text": "return 'world'",
+                "new_text": "return 'universe'",
+            },
+        )
         assert "universe" in f.read_text()
         assert "Applied" in result or "applied" in result.lower()
 
@@ -113,31 +139,40 @@ class TestEditFile:
     async def test_edit_file_no_match(self, manager, tmp_path):
         f = tmp_path / "code.py"
         f.write_text("def hello():\n    return 'world'\n")
-        result = await manager.call_tool("edit_file", {
-            "path": str(f),
-            "old_text": "not found text",
-            "new_text": "replacement",
-        })
+        result = await manager.call_tool(
+            "edit_file",
+            {
+                "path": str(f),
+                "old_text": "not found text",
+                "new_text": "replacement",
+            },
+        )
         assert "not found" in result.lower() or "error" in result.lower()
 
     @pytest.mark.asyncio
     async def test_edit_file_multiple_matches(self, manager, tmp_path):
         f = tmp_path / "code.py"
         f.write_text("foo\nfoo\n")
-        result = await manager.call_tool("edit_file", {
-            "path": str(f),
-            "old_text": "foo",
-            "new_text": "bar",
-        })
+        result = await manager.call_tool(
+            "edit_file",
+            {
+                "path": str(f),
+                "old_text": "foo",
+                "new_text": "bar",
+            },
+        )
         assert "multiple" in result.lower() or "2" in result
 
     @pytest.mark.asyncio
     async def test_edit_file_not_found(self, manager, tmp_path):
-        result = await manager.call_tool("edit_file", {
-            "path": str(tmp_path / "nope.py"),
-            "old_text": "x",
-            "new_text": "y",
-        })
+        result = await manager.call_tool(
+            "edit_file",
+            {
+                "path": str(tmp_path / "nope.py"),
+                "old_text": "x",
+                "new_text": "y",
+            },
+        )
         assert "error" in result.lower()
 
 
@@ -147,9 +182,13 @@ class TestGlob:
         (tmp_path / "a.py").write_text("")
         (tmp_path / "b.py").write_text("")
         (tmp_path / "c.txt").write_text("")
-        result = await manager.call_tool("glob", {
-            "pattern": "*.py", "path": str(tmp_path),
-        })
+        result = await manager.call_tool(
+            "glob",
+            {
+                "pattern": "*.py",
+                "path": str(tmp_path),
+            },
+        )
         assert "a.py" in result
         assert "b.py" in result
         assert "c.txt" not in result
@@ -159,16 +198,24 @@ class TestGlob:
         sub = tmp_path / "sub"
         sub.mkdir()
         (sub / "nested.py").write_text("")
-        result = await manager.call_tool("glob", {
-            "pattern": "**/*.py", "path": str(tmp_path),
-        })
+        result = await manager.call_tool(
+            "glob",
+            {
+                "pattern": "**/*.py",
+                "path": str(tmp_path),
+            },
+        )
         assert "nested.py" in result
 
     @pytest.mark.asyncio
     async def test_glob_no_matches(self, manager, tmp_path):
-        result = await manager.call_tool("glob", {
-            "pattern": "*.xyz", "path": str(tmp_path),
-        })
+        result = await manager.call_tool(
+            "glob",
+            {
+                "pattern": "*.xyz",
+                "path": str(tmp_path),
+            },
+        )
         assert "no matches" in result.lower() or result.strip() == ""
 
 
@@ -176,18 +223,26 @@ class TestGrep:
     @pytest.mark.asyncio
     async def test_grep_finds_matches(self, manager, tmp_path):
         (tmp_path / "file.py").write_text("def hello():\n    return 42\n")
-        result = await manager.call_tool("grep", {
-            "pattern": "hello", "path": str(tmp_path),
-        })
+        result = await manager.call_tool(
+            "grep",
+            {
+                "pattern": "hello",
+                "path": str(tmp_path),
+            },
+        )
         assert "hello" in result
         assert "file.py" in result
 
     @pytest.mark.asyncio
     async def test_grep_no_matches(self, manager, tmp_path):
         (tmp_path / "file.py").write_text("def hello():\n    return 42\n")
-        result = await manager.call_tool("grep", {
-            "pattern": "nonexistent", "path": str(tmp_path),
-        })
+        result = await manager.call_tool(
+            "grep",
+            {
+                "pattern": "nonexistent",
+                "path": str(tmp_path),
+            },
+        )
         assert "no matches" in result.lower() or result.strip() == ""
 
 
@@ -199,27 +254,41 @@ class TestBash:
 
     @pytest.mark.asyncio
     async def test_bash_stderr_and_exit_code(self, manager):
-        result = await manager.call_tool("bash", {
-            "command": "echo err >&2; exit 1",
-        })
+        result = await manager.call_tool(
+            "bash",
+            {
+                "command": "echo err >&2; exit 1",
+            },
+        )
         assert "err" in result
-        assert "exit code: 1" in result.lower() or "exit_code: 1" in result.lower() or "exit code 1" in result.lower()
+        assert (
+            "exit code: 1" in result.lower()
+            or "exit_code: 1" in result.lower()
+            or "exit code 1" in result.lower()
+        )
 
     @pytest.mark.asyncio
     async def test_bash_timeout(self, manager):
-        result = await manager.call_tool("bash", {
-            "command": "sleep 10", "timeout": 1,
-        })
+        result = await manager.call_tool(
+            "bash",
+            {
+                "command": "sleep 10",
+                "timeout": 1,
+            },
+        )
         assert "timeout" in result.lower() or "timed out" in result.lower()
 
     @pytest.mark.asyncio
     async def test_bash_output_truncated(self, manager):
         # Generate output larger than _BASH_MAX_BYTES (100KB)
         # python3 writes all at once, avoiding pipe buffer issues
-        result = await manager.call_tool("bash", {
-            "command": "python3 -c \"import sys; sys.stdout.write('x' * 200_000); sys.stdout.flush()\"",
-            "timeout": 10,
-        })
+        result = await manager.call_tool(
+            "bash",
+            {
+                "command": "python3 -c \"import sys; sys.stdout.write('x' * 200_000); sys.stdout.flush()\"",
+                "timeout": 10,
+            },
+        )
         assert "truncated" in result.lower()
         assert len(result) <= 110_000
 
@@ -248,7 +317,11 @@ class TestPlanTools:
     @pytest.mark.asyncio
     async def test_update_plan_no_plan(self, manager):
         result = await manager.call_tool("update_plan", {"content": "# V2"})
-        assert "no plan" in result.lower() or "not found" in result.lower() or "error" in result.lower()
+        assert (
+            "no plan" in result.lower()
+            or "not found" in result.lower()
+            or "error" in result.lower()
+        )
 
 
 class TestWebFetchSchemeValidation:
@@ -267,6 +340,7 @@ class TestWebFetchSchemeValidation:
 class TestHTMLExtractorNested:
     def test_nested_skip_tags(self):
         from olmlx.chat.builtin_tools import _strip_html
+
         html = "<noscript><style>css</style>hidden text</noscript>visible"
         result = _strip_html(html)
         assert "hidden text" not in result
@@ -288,8 +362,12 @@ class TestWebFetch:
     @pytest.mark.asyncio
     async def test_web_fetch_strips_html(self, manager):
         html = "<html><body><h1>Title</h1><p>Content here</p></body></html>"
-        with patch("urllib.request.build_opener", return_value=self._mock_opener(html.encode())):
-            result = await manager.call_tool("web_fetch", {"url": "https://example.com"})
+        with patch(
+            "urllib.request.build_opener", return_value=self._mock_opener(html.encode())
+        ):
+            result = await manager.call_tool(
+                "web_fetch", {"url": "https://example.com"}
+            )
         assert "Title" in result
         assert "Content here" in result
         assert "<h1>" not in result
@@ -298,8 +376,12 @@ class TestWebFetch:
     async def test_web_fetch_truncates(self, manager):
         long_text = "x" * 20000
         html = f"<html><body>{long_text}</body></html>"
-        with patch("urllib.request.build_opener", return_value=self._mock_opener(html.encode())):
-            result = await manager.call_tool("web_fetch", {"url": "https://example.com"})
+        with patch(
+            "urllib.request.build_opener", return_value=self._mock_opener(html.encode())
+        ):
+            result = await manager.call_tool(
+                "web_fetch", {"url": "https://example.com"}
+            )
         assert len(result) <= 11000  # 10k + some overhead for truncation message
 
 
@@ -307,8 +389,16 @@ class TestWebSearch:
     @pytest.mark.asyncio
     async def test_web_search_success(self, manager):
         mock_results = [
-            {"title": "Result 1", "href": "https://example.com/1", "body": "First result"},
-            {"title": "Result 2", "href": "https://example.com/2", "body": "Second result"},
+            {
+                "title": "Result 1",
+                "href": "https://example.com/1",
+                "body": "First result",
+            },
+            {
+                "title": "Result 2",
+                "href": "https://example.com/2",
+                "body": "Second result",
+            },
         ]
         with patch("olmlx.chat.builtin_tools._web_search_impl") as mock_search:
             mock_search.return_value = mock_results
@@ -318,7 +408,10 @@ class TestWebSearch:
 
     @pytest.mark.asyncio
     async def test_web_search_missing_dependency(self, manager):
-        with patch("olmlx.chat.builtin_tools._web_search_impl", side_effect=ImportError("No module named 'duckduckgo_search'")):
+        with patch(
+            "olmlx.chat.builtin_tools._web_search_impl",
+            side_effect=ImportError("No module named 'duckduckgo_search'"),
+        ):
             result = await manager.call_tool("web_search", {"query": "test"})
         assert "duckduckgo" in result.lower() or "install" in result.lower()
 
@@ -379,8 +472,12 @@ class TestSessionIntegration:
             if call_count == 1:
                 yield {
                     "text": f'{{"name": "read_file", "arguments": {{"path": "{test_file}"}}}}'.replace(
-                        '{', '<tool_call>{"name": "read_file", "arguments": {"path": "' + str(test_file) + '"}}</tool_call>'
-                    )[:0] + f'<tool_call>{{"name": "read_file", "arguments": {{"path": "{test_file}"}}}}</tool_call>',
+                        "{",
+                        '<tool_call>{"name": "read_file", "arguments": {"path": "'
+                        + str(test_file)
+                        + '"}}</tool_call>',
+                    )[:0]
+                    + f'<tool_call>{{"name": "read_file", "arguments": {{"path": "{test_file}"}}}}</tool_call>',
                     "done": False,
                 }
                 yield {"text": "", "done": True, "stats": MagicMock()}

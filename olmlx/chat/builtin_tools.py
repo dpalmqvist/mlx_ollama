@@ -176,7 +176,8 @@ async def _handle_grep(args: dict) -> str:
             stderr=asyncio.subprocess.PIPE,
         )
         stdout_bytes, stderr_bytes = await asyncio.wait_for(
-            proc.communicate(), timeout=30,
+            proc.communicate(),
+            timeout=30,
         )
         return (
             stdout_bytes.decode(errors="replace"),
@@ -206,7 +207,9 @@ async def _handle_grep(args: dict) -> str:
             elif rc == 1:
                 return "No matches found."
             else:
-                return f"Error: {stderr.strip() or 'grep returned exit code ' + str(rc)}"
+                return (
+                    f"Error: {stderr.strip() or 'grep returned exit code ' + str(rc)}"
+                )
         except FileNotFoundError:
             return "Error: search tools (rg, grep) not available."
         except asyncio.TimeoutError:
@@ -233,7 +236,8 @@ async def _handle_bash(args: dict) -> str:
         )
 
         stdout, stderr = await asyncio.wait_for(
-            proc.communicate(), timeout=timeout,
+            proc.communicate(),
+            timeout=timeout,
         )
     except asyncio.TimeoutError:
         try:
@@ -357,9 +361,18 @@ _TOOL_DEFS: list[dict] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "Absolute or relative file path"},
-                    "offset": {"type": "integer", "description": "Starting line number (1-based, default: 1)"},
-                    "limit": {"type": "integer", "description": "Maximum number of lines to read"},
+                    "path": {
+                        "type": "string",
+                        "description": "Absolute or relative file path",
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Starting line number (1-based, default: 1)",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of lines to read",
+                    },
                 },
                 "required": ["path"],
             },
@@ -389,7 +402,10 @@ _TOOL_DEFS: list[dict] = [
                 "type": "object",
                 "properties": {
                     "path": {"type": "string", "description": "File path to edit"},
-                    "old_text": {"type": "string", "description": "Text to find (must be unique in file)"},
+                    "old_text": {
+                        "type": "string",
+                        "description": "Text to find (must be unique in file)",
+                    },
                     "new_text": {"type": "string", "description": "Replacement text"},
                 },
                 "required": ["path", "old_text", "new_text"],
@@ -404,8 +420,14 @@ _TOOL_DEFS: list[dict] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "pattern": {"type": "string", "description": "Glob pattern (e.g. '**/*.py')"},
-                    "path": {"type": "string", "description": "Root directory to search in (default: current dir)"},
+                    "pattern": {
+                        "type": "string",
+                        "description": "Glob pattern (e.g. '**/*.py')",
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Root directory to search in (default: current dir)",
+                    },
                 },
                 "required": ["pattern"],
             },
@@ -419,8 +441,14 @@ _TOOL_DEFS: list[dict] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "pattern": {"type": "string", "description": "Regex pattern to search for"},
-                    "path": {"type": "string", "description": "File or directory to search (default: current dir)"},
+                    "pattern": {
+                        "type": "string",
+                        "description": "Regex pattern to search for",
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "File or directory to search (default: current dir)",
+                    },
                 },
                 "required": ["pattern"],
             },
@@ -434,8 +462,14 @@ _TOOL_DEFS: list[dict] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "command": {"type": "string", "description": "Shell command to execute"},
-                    "timeout": {"type": "integer", "description": "Timeout in seconds (default: 120)"},
+                    "command": {
+                        "type": "string",
+                        "description": "Shell command to execute",
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "description": "Timeout in seconds (default: 120)",
+                    },
                 },
                 "required": ["command"],
             },
@@ -450,7 +484,10 @@ _TOOL_DEFS: list[dict] = [
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "description": "Search query"},
-                    "max_results": {"type": "integer", "description": "Maximum results (default: 5)"},
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Maximum results (default: 5)",
+                    },
                 },
                 "required": ["query"],
             },
@@ -478,7 +515,10 @@ _TOOL_DEFS: list[dict] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "content": {"type": "string", "description": "Plan content in markdown"},
+                    "content": {
+                        "type": "string",
+                        "description": "Plan content in markdown",
+                    },
                 },
                 "required": ["content"],
             },
@@ -492,7 +532,10 @@ _TOOL_DEFS: list[dict] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "content": {"type": "string", "description": "Updated plan content"},
+                    "content": {
+                        "type": "string",
+                        "description": "Updated plan content",
+                    },
                 },
                 "required": ["content"],
             },

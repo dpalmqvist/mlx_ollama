@@ -345,7 +345,11 @@ def cmd_chat(args):
                 builtin = BuiltinToolManager(config)
 
             session = ChatSession(
-                config=config, manager=manager, mcp=mcp, skills=skills, builtin=builtin,
+                config=config,
+                manager=manager,
+                mcp=mcp,
+                skills=skills,
+                builtin=builtin,
             )
             tools = mcp.get_tools_for_chat() if mcp else []
             if builtin:
@@ -543,7 +547,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-skills", action="store_true", default=False, help="Disable skills"
     )
     chat_p.add_argument(
-        "--no-builtin-tools", action="store_true", default=False, help="Disable built-in tools"
+        "--no-builtin-tools",
+        action="store_true",
+        default=False,
+        help="Disable built-in tools",
     )
     chat_p.add_argument(
         "--skills-dir", help="Skills directory (default: ~/.olmlx/skills)"
