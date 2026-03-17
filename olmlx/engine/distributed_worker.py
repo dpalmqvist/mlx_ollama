@@ -43,7 +43,8 @@ def worker_main() -> None:
     )
 
     # Initialize MLX distributed
-    group = mx.distributed.init()
+    backend = os.environ.get("EXPERIMENTAL_DISTRIBUTED_BACKEND", "ring")
+    group = mx.distributed.init(backend=backend)
     rank = group.rank()
     world_size = group.size()
     logger.info("Worker rank %d/%d starting", rank, world_size)

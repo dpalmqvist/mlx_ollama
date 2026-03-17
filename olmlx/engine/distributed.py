@@ -126,6 +126,8 @@ class DistributedCoordinator:
         while len(pending) < expected:
             remaining = timeout - (time.monotonic() - start)
             if remaining <= 0:
+                for s in pending:
+                    s.close()
                 raise TimeoutError(
                     f"Timed out waiting for workers to connect "
                     f"({len(pending)}/{expected} connected)"
@@ -141,6 +143,8 @@ class DistributedCoordinator:
                     expected,
                 )
             except socket.timeout:
+                for s in pending:
+                    s.close()
                 raise TimeoutError(
                     f"Timed out waiting for workers to connect "
                     f"({len(pending)}/{expected} connected)"
@@ -211,6 +215,19 @@ class DistributedCoordinator:
                     len(self._workers),
                     exc_info=True,
                 )
+                # Try to send shutdown to workers that already received the
+                # generate message so they don't hang on all_sum indefinitely.
+                shutdown_msg = {
+                    "prompt_tokens": [],
+                    "max_tokens": 0,
+                    "gen_kwargs": {},
+                    "action": "shutdown",
+                }
+                for j in range(i):
+                    try:
+                        _send_message(self._workers[j], shutdown_msg)
+                    except Exception:
+                        pass
                 raise RuntimeError(
                     f"Distributed broadcast failed: worker {i + 1}/{len(self._workers)} unreachable. "
                     f"The cluster cannot recover — restart all nodes."

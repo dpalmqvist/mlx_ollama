@@ -814,6 +814,11 @@ class ModelManager:
                 is_distributed = True
                 logger.info("Model %s sharded for distributed inference", hf_path)
             else:
+                # Release Metal memory before raising — the model weights are
+                # already allocated on the GPU at this point.
+                del model, tokenizer
+                gc.collect()
+                mx.clear_cache()
                 raise ValueError(
                     f"Model {hf_path} does not support distributed inference "
                     f"(no shard() method). Supported architectures include: "

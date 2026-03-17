@@ -61,7 +61,11 @@ async def lifespan(app: FastAPI):
         )
         import asyncio
 
-        await asyncio.to_thread(coordinator.wait_for_workers, 60.0)
+        try:
+            await asyncio.to_thread(coordinator.wait_for_workers, 60.0)
+        except Exception:
+            coordinator.close()
+            raise
         set_distributed_coordinator(coordinator)
 
     manager = ModelManager(registry, store, distributed_group=distributed_group)

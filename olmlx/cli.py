@@ -129,6 +129,7 @@ def _launch_distributed_workers():
     for rank, host in enumerate(hosts[1:], start=1):
         env = {
             "EXPERIMENTAL_DISTRIBUTED_MODEL": model,
+            "EXPERIMENTAL_DISTRIBUTED_BACKEND": experimental.distributed_backend,
             "EXPERIMENTAL_DISTRIBUTED_COORDINATOR_HOST": coordinator_host,
             "EXPERIMENTAL_DISTRIBUTED_SIDEBAND_PORT": str(
                 experimental.distributed_sideband_port
