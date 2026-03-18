@@ -754,11 +754,14 @@ async def _stream_completion(
                     # After evicting the prompt cache, mlx_lm will prefill
                     # the full prompt from scratch — re-estimate for all tokens
                     # and restore prompt from suffix_tokens to the full sequence.
+                    estimate_tokens = num_prefill_tokens
                     if had_cache and cache_read_tokens > 0:
-                        full_tokens = cache_read_tokens + num_prefill_tokens
-                        kv_bytes = _estimate_kv_cache_bytes(lm.model, full_tokens)
+                        estimate_tokens = cache_read_tokens + num_prefill_tokens
+                        kv_bytes = _estimate_kv_cache_bytes(lm.model, estimate_tokens)
                         if full_prompt_tokens is not None:
                             prompt = full_prompt_tokens
+                        # VLMs use input_ids (which still holds suffix only)
+                        gen_kwargs.pop("input_ids", None)
                     # Sync Metal to ensure freed buffers are reclaimed before re-reading
                     _safe_sync()
                     current_metal = _get_metal_memory()
@@ -767,7 +770,7 @@ async def _stream_completion(
                             0.0, (memory_limit - current_metal) / 1024**3
                         )
                         raise MemoryError(
-                            f"KV cache for {num_prefill_tokens} tokens estimated at "
+                            f"KV cache for {estimate_tokens} tokens estimated at "
                             f"{kv_bytes / 1024**3:.1f} GB, but only "
                             f"{available_gb:.1f} GB available "
                             f"— prompt too long, reduce context or use a smaller model"

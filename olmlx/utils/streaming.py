@@ -243,6 +243,12 @@ def _make_prefill_progress(
 ) -> Callable[[float], bool]:
     """Create a prefill progress callback that checks cancellation and memory.
 
+    Note: when the callback aborts prefill by returning False, mlx_lm stops
+    early and the client receives a truncated (likely empty) 200 response.
+    The bool return contract doesn't allow surfacing an error. The pre-flight
+    check in inference.py handles the common case with a clean 503; this
+    callback is a last-resort safety net for inaccurate estimates.
+
     Args:
         cancel_event: Threading event to signal cancellation.
         memory_limit: Metal memory limit in bytes. 0 disables memory checking.
