@@ -34,7 +34,6 @@ router = APIRouter()
 JSON_MODE_SYSTEM_MSG = (
     "Respond with valid JSON only. Do not include any text outside the JSON object."
 )
-_json_schema_warned = False
 
 
 def _make_id() -> str:
@@ -112,19 +111,16 @@ async def openai_chat(req: OpenAIChatRequest, request: Request):
     messages = [m.model_dump(exclude_none=True) for m in req.messages]
     if req.response_format and req.response_format.type == "json_object":
         if messages and messages[0].get("role") == "system":
-            messages[0]["content"] = (
-                (messages[0].get("content") or "") + "\n\n" + JSON_MODE_SYSTEM_MSG
-            )
+            existing = messages[0].get("content") or ""
+            sep = "\n\n" if existing else ""
+            messages[0]["content"] = existing + sep + JSON_MODE_SYSTEM_MSG
         else:
             messages.insert(0, {"role": "system", "content": JSON_MODE_SYSTEM_MSG})
     elif req.response_format and req.response_format.type == "json_schema":
-        global _json_schema_warned  # noqa: PLW0603
-        if not _json_schema_warned:
-            logger.warning(
-                "response_format type 'json_schema' is not enforced; "
-                "output may not conform to the provided schema"
-            )
-            _json_schema_warned = True
+        logger.warning(
+            "response_format type 'json_schema' is not enforced; "
+            "output may not conform to the provided schema"
+        )
     options = _build_options(req)
     max_tokens = req.max_completion_tokens or req.max_tokens or 512
     chat_id = _make_id()

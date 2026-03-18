@@ -382,7 +382,7 @@ class TestResponseFormat:
         assert resp.status_code == 200
         messages = mock_gen.call_args[0][2]
         assert messages[0]["role"] == "system"
-        assert JSON_MODE_SYSTEM_MSG in messages[0]["content"]
+        assert messages[0]["content"] == JSON_MODE_SYSTEM_MSG
 
     @pytest.mark.asyncio
     async def test_json_schema_requires_schema(self, app_client):
@@ -397,10 +397,19 @@ class TestResponseFormat:
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
-    async def test_json_schema_logs_warning(self, app_client, caplog):
-        import olmlx.routers.openai as _oai
+    async def test_json_schema_requires_name(self, app_client):
+        resp = await app_client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "qwen3",
+                "messages": [{"role": "user", "content": "hi"}],
+                "response_format": {"type": "json_schema", "json_schema": {}},
+            },
+        )
+        assert resp.status_code == 422
 
-        _oai._json_schema_warned = False
+    @pytest.mark.asyncio
+    async def test_json_schema_logs_warning(self, app_client, caplog):
         mock_result = {"text": '{"a": 1}', "done": True, "stats": TimingStats()}
 
         with patch(

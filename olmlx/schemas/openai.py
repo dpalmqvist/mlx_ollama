@@ -22,8 +22,11 @@ class ResponseFormat(BaseModel):
 
     @model_validator(mode="after")
     def _json_schema_required(self) -> "ResponseFormat":
-        if self.type == "json_schema" and self.json_schema is None:
-            raise ValueError("json_schema is required when type is 'json_schema'")
+        if self.type == "json_schema":
+            if self.json_schema is None:
+                raise ValueError("json_schema is required when type is 'json_schema'")
+            if "name" not in self.json_schema:
+                raise ValueError("json_schema.name is required")
         return self
 
 
