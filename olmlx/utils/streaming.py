@@ -274,7 +274,11 @@ def _make_prefill_progress(
                     )
                     return False
             except Exception:
-                pass
+                logger.debug(
+                    "Prefill memory check failed at %.0f%%",
+                    progress * 100,
+                    exc_info=True,
+                )
         return True
 
     return _prefill_progress

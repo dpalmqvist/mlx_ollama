@@ -752,10 +752,15 @@ async def _stream_completion(
                     gc.collect()
                     mx.clear_cache()
                     # After evicting the prompt cache, mlx_lm will prefill
-                    # the full prompt from scratch — re-estimate for all tokens.
+                    # the full prompt from scratch — re-estimate for all tokens
+                    # and restore prompt from suffix_tokens to the full sequence.
                     if had_cache and cache_read_tokens > 0:
                         full_tokens = cache_read_tokens + num_prefill_tokens
                         kv_bytes = _estimate_kv_cache_bytes(lm.model, full_tokens)
+                        if full_prompt_tokens is not None:
+                            prompt = full_prompt_tokens
+                    # Sync Metal to ensure freed buffers are reclaimed before re-reading
+                    _safe_sync()
                     current_metal = _get_metal_memory()
                     if current_metal + kv_bytes > memory_limit:
                         available_gb = max(
@@ -770,7 +775,10 @@ async def _stream_completion(
             except MemoryError:
                 raise
             except Exception:
-                logger.debug("KV cache pre-flight check skipped", exc_info=True)
+                logger.warning(
+                    "KV cache pre-flight check skipped — OOM protection inactive",
+                    exc_info=True,
+                )
 
         # Yield cache stats after the pre-flight check so routers can
         # use them.  This starts the HTTP response — no 503 after this.
