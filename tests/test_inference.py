@@ -1416,10 +1416,19 @@ class TestKvCachePreflightCheck:
                 patch.object(_inf_mod, "_TOTAL_PHYSICAL_MEMORY", total_mem),
                 patch("olmlx.engine.inference.settings") as mock_settings,
                 patch("olmlx.engine.inference.mx") as mock_mx,
-                patch("olmlx.engine.inference._estimate_kv_cache_bytes", return_value=kv_estimate),
+                patch(
+                    "olmlx.engine.inference._estimate_kv_cache_bytes",
+                    return_value=kv_estimate,
+                ),
                 patch("olmlx.engine.inference._safe_sync"),
-                patch("olmlx.engine.inference._await_deferred_cleanup", new_callable=AsyncMock),
-                patch("olmlx.engine.inference._acquire_inference_lock", new_callable=AsyncMock),
+                patch(
+                    "olmlx.engine.inference._await_deferred_cleanup",
+                    new_callable=AsyncMock,
+                ),
+                patch(
+                    "olmlx.engine.inference._acquire_inference_lock",
+                    new_callable=AsyncMock,
+                ),
             ):
                 mock_settings.memory_limit_fraction = 0.5  # 12GB limit
                 mock_settings.prompt_cache = False
@@ -1448,14 +1457,16 @@ class TestKvCachePreflightCheck:
 
         # Create a proper async iterable mock with one token
         final_token = StreamToken(
-            text="hi", token=1, prompt_tokens=100,
-            generation_tokens=1, prompt_tps=100.0, generation_tps=50.0,
+            text="hi",
+            token=1,
+            prompt_tokens=100,
+            generation_tokens=1,
+            prompt_tps=100.0,
+            generation_tps=50.0,
         )
         mock_stream = AsyncMock()
         mock_stream.__aiter__ = MagicMock(return_value=mock_stream)
-        mock_stream.__anext__ = AsyncMock(
-            side_effect=[final_token, StopAsyncIteration]
-        )
+        mock_stream.__anext__ = AsyncMock(side_effect=[final_token, StopAsyncIteration])
         mock_stream._thread = None
         mock_stream.drain_and_join = AsyncMock()
         mock_stream.cancel = MagicMock()
@@ -1467,11 +1478,22 @@ class TestKvCachePreflightCheck:
                 patch.object(_inf_mod, "_TOTAL_PHYSICAL_MEMORY", total_mem),
                 patch("olmlx.engine.inference.settings") as mock_settings,
                 patch("olmlx.engine.inference.mx") as mock_mx,
-                patch("olmlx.engine.inference._estimate_kv_cache_bytes", return_value=kv_estimate),
+                patch(
+                    "olmlx.engine.inference._estimate_kv_cache_bytes",
+                    return_value=kv_estimate,
+                ),
                 patch("olmlx.engine.inference._safe_sync"),
-                patch("olmlx.engine.inference._await_deferred_cleanup", new_callable=AsyncMock),
-                patch("olmlx.engine.inference._acquire_inference_lock", new_callable=AsyncMock),
-                patch("olmlx.engine.inference.async_mlx_stream", return_value=mock_stream),
+                patch(
+                    "olmlx.engine.inference._await_deferred_cleanup",
+                    new_callable=AsyncMock,
+                ),
+                patch(
+                    "olmlx.engine.inference._acquire_inference_lock",
+                    new_callable=AsyncMock,
+                ),
+                patch(
+                    "olmlx.engine.inference.async_mlx_stream", return_value=mock_stream
+                ),
                 patch("olmlx.engine.inference.parse_keep_alive", return_value=300),
             ):
                 mock_settings.memory_limit_fraction = 0.5  # 12GB limit
@@ -1539,9 +1561,7 @@ class TestPrefillMemoryCallback:
         cancel_event = MagicMock()
         cancel_event.is_set.return_value = True
 
-        callback = _make_prefill_progress(
-            cancel_event, memory_limit=12 * 1024**3
-        )
+        callback = _make_prefill_progress(cancel_event, memory_limit=12 * 1024**3)
         result = callback(0.5)
         assert result is False
 

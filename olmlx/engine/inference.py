@@ -211,7 +211,9 @@ def _is_memory_pressure_high() -> bool:
     if _TOTAL_PHYSICAL_MEMORY == 0:
         return False
     try:
-        return _get_metal_memory() > int(_get_memory_limit() * _MEMORY_PRESSURE_THRESHOLD)
+        return _get_metal_memory() > int(
+            _get_memory_limit() * _MEMORY_PRESSURE_THRESHOLD
+        )
     except Exception:
         return False
 
@@ -756,7 +758,9 @@ async def _stream_completion(
                         kv_bytes = _estimate_kv_cache_bytes(lm.model, full_tokens)
                     current_metal = _get_metal_memory()
                     if current_metal + kv_bytes > memory_limit:
-                        available_gb = max(0.0, (memory_limit - current_metal) / 1024**3)
+                        available_gb = max(
+                            0.0, (memory_limit - current_metal) / 1024**3
+                        )
                         raise MemoryError(
                             f"KV cache for {num_prefill_tokens} tokens estimated at "
                             f"{kv_bytes / 1024**3:.1f} GB, but only "
