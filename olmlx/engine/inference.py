@@ -734,23 +734,27 @@ async def _stream_completion(
                 num_prefill_tokens = 0
         else:
             num_prefill_tokens = 0
-        memory_limit = 0
+        # Compute memory_limit before try so the streaming callback always
+        # has the correct limit, even when the pre-flight estimate throws.
+        memory_limit = _get_memory_limit() if _TOTAL_PHYSICAL_MEMORY > 0 else 0
         if _TOTAL_PHYSICAL_MEMORY > 0 and num_prefill_tokens > 0:
             try:
                 kv_bytes = _estimate_kv_cache_bytes(lm.model, num_prefill_tokens)
-                memory_limit = _get_memory_limit()
                 current_metal = _get_metal_memory()
                 if current_metal + kv_bytes > memory_limit:
-                    # Try freeing caches first
+                    # Drop cached KV tensors so eviction + gc can reclaim them
+                    evicted_cache = gen_kwargs.pop("prompt_cache", None)
+                    del evicted_cache
                     lm.prompt_cache_store.evict_all_to_disk()
                     gc.collect()
                     mx.clear_cache()
                     current_metal = _get_metal_memory()
                     if current_metal + kv_bytes > memory_limit:
+                        available_gb = max(0.0, (memory_limit - current_metal) / 1024**3)
                         raise MemoryError(
                             f"KV cache for {num_prefill_tokens} tokens estimated at "
                             f"{kv_bytes / 1024**3:.1f} GB, but only "
-                            f"{(memory_limit - current_metal) / 1024**3:.1f} GB available "
+                            f"{available_gb:.1f} GB available "
                             f"— prompt too long, reduce context or use a smaller model"
                         )
             except MemoryError:

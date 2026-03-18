@@ -254,7 +254,7 @@ def _make_prefill_progress(
     # Resolve mx once at creation time, not per-callback invocation
     if mx_module is None and memory_limit > 0:
         import mlx.core as mx_module
-    last_check_progress = 0.0
+    last_check_progress = -0.05  # trigger check on first callback invocation
 
     def _prefill_progress(progress: float) -> bool:
         nonlocal last_check_progress
