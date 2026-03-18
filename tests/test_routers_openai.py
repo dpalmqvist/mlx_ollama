@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from olmlx.routers.openai import JSON_MODE_SYSTEM_MSG
 from olmlx.utils.timing import TimingStats
 
 
@@ -280,3 +281,119 @@ class TestXCacheIDHeader:
         assert resp.status_code == 200
         mock_gen.assert_called_once()
         assert mock_gen.call_args.kwargs.get("cache_id") == ""
+
+
+
+class TestResponseFormat:
+    @pytest.mark.asyncio
+    async def test_json_mode_injects_system_message(self, app_client):
+        mock_result = {"text": '{"key": "value"}', "done": True, "stats": TimingStats()}
+
+        with patch(
+            "olmlx.routers.openai.generate_chat", new_callable=AsyncMock
+        ) as mock_gen:
+            mock_gen.return_value = mock_result
+            resp = await app_client.post(
+                "/v1/chat/completions",
+                json={
+                    "model": "qwen3",
+                    "messages": [{"role": "user", "content": "give me json"}],
+                    "response_format": {"type": "json_object"},
+                },
+            )
+
+        assert resp.status_code == 200
+        messages = mock_gen.call_args[0][2]
+        assert messages[-1] == {"role": "system", "content": JSON_MODE_SYSTEM_MSG}
+
+    @pytest.mark.asyncio
+    async def test_json_mode_streaming(self, app_client):
+        async def mock_stream(*args, **kwargs):
+            async def gen():
+                yield {"text": '{"a": 1}', "done": False}
+                yield {"text": "", "done": True, "stats": TimingStats()}
+
+            return gen()
+
+        with patch(
+            "olmlx.routers.openai.generate_chat", side_effect=mock_stream
+        ) as mock_gen:
+            resp = await app_client.post(
+                "/v1/chat/completions",
+                json={
+                    "model": "qwen3",
+                    "messages": [{"role": "user", "content": "give me json"}],
+                    "response_format": {"type": "json_object"},
+                    "stream": True,
+                },
+            )
+
+        assert resp.status_code == 200
+        messages = mock_gen.call_args[0][2]
+        assert messages[-1] == {"role": "system", "content": JSON_MODE_SYSTEM_MSG}
+
+    @pytest.mark.asyncio
+    async def test_response_format_text_no_injection(self, app_client):
+        mock_result = {"text": "plain text", "done": True, "stats": TimingStats()}
+
+        with patch(
+            "olmlx.routers.openai.generate_chat", new_callable=AsyncMock
+        ) as mock_gen:
+            mock_gen.return_value = mock_result
+            resp = await app_client.post(
+                "/v1/chat/completions",
+                json={
+                    "model": "qwen3",
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "response_format": {"type": "text"},
+                },
+            )
+
+        assert resp.status_code == 200
+        messages = mock_gen.call_args[0][2]
+        assert not any(m.get("content") == JSON_MODE_SYSTEM_MSG for m in messages)
+
+    @pytest.mark.asyncio
+    async def test_response_format_none_no_injection(self, app_client):
+        mock_result = {"text": "plain text", "done": True, "stats": TimingStats()}
+
+        with patch(
+            "olmlx.routers.openai.generate_chat", new_callable=AsyncMock
+        ) as mock_gen:
+            mock_gen.return_value = mock_result
+            resp = await app_client.post(
+                "/v1/chat/completions",
+                json={
+                    "model": "qwen3",
+                    "messages": [{"role": "user", "content": "hi"}],
+                },
+            )
+
+        assert resp.status_code == 200
+        messages = mock_gen.call_args[0][2]
+        assert not any(m.get("content") == JSON_MODE_SYSTEM_MSG for m in messages)
+
+    @pytest.mark.asyncio
+    async def test_response_format_json_schema_accepted(self, app_client):
+        mock_result = {"text": '{"name": "test"}', "done": True, "stats": TimingStats()}
+
+        with patch(
+            "olmlx.routers.openai.generate_chat", new_callable=AsyncMock
+        ) as mock_gen:
+            mock_gen.return_value = mock_result
+            resp = await app_client.post(
+                "/v1/chat/completions",
+                json={
+                    "model": "qwen3",
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "response_format": {
+                        "type": "json_schema",
+                        "json_schema": {
+                            "name": "test",
+                            "schema": {"type": "object"},
+                        },
+                    },
+                },
+            )
+
+        assert resp.status_code == 200

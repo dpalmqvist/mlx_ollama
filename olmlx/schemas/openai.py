@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from olmlx.schemas.common import ModelName
@@ -12,6 +14,11 @@ class OpenAIChatMessage(BaseModel):
     name: str | None = None
     tool_calls: list[dict] | None = None
     tool_call_id: str | None = None
+
+
+class ResponseFormat(BaseModel):
+    type: Literal["text", "json_object", "json_schema"] = "text"
+    json_schema: dict | None = None
 
 
 class OpenAIChatRequest(BaseModel):
@@ -29,6 +36,7 @@ class OpenAIChatRequest(BaseModel):
     tools: list[dict] | None = None
     tool_choice: str | dict | None = None
     seed: int | None = None
+    response_format: ResponseFormat | None = None
 
 
 class OpenAIUsage(BaseModel):

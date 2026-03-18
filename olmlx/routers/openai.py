@@ -31,6 +31,10 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+JSON_MODE_SYSTEM_MSG = (
+    "Respond with valid JSON only. Do not include any text outside the JSON object."
+)
+
 
 def _make_id() -> str:
     return f"chatcmpl-{uuid.uuid4().hex[:8]}"
@@ -105,6 +109,8 @@ def _build_options(req) -> dict:
 async def openai_chat(req: OpenAIChatRequest, request: Request):
     manager = request.app.state.model_manager
     messages = [m.model_dump(exclude_none=True) for m in req.messages]
+    if req.response_format and req.response_format.type == "json_object":
+        messages.append({"role": "system", "content": JSON_MODE_SYSTEM_MSG})
     options = _build_options(req)
     max_tokens = req.max_completion_tokens or req.max_tokens or 512
     chat_id = _make_id()
