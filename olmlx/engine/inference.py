@@ -726,8 +726,10 @@ async def _stream_completion(
             num_prefill_tokens = cache_creation_tokens
         elif isinstance(prompt, list):
             num_prefill_tokens = len(prompt)
-        elif isinstance(prompt, str):
-            # VLM or non-cached path — tokenize to get a count
+        elif isinstance(prompt, str) and not lm.is_vlm:
+            # Non-cached text path — tokenize to get a count.
+            # VLMs excluded: text_tokenizer.encode() misses image patch
+            # tokens, giving a systematic undercount.
             try:
                 num_prefill_tokens = len(lm.text_tokenizer.encode(prompt))
             except Exception:
@@ -743,11 +745,15 @@ async def _stream_completion(
                 current_metal = _get_metal_memory()
                 if current_metal + kv_bytes > memory_limit:
                     # Drop cached KV tensors so eviction + gc can reclaim them
-                    evicted_cache = gen_kwargs.pop("prompt_cache", None)
-                    del evicted_cache
+                    had_cache = gen_kwargs.pop("prompt_cache", None) is not None
                     lm.prompt_cache_store.evict_all_to_disk()
                     gc.collect()
                     mx.clear_cache()
+                    # After evicting the prompt cache, mlx_lm will prefill
+                    # the full prompt from scratch — re-estimate for all tokens.
+                    if had_cache and cache_read_tokens > 0:
+                        full_tokens = cache_read_tokens + num_prefill_tokens
+                        kv_bytes = _estimate_kv_cache_bytes(lm.model, full_tokens)
                     current_metal = _get_metal_memory()
                     if current_metal + kv_bytes > memory_limit:
                         available_gb = max(0.0, (memory_limit - current_metal) / 1024**3)
