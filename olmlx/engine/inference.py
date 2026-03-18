@@ -5,6 +5,7 @@ import importlib
 import json
 import logging
 import os
+import threading
 import time
 import collections.abc
 from collections.abc import AsyncGenerator
@@ -35,6 +36,37 @@ from olmlx.utils.streaming import async_mlx_stream
 from olmlx.utils.timing import Timer, TimingStats
 
 logger = logging.getLogger(__name__)
+
+# -- Experimental: Distributed inference coordinator --
+# Only set when OLMLX_EXPERIMENTAL_DISTRIBUTED=true; see set_distributed_coordinator().
+_distributed_coordinator = None
+_distributed_coordinator_lock = threading.Lock()
+
+
+def set_distributed_coordinator(coordinator):
+    """Set the distributed coordinator for broadcasting inference to workers."""
+    global _distributed_coordinator
+    with _distributed_coordinator_lock:
+        _distributed_coordinator = coordinator
+
+
+def _maybe_broadcast_distributed(
+    lm,
+    prompt_tokens: list[int],
+    prompt_text: str,
+    max_tokens: int,
+    gen_kwargs: dict,
+) -> None:
+    """Broadcast inference params to distributed workers if applicable."""
+    with _distributed_coordinator_lock:
+        coord = _distributed_coordinator
+    if coord is not None and lm.is_distributed:
+        coord.broadcast_inference(
+            prompt_tokens=prompt_tokens,
+            prompt_text=prompt_text,
+            max_tokens=max_tokens,
+            gen_kwargs=gen_kwargs,
+        )
 
 
 # Resolve generation streams at module load time to avoid repeated
@@ -611,6 +643,9 @@ async def _stream_completion(
     cache_read_tokens = 0
     cache_creation_tokens = 0
     full_prompt_tokens: list[int] | None = None
+    # Save original string prompt before cache setup may replace it with token IDs.
+    # prompt is always str at entry; cache setup may later reassign it to list[int].
+    original_prompt = prompt
     cache_setup_done = False
     try:
         # Memory pressure check — invalidate cache to prevent Metal OOM
@@ -798,6 +833,28 @@ async def _stream_completion(
                 "cache_read_tokens": cache_read_tokens,
                 "cache_creation_tokens": cache_creation_tokens,
             }
+
+        # Broadcast to distributed workers before starting generation.
+        # Workers need prompt_text (str) because mlx_lm.stream_generate
+        # expects a string prompt, not token IDs. Always use original_prompt
+        # (the original string before cache manipulation may have replaced it
+        # with token IDs) to avoid tokenizer round-trip mismatches.
+        # Strip prompt_cache and input_ids — these are local MLX objects
+        # that cannot be serialized to JSON for the sideband protocol.
+        if lm.is_distributed:
+            tokens = (
+                prompt_tokens
+                if prompt_tokens is not None
+                else _tokenize_for_cache(lm.text_tokenizer, original_prompt)
+            )
+            broadcast_kwargs = {
+                k: v
+                for k, v in gen_kwargs.items()
+                if k not in ("prompt_cache", "input_ids")
+            }
+            _maybe_broadcast_distributed(
+                lm, tokens, original_prompt, max_tokens, broadcast_kwargs
+            )
 
         stream = async_mlx_stream(
             lm.model,
@@ -995,6 +1052,12 @@ async def _full_completion_inner(
     def _generate_sync():
         """Run generate + synchronize in the same thread so GPU work completes
         before the thread returns to the pool."""
+        # Broadcast inside the thread so rank 0 and workers enter MLX
+        # computation at the same time (avoids all_sum timeout).
+        if lm.is_distributed:
+            tokens = _tokenize_for_cache(lm.text_tokenizer, prompt)
+            _maybe_broadcast_distributed(lm, tokens, prompt, max_tokens, gen_kwargs)
+
         if lm.is_vlm:
             import mlx_vlm
 
@@ -1118,9 +1181,15 @@ async def generate_chat(
     gen_kwargs = _build_generate_kwargs(options, is_vlm=lm.is_vlm)
     mt = gen_kwargs.pop("max_tokens", max_tokens)
 
-    # Prompt caching: streaming only, when enabled
+    # Prompt caching: streaming only, when enabled.
+    # Disabled in distributed mode because rank 0 processes only suffix tokens
+    # on cache hits while workers process the full prompt, causing all_sum
+    # call count mismatch and deadlock.
     use_prompt_cache = (
-        settings.prompt_cache and stream and make_prompt_cache is not None
+        settings.prompt_cache
+        and stream
+        and make_prompt_cache is not None
+        and not lm.is_distributed
     )
     prompt_tokens = None
     if use_prompt_cache:

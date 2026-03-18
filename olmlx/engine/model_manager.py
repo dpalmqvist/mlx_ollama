@@ -246,6 +246,7 @@ class LoadedModel:
     model: Any
     tokenizer: Any  # tokenizer (mlx-lm) or processor (mlx-vlm)
     is_vlm: bool = False
+    is_distributed: bool = False
     template_caps: TemplateCaps = field(default_factory=TemplateCaps)
     loaded_at: float = field(default_factory=time.time)
     expires_at: float | None = None
@@ -318,9 +319,15 @@ def _get_metal_memory_bytes() -> int:
 class ModelManager:
     """Manages loading/unloading of MLX models with LRU eviction."""
 
-    def __init__(self, registry: ModelRegistry, store: ModelStore | None = None):
+    def __init__(
+        self,
+        registry: ModelRegistry,
+        store: ModelStore | None = None,
+        distributed_group: Any = None,
+    ):
         self.registry = registry
         self.store = store
+        self._distributed_group = distributed_group
         self._loaded: dict[str, LoadedModel] = {}
         self._lock = asyncio.Lock()
         self._expiry_task: asyncio.Task | None = None
@@ -460,12 +467,19 @@ class ModelManager:
                 model = tokenizer = None
                 load_task = lm = None
                 try:
-                    coro = asyncio.to_thread(self._load_model, hf_path)
+                    coro = asyncio.to_thread(self._load_model_and_shard, hf_path)
                     timeout = settings.model_load_timeout
+                    is_distributed = False
                     if timeout is not None:
                         load_task = asyncio.create_task(coro)
                         try:
-                            model, tokenizer, is_vlm, caps = await asyncio.wait_for(
+                            (
+                                model,
+                                tokenizer,
+                                is_vlm,
+                                caps,
+                                is_distributed,
+                            ) = await asyncio.wait_for(
                                 asyncio.shield(load_task), timeout=timeout
                             )
                         except (asyncio.TimeoutError, asyncio.CancelledError) as exc:
@@ -486,7 +500,7 @@ class ModelManager:
                                 )
                             raise
                     else:
-                        model, tokenizer, is_vlm, caps = await coro
+                        model, tokenizer, is_vlm, caps, is_distributed = await coro
 
                     # Check if the model fits safely in memory.  On Apple Silicon
                     # the GPU shares system RAM — if total Metal memory exceeds the
@@ -542,6 +556,7 @@ class ModelManager:
                         model=model,
                         tokenizer=tokenizer,
                         is_vlm=is_vlm,
+                        is_distributed=is_distributed,
                         template_caps=caps,
                         expires_at=expires,
                     )
@@ -782,6 +797,44 @@ class ModelManager:
 
         # Text or unknown — try mlx-lm first, fall back to mlx-vlm
         return self._try_lm_then_vlm(load_path, hf_path)
+
+    def _load_model_and_shard(
+        self, hf_path: str
+    ) -> tuple[Any, Any, bool, TemplateCaps, bool]:
+        """Load a model and optionally shard it for distributed inference.
+
+        Returns (model, tokenizer, is_vlm, caps, is_distributed).
+        """
+        model, tokenizer, is_vlm, caps = self._load_model(hf_path)
+        is_distributed = False
+
+        if self._distributed_group is not None:
+            if is_vlm:
+                del model, tokenizer
+                gc.collect()
+                mx.clear_cache()
+                raise ValueError(
+                    f"VLM models are not supported in distributed mode. "
+                    f"Model {hf_path} is a vision-language model which cannot "
+                    f"be sharded correctly across workers."
+                )
+            if hasattr(model, "shard"):
+                model.shard(self._distributed_group)
+                is_distributed = True
+                logger.info("Model %s sharded for distributed inference", hf_path)
+            else:
+                # Release Metal memory before raising — the model weights are
+                # already allocated on the GPU at this point.
+                del model, tokenizer
+                gc.collect()
+                mx.clear_cache()
+                raise ValueError(
+                    f"Model {hf_path} does not support distributed inference "
+                    f"(no shard() method). Supported architectures include: "
+                    f"llama, qwen2, qwen3, deepseek_v2, deepseek_v3, etc."
+                )
+
+        return model, tokenizer, is_vlm, caps, is_distributed
 
     async def _expire_stale(self):
         """Unload models whose keep-alive has expired (active_refs == 0)."""

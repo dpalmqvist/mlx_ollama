@@ -1383,6 +1383,7 @@ class TestKvCachePreflightCheck:
     def mock_lm(self):
         lm = MagicMock()
         lm.is_vlm = False
+        lm.is_distributed = False
         lm.model = MagicMock()
         lm.model.args = MagicMock()
         lm.model.args.num_hidden_layers = 32
