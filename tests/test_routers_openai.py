@@ -284,7 +284,6 @@ class TestXCacheIDHeader:
         assert mock_gen.call_args.kwargs.get("cache_id") == ""
 
 
-
 class TestResponseFormat:
     @pytest.mark.asyncio
     async def test_json_mode_injects_system_message(self, app_client):
@@ -374,7 +373,13 @@ class TestResponseFormat:
                     json={
                         "model": "qwen3",
                         "messages": [{"role": "user", "content": "give me json"}],
-                        "response_format": {"type": "json_schema", "json_schema": {"name": "test", "schema": {"type": "object"}}},
+                        "response_format": {
+                            "type": "json_schema",
+                            "json_schema": {
+                                "name": "test",
+                                "schema": {"type": "object"},
+                            },
+                        },
                     },
                 )
 
