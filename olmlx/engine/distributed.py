@@ -24,6 +24,7 @@ class InferenceRequest:
     """Sideband message from coordinator to workers."""
 
     prompt_tokens: list[int]
+    prompt_text: str
     max_tokens: int
     gen_kwargs: dict[str, Any]
     action: str  # "generate" or "shutdown"
@@ -31,6 +32,7 @@ class InferenceRequest:
     def to_dict(self) -> dict:
         return {
             "prompt_tokens": self.prompt_tokens,
+            "prompt_text": self.prompt_text,
             "max_tokens": self.max_tokens,
             "gen_kwargs": self.gen_kwargs,
             "action": self.action,
@@ -43,6 +45,7 @@ class InferenceRequest:
     def from_dict(cls, d: dict) -> InferenceRequest:
         return cls(
             prompt_tokens=d["prompt_tokens"],
+            prompt_text=d.get("prompt_text", ""),
             max_tokens=d["max_tokens"],
             gen_kwargs=d["gen_kwargs"],
             action=d["action"],
@@ -188,6 +191,7 @@ class DistributedCoordinator:
     def broadcast_inference(
         self,
         prompt_tokens: list[int],
+        prompt_text: str,
         max_tokens: int,
         gen_kwargs: dict[str, Any],
     ) -> None:
@@ -201,6 +205,7 @@ class DistributedCoordinator:
         """
         msg = {
             "prompt_tokens": prompt_tokens,
+            "prompt_text": prompt_text,
             "max_tokens": max_tokens,
             "gen_kwargs": gen_kwargs,
             "action": "generate",
@@ -264,9 +269,11 @@ class DistributedCoordinator:
 class DistributedWorker:
     """Non-rank-0 sideband client that receives inference params from coordinator."""
 
-    def __init__(self, coordinator_host: str, port: int) -> None:
+    def __init__(self, coordinator_host: str, port: int, timeout: float = 30.0) -> None:
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._sock.settimeout(timeout)
         self._sock.connect((coordinator_host, port))
+        self._sock.settimeout(None)
         logger.info("Connected to coordinator at %s:%d", coordinator_host, port)
 
     def send_ready(self) -> None:

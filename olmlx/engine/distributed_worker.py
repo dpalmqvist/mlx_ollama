@@ -92,7 +92,7 @@ def worker_main() -> None:
             for _ in mlx_lm.stream_generate(
                 model,
                 tokenizer,
-                prompt=req.prompt_tokens,
+                prompt=req.prompt_text,
                 max_tokens=req.max_tokens,
                 **req.gen_kwargs,
             ):

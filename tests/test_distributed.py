@@ -64,6 +64,7 @@ class TestInferenceRequest:
 
         req = InferenceRequest(
             prompt_tokens=[1, 2, 3, 4],
+            prompt_text="hello world",
             max_tokens=100,
             gen_kwargs={"temp": 0.7, "top_p": 0.9},
             action="generate",
@@ -71,6 +72,7 @@ class TestInferenceRequest:
         data = req.to_json()
         restored = InferenceRequest.from_json(data)
         assert restored.prompt_tokens == [1, 2, 3, 4]
+        assert restored.prompt_text == "hello world"
         assert restored.max_tokens == 100
         assert restored.gen_kwargs == {"temp": 0.7, "top_p": 0.9}
         assert restored.action == "generate"
@@ -80,6 +82,7 @@ class TestInferenceRequest:
 
         req = InferenceRequest(
             prompt_tokens=[],
+            prompt_text="",
             max_tokens=0,
             gen_kwargs={},
             action="shutdown",
@@ -93,6 +96,7 @@ class TestInferenceRequest:
 
         req = InferenceRequest(
             prompt_tokens=[10, 20],
+            prompt_text="test",
             max_tokens=50,
             gen_kwargs={},
             action="generate",
@@ -185,6 +189,7 @@ class TestCoordinatorWorkerIntegration:
 
         coordinator.broadcast_inference(
             prompt_tokens=[1, 2, 3],
+            prompt_text="hello",
             max_tokens=100,
             gen_kwargs={"temp": 0.7},
         )
@@ -299,8 +304,8 @@ class TestCoordinatorWorkerIntegration:
         coordinator.wait_for_workers(timeout=5.0)
 
         # Send multiple inference requests
-        coordinator.broadcast_inference([1, 2], 50, {"temp": 0.5})
-        coordinator.broadcast_inference([3, 4, 5], 100, {"temp": 0.9})
+        coordinator.broadcast_inference([1, 2], "ab", 50, {"temp": 0.5})
+        coordinator.broadcast_inference([3, 4, 5], "abc", 100, {"temp": 0.9})
         coordinator.broadcast_shutdown()
 
         t.join(timeout=5.0)
@@ -487,10 +492,13 @@ class TestInferenceBroadcast:
             lm = MagicMock()
             lm.is_distributed = True
 
-            _maybe_broadcast_distributed(lm, [1, 2, 3], 100, {"temp": 0.7})
+            _maybe_broadcast_distributed(
+                lm, [1, 2, 3], "test prompt", 100, {"temp": 0.7}
+            )
 
             mock_coordinator.broadcast_inference.assert_called_once_with(
                 prompt_tokens=[1, 2, 3],
+                prompt_text="test prompt",
                 max_tokens=100,
                 gen_kwargs={"temp": 0.7},
             )
@@ -510,7 +518,7 @@ class TestInferenceBroadcast:
             lm = MagicMock()
             lm.is_distributed = False
 
-            _maybe_broadcast_distributed(lm, [1, 2, 3], 100, {})
+            _maybe_broadcast_distributed(lm, [1, 2, 3], "test", 100, {})
 
             mock_coordinator.broadcast_inference.assert_not_called()
         finally:
@@ -529,7 +537,7 @@ class TestInferenceBroadcast:
         lm.is_distributed = True
 
         # Should not raise
-        _maybe_broadcast_distributed(lm, [1, 2, 3], 100, {})
+        _maybe_broadcast_distributed(lm, [1, 2, 3], "test", 100, {})
 
 
 class TestExperimentalModuleGlobal:

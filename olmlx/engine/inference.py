@@ -48,12 +48,17 @@ def set_distributed_coordinator(coordinator):
 
 
 def _maybe_broadcast_distributed(
-    lm, prompt_tokens: list[int], max_tokens: int, gen_kwargs: dict
+    lm,
+    prompt_tokens: list[int],
+    prompt_text: str,
+    max_tokens: int,
+    gen_kwargs: dict,
 ) -> None:
     """Broadcast inference params to distributed workers if applicable."""
     if _distributed_coordinator is not None and lm.is_distributed:
         _distributed_coordinator.broadcast_inference(
             prompt_tokens=prompt_tokens,
+            prompt_text=prompt_text,
             max_tokens=max_tokens,
             gen_kwargs=gen_kwargs,
         )
@@ -714,17 +719,22 @@ async def _stream_completion(
                 "cache_creation_tokens": cache_creation_tokens,
             }
 
-        # Broadcast to distributed workers before starting generation
+        # Broadcast to distributed workers before starting generation.
+        # Workers need prompt_text (str) because mlx_lm.stream_generate
+        # expects a string prompt, not token IDs.
         if _distributed_coordinator is not None and lm.is_distributed:
             if isinstance(prompt, list):
-                _maybe_broadcast_distributed(lm, prompt, max_tokens, gen_kwargs)
+                broadcast_text = lm.text_tokenizer.decode(prompt)
+                _maybe_broadcast_distributed(
+                    lm, prompt, broadcast_text, max_tokens, gen_kwargs
+                )
             else:
                 tokens = (
                     prompt_tokens
                     if prompt_tokens is not None
                     else _tokenize_for_cache(lm.text_tokenizer, prompt)
                 )
-                _maybe_broadcast_distributed(lm, tokens, max_tokens, gen_kwargs)
+                _maybe_broadcast_distributed(lm, tokens, prompt, max_tokens, gen_kwargs)
 
         stream = async_mlx_stream(
             lm.model,
@@ -919,7 +929,7 @@ async def _full_completion_inner(
         # computation at the same time (avoids all_sum timeout).
         if _distributed_coordinator is not None and lm.is_distributed:
             tokens = _tokenize_for_cache(lm.text_tokenizer, prompt)
-            _maybe_broadcast_distributed(lm, tokens, max_tokens, gen_kwargs)
+            _maybe_broadcast_distributed(lm, tokens, prompt, max_tokens, gen_kwargs)
 
         if lm.is_vlm:
             import mlx_vlm
