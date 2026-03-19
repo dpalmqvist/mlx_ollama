@@ -1,5 +1,6 @@
 """Tests for olmlx.chat.builtin_tools."""
 
+import asyncio
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -321,6 +322,39 @@ class TestPlanTools:
             "no plan" in result.lower()
             or "not found" in result.lower()
             or "error" in result.lower()
+        )
+
+
+class TestBashSubprocessCleanup:
+    """Issue #82: subprocess must be killed on cancellation, not leaked."""
+
+    @pytest.mark.asyncio
+    async def test_bash_kills_process_group_on_cancellation(self, manager):
+        """The entire process group (start_new_session=True) must be killed."""
+        import os
+
+        # Use a unique marker so pgrep doesn't match other sleep commands
+        marker = f"olmlx_test_{os.getpid()}"
+        task = asyncio.create_task(
+            manager.call_tool(
+                "bash", {"command": f"sleep 60 # {marker}", "timeout": 30}
+            )
+        )
+        await asyncio.sleep(0.3)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        await asyncio.sleep(0.1)
+        proc = await asyncio.create_subprocess_exec(
+            "pgrep",
+            "-f",
+            marker,
+            stdout=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await proc.communicate()
+        assert proc.returncode == 1, (
+            f"Orphan process with marker {marker} still running: {stdout.decode()}"
         )
 
 
