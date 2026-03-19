@@ -18,6 +18,7 @@ class OpenAIChatMessage(BaseModel):
 
 class ResponseFormat(BaseModel):
     type: Literal["text", "json_object", "json_schema"] = "text"
+    # json_schema.schema and json_schema.strict are accepted but not enforced.
     json_schema: dict | None = None
 
     @model_validator(mode="after")
@@ -27,6 +28,8 @@ class ResponseFormat(BaseModel):
                 raise ValueError("json_schema is required when type is 'json_schema'")
             if "name" not in self.json_schema:
                 raise ValueError("json_schema.name is required")
+            if "schema" not in self.json_schema:
+                raise ValueError("json_schema.schema is required")
         return self
 
 

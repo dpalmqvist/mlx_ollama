@@ -114,17 +114,26 @@ async def openai_chat(req: OpenAIChatRequest, request: Request):
         "json_schema",
     ):
         if req.response_format.type == "json_schema":
-            logger.warning(
+            schema_name = (req.response_format.json_schema or {}).get("name", "")
+            logger.info(
                 "response_format type 'json_schema' is not enforced; "
                 "output may not conform to the provided schema",
             )
+            json_prompt = (
+                f"Respond with valid JSON only, conforming to the '{schema_name}' schema. "
+                "Do not include any text outside the JSON object."
+                if schema_name
+                else JSON_MODE_SYSTEM_MSG
+            )
+        else:
+            json_prompt = JSON_MODE_SYSTEM_MSG
         if messages and messages[0].get("role") == "system":
             existing = messages[0].get("content") or ""
-            if JSON_MODE_SYSTEM_MSG not in existing:
+            if json_prompt not in existing:
                 sep = "\n\n" if existing else ""
-                messages[0]["content"] = existing + sep + JSON_MODE_SYSTEM_MSG
+                messages[0]["content"] = existing + sep + json_prompt
         else:
-            messages.insert(0, {"role": "system", "content": JSON_MODE_SYSTEM_MSG})
+            messages.insert(0, {"role": "system", "content": json_prompt})
     options = _build_options(req)
     max_tokens = req.max_completion_tokens or req.max_tokens or 512
     chat_id = _make_id()

@@ -428,7 +428,25 @@ class TestResponseFormat:
             json={
                 "model": "qwen3",
                 "messages": [{"role": "user", "content": "hi"}],
-                "response_format": {"type": "json_schema", "json_schema": {}},
+                "response_format": {
+                    "type": "json_schema",
+                    "json_schema": {"schema": {"type": "object"}},
+                },
+            },
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_json_schema_requires_schema_field(self, app_client):
+        resp = await app_client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "qwen3",
+                "messages": [{"role": "user", "content": "hi"}],
+                "response_format": {
+                    "type": "json_schema",
+                    "json_schema": {"name": "test"},
+                },
             },
         )
         assert resp.status_code == 422
@@ -443,7 +461,7 @@ class TestResponseFormat:
             "olmlx.routers.openai.generate_chat", new_callable=AsyncMock
         ) as mock_gen:
             mock_gen.return_value = mock_result
-            with caplog.at_level(logging.WARNING, logger="olmlx.routers.openai"):
+            with caplog.at_level(logging.INFO, logger="olmlx.routers.openai"):
                 resp = await app_client.post(
                     "/v1/chat/completions",
                     json={
@@ -462,7 +480,8 @@ class TestResponseFormat:
         assert resp.status_code == 200
         assert "json_schema" in caplog.text
         messages = mock_gen.call_args[0][2]
-        assert messages[0] == {"role": "system", "content": JSON_MODE_SYSTEM_MSG}
+        assert messages[0]["role"] == "system"
+        assert "'test' schema" in messages[0]["content"]
 
     @pytest.mark.asyncio
     async def test_json_schema_merges_existing_system_message(self, app_client):
@@ -494,7 +513,7 @@ class TestResponseFormat:
         messages = mock_gen.call_args[0][2]
         assert messages[0]["role"] == "system"
         assert "You are helpful." in messages[0]["content"]
-        assert JSON_MODE_SYSTEM_MSG in messages[0]["content"]
+        assert "'test' schema" in messages[0]["content"]
         assert len([m for m in messages if m["role"] == "system"]) == 1
 
     @pytest.mark.asyncio
