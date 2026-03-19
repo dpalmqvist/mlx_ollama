@@ -115,7 +115,7 @@ async def openai_chat(req: OpenAIChatRequest, request: Request):
         "json_schema",
     ):
         if req.response_format.type == "json_schema":
-            raw_name = (req.response_format.json_schema or {}).get("name", "")
+            raw_name = req.response_format.json_schema["name"]
             schema_name = re.sub(r"[^A-Za-z0-9_\-]", "", raw_name)[:64]
             logger.info(
                 "response_format type 'json_schema' is not enforced; "
