@@ -25,7 +25,7 @@ On first run, `~/.olmlx/models.json` is created with example model mappings.
 ### Option 2: From source
 
 ```bash
-git clone <repo-url> && cd mlx-for-claude
+git clone <repo-url> && cd olmlx
 uv sync --no-editable
 uv run olmlx
 ```
@@ -232,6 +232,38 @@ response = client.chat(
 )
 print(response["message"]["content"])
 ```
+
+## Vision-Language Models
+
+olmlx supports vision-language models (VLMs) that can process images alongside text. VLMs are automatically detected and loaded using mlx-vlm.
+
+### Using a VLM
+
+```bash
+# Chat with an image (base64-encoded in message)
+curl http://localhost:11434/api/chat -d '{
+  "model": "llava:1.5-7b",
+  "messages": [{
+    "role": "user",
+    "content": "What is in this image?",
+    "images": ["iVBOR..."]
+  }]
+}'
+```
+
+Note: images should be raw base64 without a `data:image/...;base64,` prefix.
+
+### VLM Model Configuration
+
+Add VLM mappings to `~/.olmlx/models.json`:
+
+```json
+{
+  "llava:1.5-7b": "mlx-community/llava-1.5-7b-4bit"
+}
+```
+
+VLMs are automatically detected by inspecting `config.json` for vision-related keys (`vision_config`, `vision_tower`, etc.) and loaded via mlx-vlm instead of mlx-lm.
 
 ## API Endpoints
 
