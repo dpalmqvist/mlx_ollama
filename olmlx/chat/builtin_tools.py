@@ -179,10 +179,17 @@ async def _handle_grep(args: dict) -> str:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout_bytes, stderr_bytes = await asyncio.wait_for(
-            proc.communicate(),
-            timeout=30,
-        )
+        try:
+            stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                proc.communicate(),
+                timeout=30,
+            )
+        except BaseException:
+            try:
+                proc.kill()
+            except (ProcessLookupError, OSError):
+                pass
+            raise
         return (
             stdout_bytes.decode(errors="replace"),
             stderr_bytes.decode(errors="replace"),
@@ -238,7 +245,10 @@ async def _handle_bash(args: dict) -> str:
             stderr=asyncio.subprocess.PIPE,
             start_new_session=True,
         )
+    except OSError as exc:
+        return f"Error running command: {exc}"
 
+    try:
         stdout, stderr = await asyncio.wait_for(
             proc.communicate(),
             timeout=timeout,
@@ -246,12 +256,21 @@ async def _handle_bash(args: dict) -> str:
     except asyncio.TimeoutError:
         try:
             os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            await proc.wait()
         except (ProcessLookupError, OSError):
             pass
         return f"Command timed out after {timeout}s."
     except OSError as exc:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except (ProcessLookupError, OSError):
+            pass
         return f"Error running command: {exc}"
+    except BaseException:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except (ProcessLookupError, OSError):
+            pass
+        raise
 
     parts = []
     if stdout:

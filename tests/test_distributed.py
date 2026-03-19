@@ -984,6 +984,57 @@ class TestCleanupWorkersRobust:
         cli_module._worker_procs.clear()
 
 
+class TestLogFileHandleLifetime:
+    """Issue #81: Log file handles must stay open while workers are alive."""
+
+    def test_log_handles_stored_alongside_procs(self, tmp_path, monkeypatch):
+        """Log file handles should be stored and not closed immediately."""
+        import olmlx.cli as cli_module
+
+        cli_module._worker_procs.clear()
+        cli_module._worker_log_fhs.clear()
+        cli_module._atexit_registered = False
+
+        hostfile = tmp_path / "hosts.json"
+        hostfile.write_text('{"hosts": ["host0", "host1"], "model": "test/model"}')
+
+        monkeypatch.setattr(
+            "olmlx.config.experimental",
+            MagicMock(
+                distributed_hostfile=str(hostfile),
+                distributed_backend="ring",
+                distributed_sideband_port=32400,
+                distributed_port=32323,
+                distributed_secret="",
+            ),
+        )
+
+        # Mock Popen to succeed without actually launching SSH
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = None  # Still running
+        monkeypatch.setattr("subprocess.Popen", MagicMock(return_value=mock_proc))
+
+        cli_module._launch_distributed_workers()
+
+        # The module should now have _worker_log_fhs with open file handles
+        assert hasattr(cli_module, "_worker_log_fhs"), (
+            "_worker_log_fhs list must exist to track log file handles"
+        )
+        assert len(cli_module._worker_log_fhs) == len(cli_module._worker_procs)
+
+        # File handles should still be open
+        for fh in cli_module._worker_log_fhs:
+            assert not fh.closed, "Log file handle was closed prematurely"
+
+        # Capture references before cleanup (cleanup clears the lists)
+        handles = list(cli_module._worker_log_fhs)
+        cli_module._cleanup_workers()
+
+        assert handles, "No file handles were stored"
+        for fh in handles:
+            assert fh.closed, "Log file handle was not closed during cleanup"
+
+
 class TestExperimentalEnvFile:
     """Test that ExperimentalSettings reads .env file."""
 

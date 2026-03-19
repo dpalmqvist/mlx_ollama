@@ -62,19 +62,31 @@ _VALID_HOSTNAME_RE = __import__("re").compile(r"^[a-zA-Z0-9._-]+$")
 
 
 _worker_procs: list[subprocess.Popen] = []
+_worker_log_fhs: list = []
 _atexit_registered = False
 
 
 def _cleanup_workers():
-    """Terminate all distributed worker processes."""
+    """Terminate all distributed worker processes and close log file handles."""
     for proc in _worker_procs:
         try:
             proc.terminate()
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
             proc.kill()
+            try:
+                proc.wait()
+            except Exception:
+                pass
         except Exception:
             pass
+    for fh in _worker_log_fhs:
+        try:
+            fh.close()
+        except Exception:
+            pass
+    _worker_procs.clear()
+    _worker_log_fhs.clear()
 
 
 def _launch_distributed_workers():
@@ -171,7 +183,7 @@ def _launch_distributed_workers():
         except Exception:
             log_fh.close()
             raise
-        log_fh.close()
+        _worker_log_fhs.append(log_fh)
         _worker_procs.append(proc)
 
     # Check for immediate SSH failures (auth errors, bad host, etc.)
