@@ -246,9 +246,10 @@ curl http://localhost:11434/api/chat -d '{
   "messages": [{
     "role": "user",
     "content": "What is in this image?",
-    "images": ["iVBOR..."]  # raw base64, no data:image/...;base64, prefix
+    "images": ["iVBOR..."]
   }]
 }'
+# Note: images should be raw base64 without a data:image/...;base64, prefix
 ```
 
 ### VLM Model Configuration
