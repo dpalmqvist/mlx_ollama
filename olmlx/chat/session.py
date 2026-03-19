@@ -432,6 +432,15 @@ class ChatSession:
                 r = results_by_id.get(tu["id"])
                 if r:
                     self.messages.append(r["message"])
+                else:
+                    # Fallback: ensure every tool_call gets a result to
+                    # maintain the message history contract.
+                    self.messages.append({
+                        "role": "tool",
+                        "tool_call_id": tu["id"],
+                        "name": tu["name"],
+                        "content": f"Error: no result received for tool '{tu['name']}'",
+                    })
         else:
             # max_turns reached
             yield {"type": "max_turns_exceeded"}

@@ -72,7 +72,7 @@ class TestOpenAIRouter:
 
     @pytest.mark.asyncio
     async def test_completions_non_streaming(self, app_client):
-        mock_result = {"text": "Completed text", "done": True, "stats": TimingStats()}
+        mock_result = {"text": "Completed text", "done": True, "stats": TimingStats(prompt_eval_count=5, eval_count=15)}
 
         with patch(
             "olmlx.routers.openai.generate_completion", new_callable=AsyncMock
@@ -90,6 +90,11 @@ class TestOpenAIRouter:
         data = resp.json()
         assert data["object"] == "text_completion"
         assert data["choices"][0]["text"] == "Completed text"
+        # Bug #79: usage stats must be present
+        assert data["usage"] is not None
+        assert data["usage"]["prompt_tokens"] == 5
+        assert data["usage"]["completion_tokens"] == 15
+        assert data["usage"]["total_tokens"] == 20
 
     @pytest.mark.asyncio
     async def test_completions_list_prompt(self, app_client):
@@ -282,6 +287,24 @@ class TestXCacheIDHeader:
         assert resp.status_code == 200
         mock_gen.assert_called_once()
         assert mock_gen.call_args.kwargs.get("cache_id") == ""
+
+
+    @pytest.mark.asyncio
+    async def test_embeddings_passes_cache_id_header(self, app_client):
+        """Bug #86: x-cache-id header should be extracted in embeddings endpoint."""
+        with patch(
+            "olmlx.routers.openai.generate_embeddings", new_callable=AsyncMock
+        ) as mock_emb:
+            mock_emb.return_value = [[0.1, 0.2]]
+            resp = await app_client.post(
+                "/v1/embeddings",
+                json={"model": "qwen3", "input": "hello"},
+                headers={"X-Cache-ID": "emb-session-42"},
+            )
+
+        assert resp.status_code == 200
+        mock_emb.assert_called_once()
+        assert mock_emb.call_args.kwargs.get("cache_id") == "emb-session-42"
 
 
 class TestResponseFormat:

@@ -1,5 +1,7 @@
 """Tests for olmlx.chat.session."""
 
+import asyncio
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -426,6 +428,87 @@ class TestAgentLoop:
         tool_msgs = [m for m in session.messages if m["role"] == "tool"]
         assert len(tool_msgs) == 1
         assert "Error" in tool_msgs[0]["content"]
+
+    @pytest.mark.asyncio
+    async def test_missing_tool_result_gets_fallback_message(self):
+        """Bug #84: Every tool_call must get a tool result in message history.
+
+        If a tool call ID is somehow missing from results_by_id, a fallback
+        error result must be appended to maintain the message history contract.
+        """
+        mcp = MagicMock()
+        mcp.get_tools_for_chat.return_value = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "read_file",
+                    "description": "Read a file",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"path": {"type": "string"}},
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "write_file",
+                    "description": "Write a file",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"path": {"type": "string"}},
+                    },
+                },
+            },
+        ]
+        mcp.call_tool = AsyncMock(return_value="ok")
+
+        # Use tool_safety that classifies write_file as "confirm" but
+        # then we'll monkey-patch the session to skip it from results
+        session = _make_session(mcp=mcp)
+        call_count = 0
+
+        async def fake_generate(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # Model makes two tool calls
+                yield {
+                    "text": (
+                        '<tool_call>{"name": "read_file", "arguments": {"path": "/a"}}</tool_call>'
+                        '<tool_call>{"name": "write_file", "arguments": {"path": "/b"}}</tool_call>'
+                    ),
+                    "done": False,
+                }
+                yield {"text": "", "done": True, "stats": MagicMock()}
+            else:
+                yield {"text": "Done", "done": False}
+                yield {"text": "", "done": True, "stats": MagicMock()}
+
+        # Monkey-patch _exec_tool inside send_message to simulate one tool
+        # disappearing from results (e.g. gather race or bug in safety classify)
+        original_gather = asyncio.gather
+
+        async def patched_gather(*coros):
+            results = await original_gather(*coros)
+            # Drop the second tool result to simulate the bug
+            return [r for r in results if r["message"]["name"] != "write_file"]
+
+        with patch(
+            "olmlx.chat.session.generate_chat",
+            side_effect=lambda *a, **kw: fake_generate(),
+        ), patch("olmlx.chat.session.asyncio.gather", side_effect=patched_gather):
+            events = []
+            async for event in session.send_message("Do both"):
+                events.append(event)
+
+        # The key assertion: both tool calls should have messages in history
+        tool_msgs = [m for m in session.messages if m["role"] == "tool"]
+        assert len(tool_msgs) == 2
+        # The missing one should have a fallback error message
+        write_msgs = [m for m in tool_msgs if m["name"] == "write_file"]
+        assert len(write_msgs) == 1
+        assert "no result" in write_msgs[0]["content"].lower() or "error" in write_msgs[0]["content"].lower()
 
     @pytest.mark.asyncio
     async def test_no_mcp_no_tools(self):

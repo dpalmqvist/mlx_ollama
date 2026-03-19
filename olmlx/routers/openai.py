@@ -243,6 +243,12 @@ async def openai_completions(req: OpenAICompletionRequest, request: Request):
             stream=False,
             max_tokens=max_tokens,
         )
+        stats = result.get("stats")
+        usage = OpenAIUsage(
+            prompt_tokens=stats.prompt_eval_count if stats else 0,
+            completion_tokens=stats.eval_count if stats else 0,
+            total_tokens=(stats.prompt_eval_count + stats.eval_count) if stats else 0,
+        )
         return OpenAICompletionResponse(
             id=comp_id,
             created=created,
@@ -254,6 +260,7 @@ async def openai_completions(req: OpenAICompletionRequest, request: Request):
                     finish_reason="stop",
                 )
             ],
+            usage=usage,
         )
 
 
@@ -268,8 +275,9 @@ async def openai_list_models(request: Request):
 @router.post("/v1/embeddings")
 async def openai_embeddings(req: OpenAIEmbeddingRequest, request: Request):
     manager = request.app.state.model_manager
+    cache_id = request.headers.get("x-cache-id", "")[:256]
     texts = req.input if isinstance(req.input, list) else [req.input]
-    embeddings = await generate_embeddings(manager, req.model, texts)
+    embeddings = await generate_embeddings(manager, req.model, texts, cache_id=cache_id)
     data = [
         OpenAIEmbeddingData(index=i, embedding=emb) for i, emb in enumerate(embeddings)
     ]

@@ -1239,6 +1239,7 @@ async def generate_embeddings(
     model_name: str,
     texts: list[str],
     keep_alive: str | None = None,
+    cache_id: str = "",
 ) -> list[list[float]]:
     """Generate embeddings using the model's hidden states or embed_tokens layer."""
     lm = await manager.ensure_loaded(model_name, keep_alive)
