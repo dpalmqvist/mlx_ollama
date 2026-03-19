@@ -1,4 +1,6 @@
-from pydantic import BaseModel, Field
+from typing import Literal
+
+from pydantic import BaseModel, Field, model_validator
 
 from olmlx.schemas.common import ModelName
 
@@ -12,6 +14,23 @@ class OpenAIChatMessage(BaseModel):
     name: str | None = None
     tool_calls: list[dict] | None = None
     tool_call_id: str | None = None
+
+
+class ResponseFormat(BaseModel):
+    type: Literal["text", "json_object", "json_schema"] = "text"
+    # json_schema.schema and json_schema.strict are accepted but not enforced.
+    json_schema: dict | None = None
+
+    @model_validator(mode="after")
+    def _json_schema_required(self) -> "ResponseFormat":
+        if self.type == "json_schema":
+            if self.json_schema is None:
+                raise ValueError("json_schema is required when type is 'json_schema'")
+            if not self.json_schema.get("name"):
+                raise ValueError("json_schema.name is required and must be non-empty")
+            if "schema" not in self.json_schema:
+                raise ValueError("json_schema.schema is required")
+        return self
 
 
 class OpenAIChatRequest(BaseModel):
@@ -29,6 +48,7 @@ class OpenAIChatRequest(BaseModel):
     tools: list[dict] | None = None
     tool_choice: str | dict | None = None
     seed: int | None = None
+    response_format: ResponseFormat | None = None
 
 
 class OpenAIUsage(BaseModel):

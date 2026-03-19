@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 import time
 import uuid
 
@@ -30,6 +31,10 @@ from olmlx.schemas.openai import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+JSON_MODE_SYSTEM_MSG = (
+    "Respond with valid JSON only. Do not include any text outside the JSON object."
+)
 
 
 def _make_id() -> str:
@@ -105,6 +110,32 @@ def _build_options(req) -> dict:
 async def openai_chat(req: OpenAIChatRequest, request: Request):
     manager = request.app.state.model_manager
     messages = [m.model_dump(exclude_none=True) for m in req.messages]
+    if req.response_format and req.response_format.type in (
+        "json_object",
+        "json_schema",
+    ):
+        if req.response_format.type == "json_schema":
+            raw_name = req.response_format.json_schema["name"]
+            schema_name = re.sub(r"[^A-Za-z0-9_\-]", "", raw_name)[:64]
+            logger.info(
+                "response_format type 'json_schema' is not enforced; "
+                "output may not conform to the provided schema",
+            )
+            json_prompt = (
+                f"Respond with valid JSON only, conforming to the '{schema_name}' schema. "
+                "Do not include any text outside the JSON object."
+                if schema_name
+                else JSON_MODE_SYSTEM_MSG
+            )
+        else:
+            json_prompt = JSON_MODE_SYSTEM_MSG
+        if messages and messages[0].get("role") == "system":
+            existing = messages[0].get("content") or ""
+            if json_prompt not in existing:
+                sep = "\n\n" if existing else ""
+                messages[0]["content"] = existing + sep + json_prompt
+        else:
+            messages.insert(0, {"role": "system", "content": json_prompt})
     options = _build_options(req)
     max_tokens = req.max_completion_tokens or req.max_tokens or 512
     chat_id = _make_id()
