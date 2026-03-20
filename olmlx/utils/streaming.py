@@ -323,6 +323,10 @@ def async_mlx_stream(
     use_prefill_callback = not is_vlm and _has_prefill_callback
 
     def gen_factory(cancel_event: threading.Event):
+        from olmlx.engine.inference import _apply_seed
+
+        _apply_seed(kwargs)
+
         if is_vlm:
             import mlx_vlm
 

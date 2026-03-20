@@ -31,13 +31,44 @@ class TestBuildGenerateKwargs:
         assert _build_generate_kwargs(None) == {}
         assert _build_generate_kwargs({}) == {}
 
-    def test_temperature(self):
+    def test_temperature_returns_sampler(self):
+        """Text model: temperature should produce a sampler callable, not a temp key."""
         result = _build_generate_kwargs({"temperature": 0.7})
-        assert result == {"temp": 0.7}
+        assert "temp" not in result
+        assert "temperature" not in result
+        assert callable(result["sampler"])
 
-    def test_temperature_vlm(self):
+    def test_sampling_params_folded_into_sampler(self):
+        """Text model: top_p, top_k, min_p all folded into sampler callable."""
+        result = _build_generate_kwargs(
+            {"temperature": 0.5, "top_p": 0.9, "top_k": 40, "min_p": 0.05}
+        )
+        assert callable(result["sampler"])
+        for key in ("temp", "top_p", "top_k", "min_p", "temperature"):
+            assert key not in result
+
+    def test_repetition_penalty_returns_logits_processors(self):
+        """Text model: repetition_penalty produces logits_processors list."""
+        result = _build_generate_kwargs(
+            {"repeat_penalty": 1.1, "repeat_last_n": 64}
+        )
+        assert "repetition_penalty" not in result
+        assert "repetition_context_size" not in result
+        assert isinstance(result["logits_processors"], list)
+
+    def test_temperature_vlm_unchanged(self):
+        """VLM: sampling params passed directly (not via sampler)."""
         result = _build_generate_kwargs({"temperature": 0.7}, is_vlm=True)
         assert result == {"temperature": 0.7}
+
+    def test_vlm_all_params_direct(self):
+        """VLM: all sampling params passed as direct kwargs."""
+        result = _build_generate_kwargs(
+            {"temperature": 0.5, "top_p": 0.9}, is_vlm=True
+        )
+        assert result["temperature"] == 0.5
+        assert result["top_p"] == 0.9
+        assert "sampler" not in result
 
     def test_all_mappings(self):
         opts = {
@@ -51,30 +82,35 @@ class TestBuildGenerateKwargs:
             "min_p": 0.05,
         }
         result = _build_generate_kwargs(opts)
-        assert result["temp"] == 0.5
-        assert result["top_p"] == 0.9
-        assert result["top_k"] == 40
-        assert result["seed"] == 42
+        # Sampling params folded into sampler
+        assert callable(result["sampler"])
+        for key in ("temp", "top_p", "top_k", "min_p"):
+            assert key not in result
+        # Penalty params folded into logits_processors
+        assert isinstance(result["logits_processors"], list)
+        for key in ("repetition_penalty", "repetition_context_size"):
+            assert key not in result
+        # max_tokens still direct
         assert result["max_tokens"] == 100
-        assert result["repetition_penalty"] == 1.1
-        assert result["repetition_context_size"] == 64
-        assert result["min_p"] == 0.05
+        # seed still present for caller to handle
+        assert result["seed"] == 42
 
-    def test_stop_text_model(self):
+    def test_stop_dropped_for_text_model(self):
+        """stop is no longer accepted by mlx-lm generate_step."""
         result = _build_generate_kwargs({"stop": [".", "\n"]})
-        assert result["stop"] == [".", "\n"]
+        assert "stop" not in result
 
     def test_stop_vlm_ignored(self):
         result = _build_generate_kwargs({"stop": [".", "\n"]}, is_vlm=True)
         assert "stop" not in result
 
-    def test_frequency_penalty(self):
-        result = _build_generate_kwargs({"frequency_penalty": 0.5})
-        assert result["frequency_penalty"] == 0.5
-
-    def test_presence_penalty(self):
-        result = _build_generate_kwargs({"presence_penalty": 0.3})
-        assert result["presence_penalty"] == 0.3
+    def test_frequency_presence_penalty_dropped(self):
+        """frequency_penalty/presence_penalty not supported by make_logits_processors."""
+        result = _build_generate_kwargs(
+            {"frequency_penalty": 0.5, "presence_penalty": 0.3}
+        )
+        assert "frequency_penalty" not in result
+        assert "presence_penalty" not in result
 
     def test_zero_penalty_not_passed(self):
         result = _build_generate_kwargs(
@@ -86,6 +122,12 @@ class TestBuildGenerateKwargs:
     def test_unknown_options_ignored(self):
         result = _build_generate_kwargs({"unknown_key": 99})
         assert result == {}
+
+    def test_no_sampler_without_sampling_params(self):
+        """No sampler created when only non-sampling params present."""
+        result = _build_generate_kwargs({"num_predict": 100})
+        assert "sampler" not in result
+        assert result["max_tokens"] == 100
 
 
 class TestExtractImages:

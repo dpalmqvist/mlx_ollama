@@ -23,10 +23,13 @@ from olmlx.utils import memory as memory_utils
 
 try:
     from mlx_lm.models.cache import make_prompt_cache, trim_prompt_cache
+    from mlx_lm.sample_utils import make_logits_processors, make_sampler
     from mlx_lm.utils import common_prefix_len as _find_common_prefix
 except ImportError:  # pragma: no cover
     make_prompt_cache = None  # type: ignore[assignment]
     trim_prompt_cache = None  # type: ignore[assignment]
+    make_sampler = None  # type: ignore[assignment]
+    make_logits_processors = None  # type: ignore[assignment]
     _find_common_prefix = None  # type: ignore[assignment]
     logging.getLogger(__name__).warning(
         "mlx-lm prompt cache imports unavailable — prompt caching disabled"
@@ -340,33 +343,75 @@ def _inference_ref(lm: LoadedModel):
 
 
 def _build_generate_kwargs(options: dict | None, is_vlm: bool = False) -> dict:
-    """Convert Ollama options dict to mlx_lm/mlx_vlm generate kwargs."""
+    """Convert Ollama options dict to mlx_lm/mlx_vlm generate kwargs.
+
+    For text models (mlx-lm ≥ 0.30.7), sampling params are folded into a
+    ``sampler`` callable via ``make_sampler``, and penalty params into a
+    ``logits_processors`` list via ``make_logits_processors``.
+
+    For VLMs (mlx-vlm), params are passed directly as before.
+    """
     if not options:
         return {}
     kwargs = {}
-    # mlx-lm uses "temp", mlx-vlm uses "temperature"
-    temp_key = "temperature" if is_vlm else "temp"
-    mappings = {
-        "temperature": temp_key,
-        "top_p": "top_p",
-        "top_k": "top_k",
-        "seed": "seed",
-        "num_predict": "max_tokens",
-        "repeat_penalty": "repetition_penalty",
-        "repeat_last_n": "repetition_context_size",
-        "min_p": "min_p",
-    }
-    for ollama_key, mlx_key in mappings.items():
-        if ollama_key in options:
-            kwargs[mlx_key] = options[ollama_key]
-    # stop is only supported by mlx-lm
-    if not is_vlm and "stop" in options:
-        kwargs["stop"] = options["stop"]
-    # frequency_penalty / presence_penalty — pass through if present
-    for penalty_key in ("frequency_penalty", "presence_penalty"):
-        if penalty_key in options and options[penalty_key]:
-            kwargs[penalty_key] = options[penalty_key]
+
+    if is_vlm:
+        # mlx-vlm still accepts direct keyword arguments
+        vlm_mappings = {
+            "temperature": "temperature",
+            "top_p": "top_p",
+            "top_k": "top_k",
+            "seed": "seed",
+            "num_predict": "max_tokens",
+            "repeat_penalty": "repetition_penalty",
+            "repeat_last_n": "repetition_context_size",
+            "min_p": "min_p",
+        }
+        for ollama_key, mlx_key in vlm_mappings.items():
+            if ollama_key in options:
+                kwargs[mlx_key] = options[ollama_key]
+    else:
+        # mlx-lm ≥ 0.30.7: sampling via make_sampler / make_logits_processors
+        sampler_args = {}
+        sampling_map = {
+            "temperature": "temp",
+            "top_p": "top_p",
+            "top_k": "top_k",
+            "min_p": "min_p",
+        }
+        for ollama_key, sampler_key in sampling_map.items():
+            if ollama_key in options:
+                sampler_args[sampler_key] = options[ollama_key]
+        if sampler_args:
+            kwargs["sampler"] = make_sampler(**sampler_args)
+
+        # Collect penalty params
+        penalty_args = {}
+        if "repeat_penalty" in options:
+            penalty_args["repetition_penalty"] = options["repeat_penalty"]
+        if "repeat_last_n" in options:
+            penalty_args["repetition_context_size"] = options["repeat_last_n"]
+        if penalty_args:
+            kwargs["logits_processors"] = make_logits_processors(**penalty_args)
+
+        if "num_predict" in options:
+            kwargs["max_tokens"] = options["num_predict"]
+        # seed: not accepted by mlx-lm generate_step; callers must pop it
+        # and call _apply_seed() in the inference thread before generation.
+        if "seed" in options:
+            kwargs["seed"] = options["seed"]
+
     return kwargs
+
+
+def _apply_seed(kwargs: dict) -> None:
+    """Pop ``seed`` from *kwargs* and set the MLX RNG state.
+
+    Must be called from the inference thread, not the event loop.
+    """
+    seed = kwargs.pop("seed", None)
+    if seed is not None:
+        mx.random.seed(seed)
 
 
 def _inject_tools_into_system(messages: list[dict], tools: list[dict]) -> list[dict]:
@@ -1044,6 +1089,8 @@ async def _full_completion_inner(
     def _generate_sync():
         """Run generate + synchronize in the same thread so GPU work completes
         before the thread returns to the pool."""
+        _apply_seed(gen_kwargs)
+
         # Broadcast inside the thread so rank 0 and workers enter MLX
         # computation at the same time (avoids all_sum timeout).
         if lm.is_distributed:
