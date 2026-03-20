@@ -4,7 +4,6 @@ import gc
 import importlib
 import json
 import logging
-import os
 import threading
 import time
 import collections.abc
@@ -20,6 +19,7 @@ from olmlx.engine.model_manager import (
     parse_keep_alive,
 )
 from olmlx.config import settings
+from olmlx.utils import memory as memory_utils
 
 try:
     from mlx_lm.models.cache import make_prompt_cache, trim_prompt_cache
@@ -202,16 +202,6 @@ def _schedule_deferred_inference_cleanup(stream) -> None:
     _deferred_cleanup_task = asyncio.create_task(_cleanup())
 
 
-# Fraction of memory_limit_fraction at which we shed the prompt cache to
-# free Metal memory before hitting the hard model-load rejection limit.
-_MEMORY_PRESSURE_THRESHOLD = 0.9
-
-try:
-    _TOTAL_PHYSICAL_MEMORY = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
-except (OSError, ValueError):
-    _TOTAL_PHYSICAL_MEMORY = 0
-
-
 def _estimate_kv_cache_bytes(model: Any, num_tokens: int) -> int:
     """Estimate KV cache memory for a given number of tokens.
 
@@ -238,28 +228,6 @@ def _estimate_kv_cache_bytes(model: Any, num_tokens: int) -> int:
     )
     bytes_per_element = 2  # float16/bfloat16
     return num_layers * 2 * num_kv_heads * head_dim * num_tokens * bytes_per_element
-
-
-def _get_metal_memory() -> int:
-    """Return total Metal memory in use (active + cached)."""
-    return mx.get_active_memory() + mx.get_cache_memory()
-
-
-def _get_memory_limit() -> int:
-    """Return the configured Metal memory limit in bytes."""
-    return int(_TOTAL_PHYSICAL_MEMORY * settings.memory_limit_fraction)
-
-
-def _is_memory_pressure_high() -> bool:
-    """Check if Metal memory is approaching the safety limit."""
-    if _TOTAL_PHYSICAL_MEMORY == 0:
-        return False
-    try:
-        return _get_metal_memory() > int(
-            _get_memory_limit() * _MEMORY_PRESSURE_THRESHOLD
-        )
-    except Exception:
-        return False
 
 
 def _tokenize_for_cache(tokenizer: Any, prompt_text: str) -> list[int]:
@@ -663,7 +631,7 @@ async def _stream_completion(
             use_prompt_cache
             and prompt_tokens is not None
             and make_prompt_cache is not None
-            and _is_memory_pressure_high()
+            and memory_utils.is_memory_pressure_high(settings.memory_limit_fraction)
         )
         if memory_too_high:
             logger.warning(
@@ -672,7 +640,9 @@ async def _stream_completion(
             lm.prompt_cache_store.evict_all_to_disk()
             gc.collect()
             mx.clear_cache()
-            memory_too_high = _is_memory_pressure_high()
+            memory_too_high = memory_utils.is_memory_pressure_high(
+                settings.memory_limit_fraction
+            )
 
         # Cache setup — must happen after lock to prevent concurrent cache corruption
         if (
@@ -787,13 +757,18 @@ async def _stream_completion(
             num_prefill_tokens = 0
         # Compute memory_limit before try so the streaming callback always
         # has the correct limit, even when the pre-flight estimate throws.
-        memory_limit = _get_memory_limit() if _TOTAL_PHYSICAL_MEMORY > 0 else 0
-        if _TOTAL_PHYSICAL_MEMORY > 0 and num_prefill_tokens > 0:
+        total_physical = memory_utils.get_system_memory_bytes()
+        memory_limit = (
+            int(total_physical * settings.memory_limit_fraction)
+            if total_physical > 0
+            else 0
+        )
+        if total_physical > 0 and num_prefill_tokens > 0:
             try:
                 kv_bytes = _estimate_kv_cache_bytes(
                     lm.model, num_prefill_tokens + max_tokens
                 )
-                current_metal = _get_metal_memory()
+                current_metal = memory_utils.get_metal_memory()
                 if current_metal + kv_bytes > memory_limit:
                     # Drop cached KV tensors so eviction + gc can reclaim them
                     had_cache = gen_kwargs.pop("prompt_cache", None) is not None
@@ -816,7 +791,7 @@ async def _stream_completion(
                             prompt = full_prompt_tokens
                     # Sync Metal to ensure freed buffers are reclaimed before re-reading
                     _safe_sync()
-                    current_metal = _get_metal_memory()
+                    current_metal = memory_utils.get_metal_memory()
                     if current_metal + kv_bytes > memory_limit:
                         available_gb = max(
                             0.0, (memory_limit - current_metal) / 1024**3
@@ -936,7 +911,9 @@ async def _stream_completion(
                     )
                     if evicted is not None:
                         del evicted
-                        if _is_memory_pressure_high():
+                        if memory_utils.is_memory_pressure_high(
+                            settings.memory_limit_fraction
+                        ):
                             gc.collect()
                             mx.clear_cache()
                     logger.info(
@@ -964,7 +941,9 @@ async def _stream_completion(
                 )
                 if evicted is not None:
                     del evicted
-                    if _is_memory_pressure_high():
+                    if memory_utils.is_memory_pressure_high(
+                        settings.memory_limit_fraction
+                    ):
                         gc.collect()
                         mx.clear_cache()
                 logger.debug(

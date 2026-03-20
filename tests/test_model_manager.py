@@ -496,7 +496,7 @@ class TestModelLoadTimeout:
         with (
             patch.object(manager, "_load_model", side_effect=slow_load),
             patch(
-                "olmlx.engine.model_manager._get_metal_memory_bytes",
+                "olmlx.utils.memory.get_metal_memory",
                 return_value=1 * self.GB,
             ),
             patch("olmlx.engine.model_manager.gc.collect"),
@@ -526,11 +526,11 @@ class TestModelLoadTimeout:
                 return_value=(mock_model, mock_tokenizer, False, TemplateCaps()),
             ),
             patch(
-                "olmlx.engine.model_manager._get_metal_memory_bytes",
+                "olmlx.utils.memory.get_metal_memory",
                 side_effect=[1 * self.GB, int(total_ram * 0.50)],
             ),
             patch(
-                "olmlx.engine.model_manager._get_system_memory_bytes",
+                "olmlx.utils.memory.get_system_memory_bytes",
                 return_value=total_ram,
             ),
             patch("olmlx.engine.model_manager.gc.collect"),
@@ -561,11 +561,11 @@ class TestModelLoadTimeout:
                 return_value=(mock_model, mock_tokenizer, False, TemplateCaps()),
             ),
             patch(
-                "olmlx.engine.model_manager._get_metal_memory_bytes",
+                "olmlx.utils.memory.get_metal_memory",
                 side_effect=[1 * self.GB, int(total_ram * 0.50)],
             ),
             patch(
-                "olmlx.engine.model_manager._get_system_memory_bytes",
+                "olmlx.utils.memory.get_system_memory_bytes",
                 return_value=total_ram,
             ),
             patch("olmlx.engine.model_manager.gc.collect"),
@@ -590,7 +590,7 @@ class TestModelLoadTimeout:
         with (
             patch.object(manager, "_load_model", side_effect=slow_load),
             patch(
-                "olmlx.engine.model_manager._get_metal_memory_bytes",
+                "olmlx.utils.memory.get_metal_memory",
                 return_value=1 * self.GB,
             ),
             patch("olmlx.engine.model_manager.gc.collect") as mock_gc,
@@ -622,7 +622,7 @@ class TestModelLoadTimeout:
         with (
             patch.object(manager, "_load_model", side_effect=slow_load),
             patch(
-                "olmlx.engine.model_manager._get_metal_memory_bytes",
+                "olmlx.utils.memory.get_metal_memory",
                 return_value=1 * self.GB,
             ),
             patch("olmlx.engine.model_manager.gc.collect") as mock_gc,
@@ -668,11 +668,11 @@ class TestModelLoadTimeout:
         with (
             patch.object(manager, "_load_model", side_effect=slow_then_fast),
             patch(
-                "olmlx.engine.model_manager._get_metal_memory_bytes",
+                "olmlx.utils.memory.get_metal_memory",
                 side_effect=[1 * self.GB, 1 * self.GB, int(total_ram * 0.50)],
             ),
             patch(
-                "olmlx.engine.model_manager._get_system_memory_bytes",
+                "olmlx.utils.memory.get_system_memory_bytes",
                 return_value=total_ram,
             ),
             patch("olmlx.engine.model_manager.gc.collect"),
@@ -729,11 +729,11 @@ class TestModelLoadTimeout:
         with (
             patch.object(manager, "_load_model", side_effect=slow_then_fast),
             patch(
-                "olmlx.engine.model_manager._get_metal_memory_bytes",
+                "olmlx.utils.memory.get_metal_memory",
                 side_effect=[mem_before, mem_before, mem_after, mem_before, mem_after],
             ),
             patch(
-                "olmlx.engine.model_manager._get_system_memory_bytes",
+                "olmlx.utils.memory.get_system_memory_bytes",
                 return_value=total_ram,
             ),
             patch("olmlx.engine.model_manager.gc.collect"),
@@ -792,7 +792,7 @@ class TestModelLoadTimeout:
         with (
             patch.object(manager, "_load_model", side_effect=slow_load),
             patch(
-                "olmlx.engine.model_manager._get_metal_memory_bytes",
+                "olmlx.utils.memory.get_metal_memory",
                 return_value=1 * self.GB,
             ),
             patch(
@@ -831,7 +831,7 @@ class TestModelLoadTimeout:
         with (
             patch.object(manager, "_load_model", side_effect=very_slow_load),
             patch(
-                "olmlx.engine.model_manager._get_metal_memory_bytes",
+                "olmlx.utils.memory.get_metal_memory",
                 return_value=1 * self.GB,
             ),
             patch("olmlx.engine.model_manager.gc.collect"),
@@ -865,7 +865,7 @@ class TestModelLoadTimeout:
         with (
             patch.object(manager, "_load_model", side_effect=slow_load),
             patch(
-                "olmlx.engine.model_manager._get_metal_memory_bytes",
+                "olmlx.utils.memory.get_metal_memory",
                 return_value=1 * self.GB,
             ),
             patch("olmlx.engine.model_manager.gc.collect"),
@@ -904,11 +904,11 @@ class TestModelLoadTimeout:
                 return_value=(mock_model, mock_tokenizer, False, TemplateCaps()),
             ),
             patch(
-                "olmlx.engine.model_manager._get_metal_memory_bytes",
+                "olmlx.utils.memory.get_metal_memory",
                 side_effect=[1 * self.GB, mem_after],
             ),
             patch(
-                "olmlx.engine.model_manager._get_system_memory_bytes",
+                "olmlx.utils.memory.get_system_memory_bytes",
                 return_value=total_ram,
             ),
             patch("olmlx.engine.model_manager.gc.collect") as mock_gc,
@@ -1134,11 +1134,11 @@ class TestMemoryCheck:
                 return_value=(mock_model, mock_tokenizer, False, TemplateCaps()),
             ),
             patch(
-                "olmlx.engine.model_manager._get_metal_memory_bytes",
+                "olmlx.utils.memory.get_metal_memory",
                 side_effect=[mem_before, mem_after],
             ),
             patch(
-                "olmlx.engine.model_manager._get_system_memory_bytes",
+                "olmlx.utils.memory.get_system_memory_bytes",
                 return_value=total_ram,
             ),
             patch("olmlx.engine.model_manager.gc.collect"),
@@ -1172,11 +1172,11 @@ class TestMemoryCheck:
                 return_value=(mock_model, mock_tokenizer, False, TemplateCaps()),
             ),
             patch(
-                "olmlx.engine.model_manager._get_metal_memory_bytes",
+                "olmlx.utils.memory.get_metal_memory",
                 side_effect=[mem_before, mem_after],
             ),
             patch(
-                "olmlx.engine.model_manager._get_system_memory_bytes",
+                "olmlx.utils.memory.get_system_memory_bytes",
                 return_value=total_ram,
             ),
             patch("olmlx.engine.model_manager.gc.collect"),
@@ -1213,11 +1213,11 @@ class TestMemoryCheck:
                 return_value=(mock_model, mock_tokenizer, False, TemplateCaps()),
             ),
             patch(
-                "olmlx.engine.model_manager._get_metal_memory_bytes",
+                "olmlx.utils.memory.get_metal_memory",
                 side_effect=[mem_before, mem_after],
             ),
             patch(
-                "olmlx.engine.model_manager._get_system_memory_bytes",
+                "olmlx.utils.memory.get_system_memory_bytes",
                 return_value=total_ram,
             ),
             patch("olmlx.engine.model_manager.gc.collect"),
@@ -1247,11 +1247,11 @@ class TestMemoryCheck:
                 return_value=(mock_model, mock_tokenizer, False, TemplateCaps()),
             ),
             patch(
-                "olmlx.engine.model_manager._get_metal_memory_bytes",
+                "olmlx.utils.memory.get_metal_memory",
                 side_effect=[mem_before, mem_after],
             ),
             patch(
-                "olmlx.engine.model_manager._get_system_memory_bytes",
+                "olmlx.utils.memory.get_system_memory_bytes",
                 return_value=total_ram,
             ),
             patch("olmlx.engine.model_manager.gc.collect"),
@@ -1284,11 +1284,11 @@ class TestMemoryCheck:
                 return_value=(mock_model, mock_tokenizer, False, TemplateCaps()),
             ),
             patch(
-                "olmlx.engine.model_manager._get_metal_memory_bytes",
+                "olmlx.utils.memory.get_metal_memory",
                 side_effect=[mem_before, mem_after],
             ),
             patch(
-                "olmlx.engine.model_manager._get_system_memory_bytes",
+                "olmlx.utils.memory.get_system_memory_bytes",
                 return_value=total_ram,
             ),
             patch("olmlx.engine.model_manager.gc.collect") as mock_gc,
@@ -1350,11 +1350,11 @@ class TestMemoryCheck:
                 return_value=(mock_model, mock_tokenizer, False, TemplateCaps()),
             ),
             patch(
-                "olmlx.engine.model_manager._get_metal_memory_bytes",
+                "olmlx.utils.memory.get_metal_memory",
                 side_effect=track_get_metal,
             ),
             patch(
-                "olmlx.engine.model_manager._get_system_memory_bytes",
+                "olmlx.utils.memory.get_system_memory_bytes",
                 return_value=total_ram,
             ),
             patch("olmlx.engine.model_manager.gc.collect", side_effect=track_gc),
@@ -1391,11 +1391,11 @@ class TestMemoryCheck:
                 return_value=(mock_model, mock_tokenizer, False, TemplateCaps()),
             ),
             patch(
-                "olmlx.engine.model_manager._get_metal_memory_bytes",
+                "olmlx.utils.memory.get_metal_memory",
                 side_effect=[mem_before, mem_after],
             ),
             patch(
-                "olmlx.engine.model_manager._get_system_memory_bytes",
+                "olmlx.utils.memory.get_system_memory_bytes",
                 return_value=total_ram,
             ),
             patch("olmlx.engine.model_manager.gc.collect"),
@@ -1416,7 +1416,7 @@ class TestMemoryCheck:
     async def test_cleanup_on_unexpected_exception_after_load(
         self, registry, mock_store
     ):
-        """If _get_metal_memory_bytes raises after load, GPU cleanup must still run."""
+        """If get_metal_memory raises after load, GPU cleanup must still run."""
         manager = ModelManager(registry, mock_store)
 
         mock_model = MagicMock()
@@ -1430,7 +1430,7 @@ class TestMemoryCheck:
                 return_value=(mock_model, mock_tokenizer, False, TemplateCaps()),
             ),
             patch(
-                "olmlx.engine.model_manager._get_metal_memory_bytes",
+                "olmlx.utils.memory.get_metal_memory",
                 side_effect=[1 * self.GB, OSError("Metal query failed")],
             ),
             patch("olmlx.engine.model_manager.gc.collect") as mock_gc,
@@ -1447,7 +1447,7 @@ class TestMemoryCheck:
 
     @pytest.mark.asyncio
     async def test_cleanup_on_system_memory_query_failure(self, registry, mock_store):
-        """If _get_system_memory_bytes raises, GPU cleanup must still run."""
+        """If get_system_memory_bytes raises, GPU cleanup must still run."""
         manager = ModelManager(registry, mock_store)
 
         mock_model = MagicMock()
@@ -1461,11 +1461,11 @@ class TestMemoryCheck:
                 return_value=(mock_model, mock_tokenizer, False, TemplateCaps()),
             ),
             patch(
-                "olmlx.engine.model_manager._get_metal_memory_bytes",
+                "olmlx.utils.memory.get_metal_memory",
                 side_effect=[1 * self.GB, 2 * self.GB],
             ),
             patch(
-                "olmlx.engine.model_manager._get_system_memory_bytes",
+                "olmlx.utils.memory.get_system_memory_bytes",
                 side_effect=OSError("sysconf failed"),
             ),
             patch("olmlx.engine.model_manager.gc.collect") as mock_gc,
@@ -1490,7 +1490,7 @@ class TestMemoryCheck:
                 side_effect=RuntimeError("Metal OOM during mlx_lm.load"),
             ),
             patch(
-                "olmlx.engine.model_manager._get_metal_memory_bytes",
+                "olmlx.utils.memory.get_metal_memory",
                 return_value=1 * self.GB,
             ),
             patch("olmlx.engine.model_manager.gc.collect") as mock_gc,

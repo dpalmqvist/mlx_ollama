@@ -5,7 +5,6 @@ import gc
 import importlib
 import json
 import logging
-import os
 import re
 import shutil
 import time
@@ -18,6 +17,7 @@ import mlx.core as mx
 
 from olmlx.config import settings
 from olmlx.engine.registry import ModelRegistry
+from olmlx.utils import memory as memory_utils
 from olmlx.engine.template_caps import TemplateCaps, detect_caps
 
 if TYPE_CHECKING:
@@ -306,16 +306,6 @@ def parse_keep_alive(value: str | int) -> float | None:
     return float(num * multipliers[unit])
 
 
-def _get_system_memory_bytes() -> int:
-    """Return total system memory in bytes."""
-    return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
-
-
-def _get_metal_memory_bytes() -> int:
-    """Return current MLX memory in bytes (active + cached Metal allocations)."""
-    return mx.get_active_memory() + mx.get_cache_memory()
-
-
 class ModelManager:
     """Manages loading/unloading of MLX models with LRU eviction."""
 
@@ -460,7 +450,7 @@ class ModelManager:
                     self.registry.add_mapping(name, hf_path)
 
                 logger.info("Loading model %s from %s", normalized, hf_path)
-                mem_before = _get_metal_memory_bytes()
+                mem_before = memory_utils.get_metal_memory()
 
                 # Initialize before try so the except handler can always
                 # clean up, whether _load_model or the post-load check fails.
@@ -512,9 +502,11 @@ class ModelManager:
                     # If loading itself triggers an OOM the process will still crash.
                     # In practice, loading succeeds; it is the KV cache allocation
                     # during generation that causes the abort.
-                    mem_after = _get_metal_memory_bytes()
-                    total = _get_system_memory_bytes()
-                    limit = int(total * settings.memory_limit_fraction)
+                    mem_after = memory_utils.get_metal_memory()
+                    total = memory_utils.get_system_memory_bytes()
+                    limit = memory_utils.get_memory_limit(
+                        settings.memory_limit_fraction
+                    )
                     if mem_after > limit:
                         model_mb = max(0, (mem_after - mem_before)) // (1024 * 1024)
                         total_mb = total // (1024 * 1024)
