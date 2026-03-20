@@ -1,5 +1,7 @@
 # Distributed Inference with olmlx
 
+> ⚠️ **Experimental Feature Warning**: Distributed inference is an experimental feature and may have stability issues. Use at your own risk.
+
 olmlx supports distributed inference across multiple Apple Silicon devices to scale inference capacity. This feature allows you to distribute inference workload across multiple devices or nodes.
 
 ## Prerequisites
@@ -64,11 +66,19 @@ ssh-keyscan worker2 >> ~/.ssh/known_hosts
    olmlx serve
    ```
 
+## Technical Details
+
+- Distributed inference uses MLX's distributed computing capabilities
+- The coordinator node handles inference coordination and distributes work to worker nodes
+- Workers must have the same model installed and available in the same location
+- The distributed inference feature uses TCP communication between nodes
+
 ## Security Considerations
 
 - The distributed mode uses plaintext TCP communication between nodes
 - Use a shared secret for authentication between nodes
 - For production use, consider using SSH tunnels or VPNs to secure communication
+- The distributed mode does not support encryption of communication channels
 
 ## Limitations
 
@@ -76,6 +86,7 @@ ssh-keyscan worker2 >> ~/.ssh/known_hosts
 - The coordinator node must be able to SSH to all worker nodes
 - Workers must have sufficient GPU memory to handle their share of the workload
 - Distributed inference is experimental and may have stability issues
+- Distributed inference is only supported on Apple Silicon devices
 
 ## Troubleshooting
 
