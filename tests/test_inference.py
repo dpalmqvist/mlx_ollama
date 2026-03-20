@@ -49,9 +49,7 @@ class TestBuildGenerateKwargs:
 
     def test_repetition_penalty_returns_logits_processors(self):
         """Text model: repetition_penalty produces logits_processors list."""
-        result = _build_generate_kwargs(
-            {"repeat_penalty": 1.1, "repeat_last_n": 64}
-        )
+        result = _build_generate_kwargs({"repeat_penalty": 1.1, "repeat_last_n": 64})
         assert "repetition_penalty" not in result
         assert "repetition_context_size" not in result
         assert isinstance(result["logits_processors"], list)
@@ -63,9 +61,7 @@ class TestBuildGenerateKwargs:
 
     def test_vlm_all_params_direct(self):
         """VLM: all sampling params passed as direct kwargs."""
-        result = _build_generate_kwargs(
-            {"temperature": 0.5, "top_p": 0.9}, is_vlm=True
-        )
+        result = _build_generate_kwargs({"temperature": 0.5, "top_p": 0.9}, is_vlm=True)
         assert result["temperature"] == 0.5
         assert result["top_p"] == 0.9
         assert "sampler" not in result
