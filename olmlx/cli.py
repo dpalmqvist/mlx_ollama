@@ -51,7 +51,7 @@ def cmd_serve(_args):
         # The ring backend's init() blocks until all ranks connect. Both the
         # coordinator and workers must call init() within each other's retry
         # window (~31s). Workers start ~5-10s after SSH launch. We delay
-        # the coordinator by 15s to overlap with the worker's init() window.
+        # the coordinator to overlap with the worker's init() window.
         print("  Waiting 3s for workers to start...")
         time.sleep(3)
         import mlx.core as mx
@@ -61,8 +61,21 @@ def cmd_serve(_args):
             f"  Ring initialized: rank {group.rank()}, "
             f"world_size {group.size()}"
         )
-        # Store the group globally so the app lifespan can retrieve it
-        # instead of calling init() again (which returns the singleton).
+
+        # Start the sideband server NOW, before uvicorn imports the app.
+        # The app import triggers transformers which can be very slow.
+        # Workers need the sideband to be available during that time.
+        from olmlx.engine.distributed import DistributedCoordinator
+
+        coordinator = DistributedCoordinator(
+            world_size=group.size(),
+            port=experimental.distributed_sideband_port,
+            secret=experimental.distributed_secret or None,
+        )
+        # Store for the app lifespan to retrieve
+        global _cli_distributed_group, _cli_distributed_coordinator
+        _cli_distributed_group = group
+        _cli_distributed_coordinator = coordinator
         os.environ["_OLMLX_DISTRIBUTED_INIT_DONE"] = "1"
 
     uvicorn.run(
@@ -73,6 +86,10 @@ def cmd_serve(_args):
         log_level=settings.log_level.lower(),
     )
 
+
+# Module-level state set by cmd_serve() for the app lifespan to retrieve.
+_cli_distributed_group = None
+_cli_distributed_coordinator = None
 
 _VALID_HOSTNAME_RE = __import__("re").compile(r"^[a-zA-Z0-9._-]+$")
 
