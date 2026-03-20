@@ -504,8 +504,10 @@ class ModelManager:
                     # during generation that causes the abort.
                     mem_after = memory_utils.get_metal_memory()
                     total = memory_utils.get_system_memory_bytes()
-                    limit = int(total * settings.memory_limit_fraction)
-                    if mem_after > limit:
+                    if total > 0 and mem_after > int(
+                        total * settings.memory_limit_fraction
+                    ):
+                        limit = int(total * settings.memory_limit_fraction)
                         model_mb = max(0, (mem_after - mem_before)) // (1024 * 1024)
                         total_mb = total // (1024 * 1024)
                         limit_mb = limit // (1024 * 1024)

@@ -1446,8 +1446,8 @@ class TestMemoryCheck:
         assert "qwen3:latest" not in manager._loaded
 
     @pytest.mark.asyncio
-    async def test_cleanup_on_system_memory_query_failure(self, registry, mock_store):
-        """If get_system_memory_bytes raises, GPU cleanup must still run."""
+    async def test_load_succeeds_when_system_memory_unknown(self, registry, mock_store):
+        """If get_system_memory_bytes returns 0, memory check is skipped and load succeeds."""
         manager = ModelManager(registry, mock_store)
 
         mock_model = MagicMock()
@@ -1466,17 +1466,12 @@ class TestMemoryCheck:
             ),
             patch(
                 "olmlx.utils.memory.get_system_memory_bytes",
-                side_effect=OSError("sysconf failed"),
+                return_value=0,
             ),
-            patch("olmlx.engine.model_manager.gc.collect") as mock_gc,
-            patch("olmlx.engine.model_manager.mx.clear_cache") as mock_clear,
         ):
-            with pytest.raises(OSError, match="sysconf failed"):
-                await manager.ensure_loaded("qwen3")
+            await manager.ensure_loaded("qwen3")
 
-        assert mock_gc.call_count == 2
-        assert mock_clear.call_count == 2
-        assert "qwen3:latest" not in manager._loaded
+        assert "qwen3:latest" in manager._loaded
 
     @pytest.mark.asyncio
     async def test_cleanup_when_load_model_itself_fails(self, registry, mock_store):

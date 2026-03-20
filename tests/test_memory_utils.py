@@ -14,6 +14,9 @@ class TestGetMetalMemory:
 
 
 class TestGetSystemMemoryBytes:
+    def setup_method(self):
+        memory_mod.get_system_memory_bytes.cache_clear()
+
     def test_returns_page_size_times_pages(self):
         with patch.object(memory_mod, "os") as mock_os:
             mock_os.sysconf.side_effect = lambda key: {
@@ -21,7 +24,6 @@ class TestGetSystemMemoryBytes:
                 "SC_PHYS_PAGES": 1000,
             }[key]
             assert memory_mod.get_system_memory_bytes() == 4096 * 1000
-
 
     def test_returns_zero_on_os_error(self):
         with patch.object(memory_mod, "os") as mock_os:

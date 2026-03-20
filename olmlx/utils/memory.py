@@ -3,6 +3,7 @@
 Shared by engine.inference and engine.model_manager to avoid duplication.
 """
 
+import functools
 import os
 
 import mlx.core as mx
@@ -13,6 +14,7 @@ def get_metal_memory() -> int:
     return mx.get_active_memory() + mx.get_cache_memory()
 
 
+@functools.cache
 def get_system_memory_bytes() -> int:
     """Return total system memory in bytes, or 0 on failure."""
     try:
