@@ -9,6 +9,16 @@ import pytest
 from olmlx.utils.streaming import CancellableStream, StreamToken
 
 
+@pytest.fixture(autouse=True)
+def _safe_memory_defaults():
+    """Mock memory utils so prompt cache tests aren't affected by real Metal state."""
+    with (
+        patch("olmlx.utils.memory.mx.get_active_memory", return_value=0),
+        patch("olmlx.utils.memory.mx.get_cache_memory", return_value=0),
+    ):
+        yield
+
+
 class TestFindCommonPrefix:
     def test_identical(self):
         from olmlx.engine.inference import _find_common_prefix
@@ -1513,7 +1523,7 @@ class TestCacheSkippedOnMemoryPressure:
             ),
             patch("olmlx.engine.inference.settings") as mock_settings,
             patch(
-                "olmlx.engine.inference._is_memory_pressure_high",
+                "olmlx.utils.memory.is_memory_pressure_high",
                 return_value=True,
             ),
         ):
@@ -1577,7 +1587,7 @@ class TestCacheRebuiltAfterPressureResolves:
             ),
             patch("olmlx.engine.inference.settings") as mock_settings,
             patch(
-                "olmlx.engine.inference._is_memory_pressure_high",
+                "olmlx.utils.memory.is_memory_pressure_high",
                 side_effect=pressure_returns,
             ),
         ):
@@ -1857,7 +1867,7 @@ class TestMultiCacheBehavior:
                 mock_make_cache,
             ),
             patch(
-                "olmlx.engine.inference._is_memory_pressure_high",
+                "olmlx.utils.memory.is_memory_pressure_high",
                 side_effect=[True, False],
             ),
             patch("olmlx.engine.inference.settings") as mock_settings,

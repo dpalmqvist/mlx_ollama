@@ -175,7 +175,7 @@ async def test_memory_error_format_per_api(integration_ctx, monkeypatch):
     """MemoryError → 503 with correct format per API."""
     # Set metal memory to exceed limit after loading
     monkeypatch.setattr(
-        "olmlx.engine.model_manager._get_metal_memory_bytes",
+        "olmlx.utils.memory.mx.get_active_memory",
         MagicMock(return_value=30 * 1024**3),
     )
 

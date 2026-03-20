@@ -1433,9 +1433,14 @@ class TestKvCachePreflightCheck:
         await _inference_lock.acquire()
         try:
             with (
-                patch.object(_inf_mod, "_TOTAL_PHYSICAL_MEMORY", total_mem),
+                patch(
+                    "olmlx.utils.memory.get_system_memory_bytes", return_value=total_mem
+                ),
+                patch(
+                    "olmlx.utils.memory.get_metal_memory", return_value=current_metal
+                ),
                 patch("olmlx.engine.inference.settings") as mock_settings,
-                patch("olmlx.engine.inference.mx") as mock_mx,
+                patch("olmlx.engine.inference.mx"),
                 patch(
                     "olmlx.engine.inference._estimate_kv_cache_bytes",
                     return_value=kv_estimate,
@@ -1452,8 +1457,6 @@ class TestKvCachePreflightCheck:
             ):
                 mock_settings.memory_limit_fraction = 0.5  # 12GB limit
                 mock_settings.prompt_cache = False
-                mock_mx.get_active_memory.return_value = current_metal
-                mock_mx.get_cache_memory.return_value = 0
 
                 gen = _inf_mod._stream_completion(
                     mock_lm, list(range(22000)), 512, {}, stats
@@ -1495,9 +1498,14 @@ class TestKvCachePreflightCheck:
         await _inference_lock.acquire()
         try:
             with (
-                patch.object(_inf_mod, "_TOTAL_PHYSICAL_MEMORY", total_mem),
+                patch(
+                    "olmlx.utils.memory.get_system_memory_bytes", return_value=total_mem
+                ),
+                patch(
+                    "olmlx.utils.memory.get_metal_memory", return_value=current_metal
+                ),
                 patch("olmlx.engine.inference.settings") as mock_settings,
-                patch("olmlx.engine.inference.mx") as mock_mx,
+                patch("olmlx.engine.inference.mx"),
                 patch(
                     "olmlx.engine.inference._estimate_kv_cache_bytes",
                     return_value=kv_estimate,
@@ -1519,8 +1527,6 @@ class TestKvCachePreflightCheck:
                 mock_settings.memory_limit_fraction = 0.5  # 12GB limit
                 mock_settings.prompt_cache = False
                 mock_settings.default_keep_alive = "5m"
-                mock_mx.get_active_memory.return_value = current_metal
-                mock_mx.get_cache_memory.return_value = 0
 
                 gen = _inf_mod._stream_completion(
                     mock_lm, list(range(100)), 512, {}, stats

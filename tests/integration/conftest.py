@@ -160,15 +160,11 @@ def mock_mlx_primitives(monkeypatch):
         patches.append(p)
         return p.start()
 
-    # mx.synchronize everywhere
+    # mx.synchronize / mx.clear_cache everywhere
     _start("olmlx.engine.inference.mx.synchronize")
-    _start("olmlx.engine.inference.mx.get_active_memory", MagicMock(return_value=0))
-    _start("olmlx.engine.inference.mx.get_cache_memory", MagicMock(return_value=0))
     _start("olmlx.engine.inference.mx.clear_cache")
 
     _start("olmlx.engine.model_manager.mx.synchronize")
-    _start("olmlx.engine.model_manager.mx.get_active_memory", MagicMock(return_value=0))
-    _start("olmlx.engine.model_manager.mx.get_cache_memory", MagicMock(return_value=0))
     _start("olmlx.engine.model_manager.mx.clear_cache")
 
     # mlx.core.synchronize (used by CancellableStream._run thread)
@@ -201,14 +197,16 @@ def mock_mlx_primitives(monkeypatch):
     # HuggingFace download
     _start("huggingface_hub.snapshot_download", MagicMock(return_value="/tmp/fake"))
 
-    # Memory functions
+    # Memory functions — patch mx on the utils.memory module for Metal memory,
+    # but patch get_system_memory_bytes directly to avoid @functools.cache poisoning
+    # (patching os.sysconf has no effect after the first cached call).
     _start(
-        "olmlx.engine.model_manager._get_system_memory_bytes",
-        MagicMock(return_value=32 * 1024**3),
+        "olmlx.utils.memory.mx.get_active_memory", MagicMock(return_value=1 * 1024**3)
     )
+    _start("olmlx.utils.memory.mx.get_cache_memory", MagicMock(return_value=0))
     _start(
-        "olmlx.engine.model_manager._get_metal_memory_bytes",
-        MagicMock(return_value=1 * 1024**3),
+        "olmlx.utils.memory.get_system_memory_bytes",
+        MagicMock(return_value=32 * 1024**3),
     )
 
     _reset_stream_responses()

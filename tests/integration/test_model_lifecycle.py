@@ -149,7 +149,7 @@ async def test_memory_limit_rejects_oversized(integration_ctx, monkeypatch):
     """Model that exceeds memory limit returns 503."""
     # Make metal memory report exceed the limit after loading
     monkeypatch.setattr(
-        "olmlx.engine.model_manager._get_metal_memory_bytes",
+        "olmlx.utils.memory.mx.get_active_memory",
         MagicMock(return_value=30 * 1024**3),  # 30 GB — exceeds 75% of 32 GB
     )
 
