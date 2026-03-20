@@ -342,7 +342,7 @@ class TestCoordinatorWorkerIntegration:
                 )
                 worker.send_ready()
                 connected.append(True)
-                req = worker.wait_for_inference()
+                worker.wait_for_inference()
                 worker.close()
             except Exception as e:
                 errors.append(e)

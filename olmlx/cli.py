@@ -57,10 +57,7 @@ def cmd_serve(_args):
         import mlx.core as mx
 
         group = mx.distributed.init(backend=experimental.distributed_backend)
-        print(
-            f"  Ring initialized: rank {group.rank()}, "
-            f"world_size {group.size()}"
-        )
+        print(f"  Ring initialized: rank {group.rank()}, world_size {group.size()}")
 
         # Start the sideband server NOW, before uvicorn imports the app.
         # The app import triggers transformers which can be very slow.
@@ -120,7 +117,6 @@ def _cleanup_workers():
             pass
     _worker_procs.clear()
     _worker_log_fhs.clear()
-
 
 
 def _launch_distributed_workers() -> list[str]:
@@ -218,9 +214,9 @@ def _launch_distributed_workers() -> list[str]:
 
         # Build remote shell script that sets up hostfile and runs worker
         script_parts = [
-            f"HOSTFILE=$(mktemp)",
+            "HOSTFILE=$(mktemp)",
             f"echo {shlex.quote(ring_hostfile_json)} > $HOSTFILE",
-            f"export MLX_HOSTFILE=$HOSTFILE",
+            "export MLX_HOSTFILE=$HOSTFILE",
         ]
         if remote_working_dir:
             script_parts.append(f"cd {remote_working_dir}")
@@ -258,7 +254,6 @@ def _launch_distributed_workers() -> list[str]:
             raise RuntimeError("Worker SSH launch failed — check worker logs")
 
     return hosts
-
 
 
 def _find_executable() -> str:

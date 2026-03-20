@@ -1,0 +1,692 @@
+Uninstalled 1 package in 3ms
+Installed 1 package in 3ms
+INFO:     Started server process [47259]
+INFO:     Waiting for application startup.
+2026-03-15 21:30:31,870 [INFO] olmlx: olmlx server started on 0.0.0.0:11434
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:11434 (Press CTRL+C to quit)
+2026-03-15 21:31:17,823 [INFO] olmlx.routers.anthropic: Anthropic request: model=mlx-community/Qwen3.5-27B-4bit stream=True tools=26 messages=1 max_tokens=32000
+2026-03-15 21:31:17,823 [INFO] olmlx.routers.anthropic: Stripped 1 billing header block(s) from system prompt
+2026-03-15 21:31:17,823 [DEBUG] olmlx.routers.anthropic: Converted 2 messages, 26 tools
+2026-03-15 21:31:17,875 [INFO] olmlx.engine.model_manager: Loading model mlx-community/Qwen3.5-27B-4bit:latest from mlx-community/Qwen3.5-27B-4bit
+2026-03-15 21:31:17,875 [INFO] olmlx.engine.model_manager: Detected model kind for mlx-community/Qwen3.5-27B-4bit: vlm
+2026-03-15 21:31:19,710 [INFO] olmlx.engine.model_manager: Model mlx-community/Qwen3.5-27B-4bit:latest caps: tools=True, thinking=True, thinking_tags=True
+2026-03-15 21:31:19,718 [INFO] olmlx.engine.inference: Chat prompt with 26 tools
+2026-03-15 21:31:19,718 [DEBUG] olmlx.engine.inference: Prompt (first 1000 chars): <|im_start|>system
+# Tools
+
+You have access to the following functions:
+
+<tools>
+{"type": "function", "function": {"name": "Agent", "description": "Launch a new agent to handle complex, multi-step tasks autonomously.\n\nThe Agent tool launches specialized agents (subprocesses) that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.\n\nAvailable agent types and the tools they have access to:\n- general-purpose: General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you. (Tools: *)\n- statusline-setup: Use this agent to configure the user's Claude Code status line setting. (Tools: Read, Edit)\n- Explore: Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. \"src/c
+2026-03-15 21:31:19,745 [DEBUG] olmlx.engine.inference: Prompt cache enabled: 28706 prompt tokens, existing cache=none
+INFO:     127.0.0.1:51950 - "POST /v1/messages?beta=true HTTP/1.1" 200 OK
+2026-03-15 21:31:19,745 [DEBUG] olmlx.engine.inference: Cache lookup: cached=none, new prompt=28706 tokens
+2026-03-15 21:31:19,745 [DEBUG] olmlx.engine.inference: Common prefix length: 0 / 28706 prompt tokens
+2026-03-15 21:31:19,745 [INFO] olmlx.engine.inference: Prompt cache init: creating fresh cache for 28706 tokens
+2026-03-15 21:31:19,746 [DEBUG] olmlx.routers.anthropic: Cache stats for message_start: read=0 creation=28706
+Prefill:   0%|          | 0/28706 [00:00<?, ?tok/s]Prefill:   7%|▋         | 2048/28706 [00:16<03:29, 127.03tok/s]Prefill:   7%|▋         | 2048/28706 [00:30<03:29, 127.03tok/s]Prefill:  14%|█▍        | 4096/28706 [00:32<03:14, 126.27tok/s]Prefill:  21%|██▏       | 6144/28706 [00:48<03:00, 125.19tok/s]Prefill:  21%|██▏       | 6144/28706 [01:00<03:00, 125.19tok/s]Prefill:  29%|██▊       | 8192/28706 [01:06<02:46, 123.05tok/s]Prefill:  29%|██▊       | 8192/28706 [01:20<02:46, 123.05tok/s]Prefill:  36%|███▌      | 10240/28706 [01:23<02:33, 120.54tok/s]Prefill:  36%|███▌      | 10240/28706 [01:40<02:33, 120.54tok/s]Prefill:  43%|████▎     | 12288/28706 [01:41<02:18, 118.60tok/s]Prefill:  50%|████▉     | 14336/28706 [01:59<02:03, 116.71tok/s]Prefill:  50%|████▉     | 14336/28706 [02:10<02:03, 116.71tok/s]Prefill:  57%|█████▋    | 16384/28706 [02:17<01:47, 114.96tok/s]Prefill:  57%|█████▋    | 16384/28706 [02:30<01:47, 114.96tok/s]Prefill:  64%|██████▍   | 18432/28706 [02:36<01:30, 113.80tok/s]Prefill:  64%|██████▍   | 18432/28706 [02:50<01:30, 113.80tok/s]Prefill:  71%|███████▏  | 20480/28706 [02:54<01:13, 112.54tok/s]Prefill:  71%|███████▏  | 20480/28706 [03:10<01:13, 112.54tok/s]Prefill:  78%|███████▊  | 22528/28706 [03:13<00:55, 111.27tok/s]Prefill:  78%|███████▊  | 22528/28706 [03:30<00:55, 111.27tok/s]Prefill:  86%|████████▌ | 24576/28706 [03:32<00:37, 110.31tok/s]Prefill:  86%|████████▌ | 24576/28706 [03:50<00:37, 110.31tok/s]Prefill:  93%|█████████▎| 26624/28706 [03:51<00:19, 109.28tok/s]Prefill:  93%|█████████▎| 26624/28706 [04:10<00:19, 109.28tok/s]Prefill: 100%|█████████▉| 28672/28706 [04:11<00:00, 108.13tok/s]Prefill: 100%|█████████▉| 28705/28706 [04:11<00:00, 107.27tok/s]Prefill: 100%|█████████▉| 28705/28706 [04:11<00:00, 113.91tok/s]
+2026-03-15 21:35:39,423 [DEBUG] olmlx.engine.inference: Cache invalidated: generation did not complete
+2026-03-15 21:35:39,424 [WARNING] olmlx.engine.inference: Inference thread still alive after cleanup attempts — deferring Metal sync and lock release until thread exits
+2026-03-15 21:35:39,431 [INFO] olmlx.routers.anthropic: Anthropic request: model=mlx-community/Qwen3.5-27B-4bit stream=False tools=26 messages=1 max_tokens=21333
+2026-03-15 21:35:39,431 [INFO] olmlx.routers.anthropic: Stripped 1 billing header block(s) from system prompt
+2026-03-15 21:35:39,437 [DEBUG] olmlx.routers.anthropic: Converted 2 messages, 26 tools
+2026-03-15 21:35:39,438 [INFO] olmlx.engine.inference: Chat prompt with 26 tools
+2026-03-15 21:35:39,438 [DEBUG] olmlx.engine.inference: Prompt (first 1000 chars): <|im_start|>system
+# Tools
+
+You have access to the following functions:
+
+<tools>
+{"type": "function", "function": {"name": "Agent", "description": "Launch a new agent to handle complex, multi-step tasks autonomously.\n\nThe Agent tool launches specialized agents (subprocesses) that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.\n\nAvailable agent types and the tools they have access to:\n- general-purpose: General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you. (Tools: *)\n- statusline-setup: Use this agent to configure the user's Claude Code status line setting. (Tools: Read, Edit)\n- Explore: Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. \"src/c
+2026-03-15 21:35:39,438 [DEBUG] olmlx.engine.inference: Prompt cache disabled: setting=True stream=False make_prompt_cache=True
+2026-03-15 21:35:39,438 [WARNING] olmlx: ServerBusyError on /v1/messages: Server busy: recovering from previous inference — deferred GPU cleanup in progress
+INFO:     127.0.0.1:51967 - "POST /v1/messages?beta=true HTTP/1.1" 503 Service Unavailable
+2026-03-15 21:35:39,452 [INFO] olmlx.engine.inference: Deferred inference cleanup: thread exited cleanly
+2026-03-15 21:35:39,452 [INFO] olmlx.engine.inference: Deferred inference cleanup: lock released
+2026-03-15 21:35:39,994 [INFO] olmlx.routers.anthropic: Anthropic request: model=mlx-community/Qwen3.5-27B-4bit stream=False tools=26 messages=1 max_tokens=21333
+2026-03-15 21:35:39,994 [INFO] olmlx.routers.anthropic: Stripped 1 billing header block(s) from system prompt
+2026-03-15 21:35:39,995 [DEBUG] olmlx.routers.anthropic: Converted 2 messages, 26 tools
+2026-03-15 21:35:39,996 [INFO] olmlx.engine.inference: Chat prompt with 26 tools
+2026-03-15 21:35:39,996 [DEBUG] olmlx.engine.inference: Prompt (first 1000 chars): <|im_start|>system
+# Tools
+
+You have access to the following functions:
+
+<tools>
+{"type": "function", "function": {"name": "Agent", "description": "Launch a new agent to handle complex, multi-step tasks autonomously.\n\nThe Agent tool launches specialized agents (subprocesses) that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.\n\nAvailable agent types and the tools they have access to:\n- general-purpose: General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you. (Tools: *)\n- statusline-setup: Use this agent to configure the user's Claude Code status line setting. (Tools: Read, Edit)\n- Explore: Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. \"src/c
+2026-03-15 21:35:39,996 [DEBUG] olmlx.engine.inference: Prompt cache disabled: setting=True stream=False make_prompt_cache=True
+Prefill:   0%|          | 0/28706 [00:00<?, ?tok/s]Prefill:   7%|▋         | 2048/28706 [00:16<03:29, 127.53tok/s]Prefill:   7%|▋         | 2048/28706 [00:29<03:29, 127.53tok/s]Prefill:  14%|█▍        | 4096/28706 [00:32<03:14, 126.37tok/s]Prefill:  21%|██▏       | 6144/28706 [00:48<03:00, 125.29tok/s]Prefill:  21%|██▏       | 6144/28706 [00:59<03:00, 125.29tok/s]Prefill:  29%|██▊       | 8192/28706 [01:05<02:45, 123.85tok/s]Prefill:  29%|██▊       | 8192/28706 [01:19<02:45, 123.85tok/s]Prefill:  36%|███▌      | 10240/28706 [01:22<02:30, 122.42tok/s]Prefill:  36%|███▌      | 10240/28706 [01:39<02:30, 122.42tok/s]Prefill:  43%|████▎     | 12288/28706 [01:40<02:15, 121.03tok/s]Prefill:  50%|████▉     | 14336/28706 [01:57<02:00, 119.60tok/s]Prefill:  50%|████▉     | 14336/28706 [02:09<02:00, 119.60tok/s]Prefill:  57%|█████▋    | 16384/28706 [02:15<01:44, 117.97tok/s]Prefill:  57%|█████▋    | 16384/28706 [02:29<01:44, 117.97tok/s]Prefill:  64%|██████▍   | 18432/28706 [02:33<01:28, 116.32tok/s]Prefill:  64%|██████▍   | 18432/28706 [02:49<01:28, 116.32tok/s]Prefill:  71%|███████▏  | 20480/28706 [02:52<01:11, 114.65tok/s]Prefill:  71%|███████▏  | 20480/28706 [03:09<01:11, 114.65tok/s]Prefill:  78%|███████▊  | 22528/28706 [03:10<00:54, 112.96tok/s]Prefill:  86%|████████▌ | 24576/28706 [03:29<00:37, 111.27tok/s]Prefill:  86%|████████▌ | 24576/28706 [03:39<00:37, 111.27tok/s]Prefill:  93%|█████████▎| 26624/28706 [03:49<00:18, 109.87tok/s]Prefill:  93%|█████████▎| 26624/28706 [03:59<00:18, 109.87tok/s]Prefill: 100%|█████████▉| 28672/28706 [04:08<00:00, 108.37tok/s]Prefill: 100%|█████████▉| 28705/28706 [04:09<00:00, 107.52tok/s]Prefill: 100%|█████████▉| 28705/28706 [04:09<00:00, 115.20tok/s]
+2026-03-15 21:40:07,033 [INFO] olmlx.engine.inference: Generation complete: 0 prompt tokens, 0 tokens generated (0.0 tok/s), 267.04s total
+2026-03-15 21:40:07,034 [DEBUG] olmlx.routers.anthropic: Raw model output (1014 chars): I need to explore the codebase to understand the documentation issues mentioned in the open issues list, so I'll launch an Explore agent to find relevant files and patterns.
+</think>
+
+<tool_call>
+<function=Agent>
+<parameter=description>
+Explore documentation issues
+</parameter>
+<parameter=prompt>
+Explore the olmlx codebase to understand the documentation issues mentioned in the open issues list. Specifically:
+
+1. Look for issue #19 (VLM examples) - find any existing VLM-related code or documenta
+INFO:     127.0.0.1:51967 - "POST /v1/messages?beta=true HTTP/1.1" 200 OK
+2026-03-15 21:40:07,051 [INFO] olmlx.routers.anthropic: Anthropic request: model=claude-haiku-4-5-20251001 stream=True tools=17 messages=1 max_tokens=32000
+2026-03-15 21:40:07,052 [INFO] olmlx.routers.anthropic: Resolved Anthropic model claude-haiku-4-5-20251001 → qwen3.5:9B (family: haiku)
+2026-03-15 21:40:07,052 [INFO] olmlx.routers.anthropic: Stripped 1 billing header block(s) from system prompt
+2026-03-15 21:40:07,052 [DEBUG] olmlx.routers.anthropic: Converted 2 messages, 17 tools
+2026-03-15 21:40:07,052 [INFO] olmlx.engine.model_manager: Evicting model mlx-community/Qwen3.5-27B-4bit:latest
+2026-03-15 21:40:07,114 [WARNING] olmlx: ValueError on /v1/messages: Model 'qwen3.5:9B' not found. Add it to /Users/daniel/.olmlx/models.json or use a HuggingFace path like 'mlx-community/Qwen2.5-3B-Instruct-4bit'
+INFO:     127.0.0.1:51967 - "POST /v1/messages?beta=true HTTP/1.1" 400 Bad Request
+2026-03-15 21:40:07,123 [INFO] olmlx.routers.anthropic: Anthropic request: model=mlx-community/Qwen3.5-27B-4bit stream=True tools=26 messages=3 max_tokens=32000
+2026-03-15 21:40:07,123 [INFO] olmlx.routers.anthropic: Stripped 1 billing header block(s) from system prompt
+2026-03-15 21:40:07,123 [DEBUG] olmlx.routers.anthropic: Converted 4 messages, 26 tools
+2026-03-15 21:40:07,217 [INFO] olmlx.engine.model_manager: Loading model mlx-community/Qwen3.5-27B-4bit:latest from mlx-community/Qwen3.5-27B-4bit
+2026-03-15 21:40:07,218 [INFO] olmlx.engine.model_manager: Detected model kind for mlx-community/Qwen3.5-27B-4bit: vlm
+2026-03-15 21:40:09,046 [INFO] olmlx.engine.model_manager: Model mlx-community/Qwen3.5-27B-4bit:latest caps: tools=True, thinking=True, thinking_tags=True
+2026-03-15 21:40:09,046 [INFO] olmlx.engine.inference: Chat prompt with 26 tools
+2026-03-15 21:40:09,046 [DEBUG] olmlx.engine.inference: Prompt (first 1000 chars): <|im_start|>system
+# Tools
+
+You have access to the following functions:
+
+<tools>
+{"type": "function", "function": {"name": "Agent", "description": "Launch a new agent to handle complex, multi-step tasks autonomously.\n\nThe Agent tool launches specialized agents (subprocesses) that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.\n\nAvailable agent types and the tools they have access to:\n- general-purpose: General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you. (Tools: *)\n- statusline-setup: Use this agent to configure the user's Claude Code status line setting. (Tools: Read, Edit)\n- Explore: Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. \"src/c
+2026-03-15 21:40:09,075 [DEBUG] olmlx.engine.inference: Prompt cache enabled: 29087 prompt tokens, existing cache=none
+INFO:     127.0.0.1:51967 - "POST /v1/messages?beta=true HTTP/1.1" 200 OK
+2026-03-15 21:40:09,075 [DEBUG] olmlx.engine.inference: Cache lookup: cached=none, new prompt=29087 tokens
+2026-03-15 21:40:09,075 [DEBUG] olmlx.engine.inference: Common prefix length: 0 / 29087 prompt tokens
+2026-03-15 21:40:09,075 [INFO] olmlx.engine.inference: Prompt cache init: creating fresh cache for 29087 tokens
+2026-03-15 21:40:09,076 [DEBUG] olmlx.routers.anthropic: Cache stats for message_start: read=0 creation=29087
+Prefill:   0%|          | 0/29087 [00:00<?, ?tok/s]Prefill:   7%|▋         | 2048/29087 [00:16<03:32, 127.04tok/s]Prefill:   7%|▋         | 2048/29087 [00:30<03:32, 127.04tok/s]Prefill:  14%|█▍        | 4096/29087 [00:32<03:17, 126.48tok/s]Prefill:  21%|██        | 6144/29087 [00:48<03:02, 125.42tok/s]Prefill:  21%|██        | 6144/29087 [01:00<03:02, 125.42tok/s]Prefill:  28%|██▊       | 8192/29087 [01:05<02:48, 124.07tok/s]Prefill:  28%|██▊       | 8192/29087 [01:20<02:48, 124.07tok/s]Prefill:  35%|███▌      | 10240/29087 [01:22<02:33, 122.67tok/s]Prefill:  42%|████▏     | 12288/29087 [01:39<02:18, 121.23tok/s]Prefill:  42%|████▏     | 12288/29087 [01:50<02:18, 121.23tok/s]Prefill:  49%|████▉     | 14336/29087 [01:57<02:03, 119.62tok/s]Prefill:  49%|████▉     | 14336/29087 [02:10<02:03, 119.62tok/s]Prefill:  56%|█████▋    | 16384/29087 [02:15<01:47, 117.97tok/s]Prefill:  56%|█████▋    | 16384/29087 [02:30<01:47, 117.97tok/s]Prefill:  63%|██████▎   | 18432/29087 [02:33<01:31, 116.27tok/s]Prefill:  63%|██████▎   | 18432/29087 [02:50<01:31, 116.27tok/s]Prefill:  70%|███████   | 20480/29087 [02:52<01:15, 114.63tok/s]Prefill:  77%|███████▋  | 22528/29087 [03:10<00:58, 112.82tok/s]Prefill:  77%|███████▋  | 22528/29087 [03:20<00:58, 112.82tok/s]Prefill:  84%|████████▍ | 24576/29087 [03:29<00:40, 111.10tok/s]Prefill:  84%|████████▍ | 24576/29087 [03:41<00:40, 111.10tok/s]Prefill:  92%|█████████▏| 26624/29087 [03:49<00:22, 109.51tok/s]Prefill:  92%|█████████▏| 26624/29087 [04:01<00:22, 109.51tok/s]Prefill:  99%|█████████▊| 28672/29087 [04:08<00:03, 107.77tok/s]Prefill: 100%|█████████▉| 29086/29087 [04:13<00:00, 107.16tok/s]Prefill: 100%|█████████▉| 29086/29087 [04:13<00:00, 114.96tok/s]
+2026-03-15 21:44:34,925 [INFO] olmlx.engine.inference: Generation complete: 29087 prompt tokens (114.9 tok/s), 163 tokens generated (12.9 tok/s), 265.85s total
+2026-03-15 21:44:34,926 [DEBUG] olmlx.engine.inference: Cache stored: 29250 tokens (29087 prompt + 163 generated)
+2026-03-15 21:44:34,926 [INFO] olmlx.routers.anthropic: Raw model output (619 chars): The agent failed due to a model error, so I need to directly explore the codebase using Glob and Grep tools to find documentation files and streaming-related code.
+</think>
+
+Let me explore the codebase directly to understand the documentation issues.
+
+<tool_call>
+<function=Glob>
+<parameter=pattern>
+**/*.md
+</parameter>
+</function>
+</tool_call>
+<tool_call>
+<function=Grep>
+<parameter=pattern>
+vlm|vision|image
+</parameter>
+<parameter=-i>
+true
+</parameter>
+</function>
+</tool_call>
+<tool_call>
+<function=Grep>
+<parameter=pattern>
+streaming|stream
+</parameter>
+<parameter=glob>
+*.md
+</parameter>
+</function>
+</tool_call>
+2026-03-15 21:44:34,926 [INFO] olmlx.routers.anthropic: Parsed 3 tool call(s): ['Glob', 'Grep', 'Grep']
+2026-03-15 21:44:35,356 [INFO] olmlx.routers.anthropic: Anthropic request: model=mlx-community/Qwen3.5-27B-4bit stream=True tools=26 messages=5 max_tokens=32000
+2026-03-15 21:44:35,356 [INFO] olmlx.routers.anthropic: Stripped 1 billing header block(s) from system prompt
+2026-03-15 21:44:35,356 [DEBUG] olmlx.routers.anthropic: Converted 8 messages, 26 tools
+2026-03-15 21:44:35,357 [INFO] olmlx.engine.inference: Chat prompt with 26 tools
+2026-03-15 21:44:35,357 [DEBUG] olmlx.engine.inference: Prompt (first 1000 chars): <|im_start|>system
+# Tools
+
+You have access to the following functions:
+
+<tools>
+{"type": "function", "function": {"name": "Agent", "description": "Launch a new agent to handle complex, multi-step tasks autonomously.\n\nThe Agent tool launches specialized agents (subprocesses) that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.\n\nAvailable agent types and the tools they have access to:\n- general-purpose: General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you. (Tools: *)\n- statusline-setup: Use this agent to configure the user's Claude Code status line setting. (Tools: Read, Edit)\n- Explore: Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. \"src/c
+2026-03-15 21:44:35,384 [DEBUG] olmlx.engine.inference: Prompt cache enabled: 33065 prompt tokens, existing cache=29250 tokens
+INFO:     127.0.0.1:51967 - "POST /v1/messages?beta=true HTTP/1.1" 200 OK
+2026-03-15 21:44:35,385 [DEBUG] olmlx.engine.inference: Cache lookup: cached=29250 tokens (first 5: [248045, 8678, 198, 2, 13455]), new prompt=33065 tokens
+2026-03-15 21:44:35,385 [DEBUG] olmlx.engine.inference: Common prefix length: 29196 / 33065 prompt tokens
+2026-03-15 21:44:35,385 [INFO] olmlx.engine.inference: Prompt cache hit: 29196 prefix tokens reused, 3869 new tokens to process (was 33065 total)
+2026-03-15 21:44:35,385 [DEBUG] olmlx.routers.anthropic: Cache stats for message_start: read=29196 creation=3869
+Prefill:   0%|          | 0/3869 [00:00<?, ?tok/s]Prefill:  53%|█████▎    | 2048/3869 [00:19<00:17, 102.75tok/s]Prefill:  53%|█████▎    | 2048/3869 [00:34<00:17, 102.75tok/s]Prefill: 100%|█████████▉| 3868/3869 [00:38<00:00, 101.42tok/s]Prefill: 100%|█████████▉| 3868/3869 [00:38<00:00, 101.63tok/s]
+2026-03-15 21:45:25,126 [INFO] olmlx.engine.inference: Generation complete: 3869 prompt tokens (101.2 tok/s), 146 tokens generated (12.7 tok/s), 49.74s total
+2026-03-15 21:45:25,127 [INFO] olmlx.engine.inference: Cache trimmed: 33211 → 32768 tokens (limit 32768)
+2026-03-15 21:45:25,128 [INFO] olmlx.routers.anthropic: Raw model output (587 chars): I need to read the existing documentation files and explore the engine directory to understand what VLM and streaming documentation exists and what's missing for the documentation issues.
+</think>
+
+<tool_call>
+<function=Read>
+<parameter=file_path>
+/Users/daniel/Documents/devel/mlx-for-claude/README.md
+</parameter>
+</function>
+</tool_call>
+<tool_call>
+<function=Read>
+<parameter=file_path>
+/Users/daniel/Documents/devel/mlx-for-claude/CLAUDE.md
+</parameter>
+</function>
+</tool_call>
+<tool_call>
+<function=Glob>
+<parameter=pattern>
+olmlx/engine/*.py
+</parameter>
+</function>
+</tool_call>
+2026-03-15 21:45:25,128 [INFO] olmlx.routers.anthropic: Parsed 3 tool call(s): ['Read', 'Read', 'Glob']
+2026-03-15 21:45:25,310 [INFO] olmlx.routers.anthropic: Anthropic request: model=mlx-community/Qwen3.5-27B-4bit stream=True tools=26 messages=7 max_tokens=32000
+2026-03-15 21:45:25,310 [INFO] olmlx.routers.anthropic: Stripped 1 billing header block(s) from system prompt
+2026-03-15 21:45:25,310 [DEBUG] olmlx.routers.anthropic: Converted 12 messages, 26 tools
+2026-03-15 21:45:25,311 [INFO] olmlx.engine.inference: Chat prompt with 26 tools
+2026-03-15 21:45:25,311 [DEBUG] olmlx.engine.inference: Prompt (first 1000 chars): <|im_start|>system
+# Tools
+
+You have access to the following functions:
+
+<tools>
+{"type": "function", "function": {"name": "Agent", "description": "Launch a new agent to handle complex, multi-step tasks autonomously.\n\nThe Agent tool launches specialized agents (subprocesses) that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.\n\nAvailable agent types and the tools they have access to:\n- general-purpose: General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you. (Tools: *)\n- statusline-setup: Use this agent to configure the user's Claude Code status line setting. (Tools: Read, Edit)\n- Explore: Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. \"src/c
+2026-03-15 21:45:25,344 [DEBUG] olmlx.engine.inference: Prompt cache enabled: 41553 prompt tokens, existing cache=32768 tokens
+INFO:     127.0.0.1:51967 - "POST /v1/messages?beta=true HTTP/1.1" 200 OK
+2026-03-15 21:45:25,344 [DEBUG] olmlx.engine.inference: Cache lookup: cached=32768 tokens (first 5: [248045, 8678, 198, 2, 13455]), new prompt=41553 tokens
+2026-03-15 21:45:25,345 [DEBUG] olmlx.engine.inference: Common prefix length: 32768 / 41553 prompt tokens
+2026-03-15 21:45:25,345 [INFO] olmlx.engine.inference: Prompt cache hit: 32768 prefix tokens reused, 8785 new tokens to process (was 41553 total)
+2026-03-15 21:45:25,345 [DEBUG] olmlx.routers.anthropic: Cache stats for message_start: read=32768 creation=8785
+Prefill:   0%|          | 0/8785 [00:00<?, ?tok/s]Prefill:  23%|██▎       | 2048/8785 [00:20<01:06, 100.87tok/s]Prefill:  23%|██▎       | 2048/8785 [00:34<01:06, 100.87tok/s]Prefill:  47%|████▋     | 4096/8785 [00:40<00:46, 99.93tok/s] Prefill:  47%|████▋     | 4096/8785 [00:54<00:46, 99.93tok/s]Prefill:  70%|██████▉   | 6144/8785 [01:01<00:26, 98.97tok/s]Prefill:  70%|██████▉   | 6144/8785 [01:14<00:26, 98.97tok/s]Prefill:  93%|█████████▎| 8192/8785 [01:23<00:06, 97.96tok/s]Prefill: 100%|█████████▉| 8784/8785 [01:29<00:00, 97.03tok/s]Prefill: 100%|█████████▉| 8784/8785 [01:29<00:00, 98.09tok/s]
+2026-03-15 21:47:05,506 [INFO] olmlx.engine.inference: Generation complete: 8785 prompt tokens (97.9 tok/s), 129 tokens generated (12.4 tok/s), 100.16s total
+2026-03-15 21:47:05,507 [INFO] olmlx.engine.inference: Cache trimmed: 41682 → 32768 tokens (limit 32768)
+2026-03-15 21:47:05,508 [INFO] olmlx.routers.anthropic: Raw model output (511 chars): I need to examine the VLM-related code in model_manager.py and the streaming implementation in utils/streaming.py to understand what documentation is needed for issues #19 and #22.
+</think>
+
+<tool_call>
+<function=Read>
+<parameter=file_path>
+/Users/daniel/Documents/devel/mlx-for-claude/olmlx/engine/model_manager.py
+</parameter>
+</function>
+</tool_call>
+<tool_call>
+<function=Read>
+<parameter=file_path>
+/Users/daniel/Documents/devel/mlx-for-claude/olmlx/utils/streaming.py
+</parameter>
+</function>
+</tool_call>
+2026-03-15 21:47:05,508 [INFO] olmlx.routers.anthropic: Parsed 2 tool call(s): ['Read', 'Read']
+2026-03-15 21:47:05,532 [INFO] olmlx.routers.anthropic: Anthropic count_tokens: model=mlx-community/Qwen3.5-27B-4bit messages=1 tools=0
+INFO:     127.0.0.1:51967 - "POST /v1/messages/count_tokens?beta=true HTTP/1.1" 200 OK
+2026-03-15 21:47:05,553 [INFO] olmlx.routers.anthropic: Anthropic request: model=mlx-community/Qwen3.5-27B-4bit stream=True tools=26 messages=9 max_tokens=32000
+2026-03-15 21:47:05,553 [INFO] olmlx.routers.anthropic: Stripped 1 billing header block(s) from system prompt
+2026-03-15 21:47:05,553 [DEBUG] olmlx.routers.anthropic: Converted 15 messages, 26 tools
+2026-03-15 21:47:05,554 [INFO] olmlx.engine.inference: Chat prompt with 26 tools
+2026-03-15 21:47:05,555 [DEBUG] olmlx.engine.inference: Prompt (first 1000 chars): <|im_start|>system
+# Tools
+
+You have access to the following functions:
+
+<tools>
+{"type": "function", "function": {"name": "Agent", "description": "Launch a new agent to handle complex, multi-step tasks autonomously.\n\nThe Agent tool launches specialized agents (subprocesses) that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.\n\nAvailable agent types and the tools they have access to:\n- general-purpose: General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you. (Tools: *)\n- statusline-setup: Use this agent to configure the user's Claude Code status line setting. (Tools: Read, Edit)\n- Explore: Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. \"src/c
+2026-03-15 21:47:05,600 [DEBUG] olmlx.engine.inference: Prompt cache enabled: 55594 prompt tokens, existing cache=32768 tokens
+INFO:     127.0.0.1:51967 - "POST /v1/messages?beta=true HTTP/1.1" 200 OK
+2026-03-15 21:47:05,601 [DEBUG] olmlx.engine.inference: Cache lookup: cached=32768 tokens (first 5: [248045, 8678, 198, 2, 13455]), new prompt=55594 tokens
+2026-03-15 21:47:05,601 [DEBUG] olmlx.engine.inference: Common prefix length: 32768 / 55594 prompt tokens
+2026-03-15 21:47:05,601 [INFO] olmlx.engine.inference: Prompt cache hit: 32768 prefix tokens reused, 22826 new tokens to process (was 55594 total)
+2026-03-15 21:47:05,601 [DEBUG] olmlx.routers.anthropic: Cache stats for message_start: read=32768 creation=22826
+Prefill:   0%|          | 0/22826 [00:00<?, ?tok/s]Prefill:   9%|▉         | 2048/22826 [00:21<03:41, 93.88tok/s]Prefill:   9%|▉         | 2048/22826 [00:34<03:41, 93.88tok/s]Prefill:  18%|█▊        | 4096/22826 [00:44<03:21, 92.83tok/s]Prefill:  18%|█▊        | 4096/22826 [00:54<03:21, 92.83tok/s]Prefill:  27%|██▋       | 6144/22826 [01:06<03:01, 92.15tok/s]Prefill:  27%|██▋       | 6144/22826 [01:24<03:01, 92.15tok/s]Prefill:  36%|███▌      | 8192/22826 [01:29<02:40, 91.19tok/s]Prefill:  36%|███▌      | 8192/22826 [01:44<02:40, 91.19tok/s]Prefill:  45%|████▍     | 10240/22826 [01:52<02:19, 90.05tok/s]Prefill:  45%|████▍     | 10240/22826 [02:04<02:19, 90.05tok/s]Prefill:  54%|█████▍    | 12288/22826 [02:16<01:58, 88.95tok/s]Prefill:  54%|█████▍    | 12288/22826 [02:34<01:58, 88.95tok/s]Prefill:  63%|██████▎   | 14336/22826 [02:39<01:36, 87.97tok/s]Prefill:  63%|██████▎   | 14336/22826 [02:54<01:36, 87.97tok/s]Prefill:  72%|███████▏  | 16384/22826 [03:03<01:14, 87.04tok/s]Prefill:  72%|███████▏  | 16384/22826 [03:14<01:14, 87.04tok/s]Prefill:  81%|████████  | 18432/22826 [03:28<00:51, 85.77tok/s]Prefill:  81%|████████  | 18432/22826 [03:44<00:51, 85.77tok/s]Prefill:  90%|████████▉ | 20480/22826 [03:53<00:27, 84.75tok/s]Prefill:  90%|████████▉ | 20480/22826 [04:04<00:27, 84.75tok/s]Prefill:  99%|█████████▊| 22528/22826 [04:18<00:03, 83.62tok/s]Prefill: 100%|█████████▉| 22825/22826 [04:22<00:00, 83.14tok/s]Prefill: 100%|█████████▉| 22825/22826 [04:22<00:00, 86.93tok/s]
+2026-03-15 21:51:39,430 [DEBUG] olmlx.engine.inference: Cache invalidated: generation did not complete
+2026-03-15 21:51:39,431 [WARNING] olmlx.engine.inference: Inference thread still alive after cleanup attempts — deferring Metal sync and lock release until thread exits
+2026-03-15 21:51:39,437 [INFO] olmlx.routers.anthropic: Anthropic request: model=mlx-community/Qwen3.5-27B-4bit stream=False tools=26 messages=9 max_tokens=21333
+2026-03-15 21:51:39,437 [INFO] olmlx.routers.anthropic: Stripped 1 billing header block(s) from system prompt
+2026-03-15 21:51:39,437 [DEBUG] olmlx.routers.anthropic: Converted 15 messages, 26 tools
+2026-03-15 21:51:39,439 [INFO] olmlx.engine.inference: Chat prompt with 26 tools
+2026-03-15 21:51:39,439 [DEBUG] olmlx.engine.inference: Prompt (first 1000 chars): <|im_start|>system
+# Tools
+
+You have access to the following functions:
+
+<tools>
+{"type": "function", "function": {"name": "Agent", "description": "Launch a new agent to handle complex, multi-step tasks autonomously.\n\nThe Agent tool launches specialized agents (subprocesses) that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.\n\nAvailable agent types and the tools they have access to:\n- general-purpose: General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you. (Tools: *)\n- statusline-setup: Use this agent to configure the user's Claude Code status line setting. (Tools: Read, Edit)\n- Explore: Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. \"src/c
+2026-03-15 21:51:39,439 [DEBUG] olmlx.engine.inference: Prompt cache disabled: setting=True stream=False make_prompt_cache=True
+2026-03-15 21:51:39,439 [WARNING] olmlx: ServerBusyError on /v1/messages: Server busy: recovering from previous inference — deferred GPU cleanup in progress
+INFO:     127.0.0.1:52042 - "POST /v1/messages?beta=true HTTP/1.1" 503 Service Unavailable
+2026-03-15 21:51:39,482 [INFO] olmlx.engine.inference: Deferred inference cleanup: thread exited cleanly
+2026-03-15 21:51:39,482 [INFO] olmlx.engine.inference: Deferred inference cleanup: lock released
+2026-03-15 21:51:39,984 [INFO] olmlx.routers.anthropic: Anthropic request: model=mlx-community/Qwen3.5-27B-4bit stream=False tools=26 messages=9 max_tokens=21333
+2026-03-15 21:51:39,984 [INFO] olmlx.routers.anthropic: Stripped 1 billing header block(s) from system prompt
+2026-03-15 21:51:39,984 [DEBUG] olmlx.routers.anthropic: Converted 15 messages, 26 tools
+2026-03-15 21:51:39,986 [INFO] olmlx.engine.inference: Chat prompt with 26 tools
+2026-03-15 21:51:39,986 [DEBUG] olmlx.engine.inference: Prompt (first 1000 chars): <|im_start|>system
+# Tools
+
+You have access to the following functions:
+
+<tools>
+{"type": "function", "function": {"name": "Agent", "description": "Launch a new agent to handle complex, multi-step tasks autonomously.\n\nThe Agent tool launches specialized agents (subprocesses) that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.\n\nAvailable agent types and the tools they have access to:\n- general-purpose: General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you. (Tools: *)\n- statusline-setup: Use this agent to configure the user's Claude Code status line setting. (Tools: Read, Edit)\n- Explore: Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. \"src/c
+2026-03-15 21:51:39,986 [DEBUG] olmlx.engine.inference: Prompt cache disabled: setting=True stream=False make_prompt_cache=True
+Prefill:   0%|          | 0/55594 [00:00<?, ?tok/s]Prefill:   4%|▎         | 2048/55594 [00:16<06:59, 127.51tok/s]Prefill:   4%|▎         | 2048/55594 [00:30<06:59, 127.51tok/s]Prefill:   7%|▋         | 4096/55594 [00:32<06:47, 126.27tok/s]Prefill:  11%|█         | 6144/55594 [00:49<06:36, 124.82tok/s]Prefill:  11%|█         | 6144/55594 [01:00<06:36, 124.82tok/s]Prefill:  15%|█▍        | 8192/55594 [01:05<06:24, 123.30tok/s]Prefill:  15%|█▍        | 8192/55594 [01:20<06:24, 123.30tok/s]Prefill:  18%|█▊        | 10240/55594 [01:23<06:13, 121.53tok/s]Prefill:  18%|█▊        | 10240/55594 [01:40<06:13, 121.53tok/s]Prefill:  22%|██▏       | 12288/55594 [01:40<06:00, 120.10tok/s]Prefill:  26%|██▌       | 14336/55594 [01:58<05:48, 118.51tok/s]Prefill:  26%|██▌       | 14336/55594 [02:10<05:48, 118.51tok/s]Prefill:  29%|██▉       | 16384/55594 [02:16<05:35, 116.73tok/s]Prefill:  29%|██▉       | 16384/55594 [02:30<05:35, 116.73tok/s]Prefill:  33%|███▎      | 18432/55594 [02:34<05:22, 115.13tok/s]Prefill:  33%|███▎      | 18432/55594 [02:50<05:22, 115.13tok/s]Prefill:  37%|███▋      | 20480/55594 [02:53<05:09, 113.56tok/s]Prefill:  37%|███▋      | 20480/55594 [03:10<05:09, 113.56tok/s]Prefill:  41%|████      | 22528/55594 [03:12<04:55, 112.03tok/s]Prefill:  41%|████      | 22528/55594 [03:30<04:55, 112.03tok/s]Prefill:  44%|████▍     | 24576/55594 [03:31<04:40, 110.53tok/s]Prefill:  44%|████▍     | 24576/55594 [03:50<04:40, 110.53tok/s]Prefill:  48%|████▊     | 26624/55594 [03:50<04:25, 109.02tok/s]Prefill:  52%|█████▏    | 28672/55594 [04:10<04:10, 107.65tok/s]Prefill:  52%|█████▏    | 28672/55594 [04:20<04:10, 107.65tok/s]Prefill:  55%|█████▌    | 30720/55594 [04:30<03:54, 106.07tok/s]Prefill:  55%|█████▌    | 30720/55594 [04:40<03:54, 106.07tok/s]Prefill:  59%|█████▉    | 32768/55594 [04:50<03:37, 104.71tok/s]2026-03-15 21:56:40,681 [INFO] olmlx.routers.anthropic: Anthropic request: model=mlx-community/Qwen3.5-27B-4bit stream=False tools=26 messages=9 max_tokens=21333
+2026-03-15 21:56:40,681 [INFO] olmlx.routers.anthropic: Stripped 1 billing header block(s) from system prompt
+2026-03-15 21:56:40,681 [DEBUG] olmlx.routers.anthropic: Converted 15 messages, 26 tools
+2026-03-15 21:56:40,682 [INFO] olmlx.engine.inference: Chat prompt with 26 tools
+2026-03-15 21:56:40,682 [DEBUG] olmlx.engine.inference: Prompt (first 1000 chars): <|im_start|>system
+# Tools
+
+You have access to the following functions:
+
+<tools>
+{"type": "function", "function": {"name": "Agent", "description": "Launch a new agent to handle complex, multi-step tasks autonomously.\n\nThe Agent tool launches specialized agents (subprocesses) that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.\n\nAvailable agent types and the tools they have access to:\n- general-purpose: General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you. (Tools: *)\n- statusline-setup: Use this agent to configure the user's Claude Code status line setting. (Tools: Read, Edit)\n- Explore: Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. \"src/c
+2026-03-15 21:56:40,682 [DEBUG] olmlx.engine.inference: Prompt cache disabled: setting=True stream=False make_prompt_cache=True
+Prefill:  59%|█████▉    | 32768/55594 [05:10<03:37, 104.71tok/s]Prefill:  63%|██████▎   | 34816/55594 [05:10<03:20, 103.39tok/s]Prefill:  63%|██████▎   | 34816/55594 [05:30<03:20, 103.39tok/s]Prefill:  66%|██████▋   | 36864/55594 [05:31<03:03, 102.08tok/s]Prefill:  66%|██████▋   | 36864/55594 [05:50<03:03, 102.08tok/s]Prefill:  70%|██████▉   | 38912/55594 [05:52<02:45, 100.72tok/s]Prefill:  70%|██████▉   | 38912/55594 [06:10<02:45, 100.72tok/s]Prefill:  74%|███████▎  | 40960/55594 [06:13<02:27, 99.43tok/s] Prefill:  74%|███████▎  | 40960/55594 [06:30<02:27, 99.43tok/s]Prefill:  77%|███████▋  | 43008/55594 [06:35<02:08, 98.08tok/s]Prefill:  77%|███████▋  | 43008/55594 [06:50<02:08, 98.08tok/s]Prefill:  81%|████████  | 45056/55594 [06:57<01:49, 96.45tok/s]Prefill:  81%|████████  | 45056/55594 [07:10<01:49, 96.45tok/s]Prefill:  85%|████████▍ | 47104/55594 [07:19<01:29, 94.71tok/s]Prefill:  85%|████████▍ | 47104/55594 [07:30<01:29, 94.71tok/s]Prefill:  88%|████████▊ | 49152/55594 [07:42<01:09, 93.16tok/s]Prefill:  88%|████████▊ | 49152/55594 [08:00<01:09, 93.16tok/s]Prefill:  92%|█████████▏| 51200/55594 [08:05<00:47, 92.08tok/s]Prefill:  92%|█████████▏| 51200/55594 [08:20<00:47, 92.08tok/s]Prefill:  96%|█████████▌| 53248/55594 [08:28<00:25, 90.90tok/s]Prefill:  96%|█████████▌| 53248/55594 [08:40<00:25, 90.90tok/s]Prefill:  99%|█████████▉| 55296/55594 [08:52<00:03, 89.68tok/s]Prefill: 100%|█████████▉| 55593/55594 [08:55<00:00, 89.13tok/s]Prefill: 100%|█████████▉| 55593/55594 [08:55<00:00, 103.74tok/s]
+2026-03-15 22:00:43,851 [INFO] olmlx.engine.inference: Generation complete: 0 prompt tokens, 0 tokens generated (0.0 tok/s), 543.86s total
+2026-03-15 22:00:43,852 [DEBUG] olmlx.routers.anthropic: Raw model output (363 chars): I need to check if a CONTRIBUTING.md file exists and examine the docs directory structure to understand what documentation is missing for the open issues.
+</think>
+
+<tool_call>
+<function=Glob>
+<parameter=pattern>
+**/CONTRIBUTING*
+</parameter>
+</function>
+</tool_call>
+<tool_call>
+<function=Glob>
+<parameter=pattern>
+docs/**/*
+</parameter>
+</function>
+</tool_call>
+Prefill:   0%|          | 0/55594 [00:00<?, ?tok/s]Prefill:   4%|▎         | 2048/55594 [00:16<06:58, 127.94tok/s]Prefill:   4%|▎         | 2048/55594 [00:26<06:58, 127.94tok/s]Prefill:   7%|▋         | 4096/55594 [00:32<06:46, 126.66tok/s]Prefill:   7%|▋         | 4096/55594 [00:46<06:46, 126.66tok/s]Prefill:  11%|█         | 6144/55594 [00:48<06:35, 124.93tok/s]2026-03-15 22:01:42,933 [INFO] olmlx.routers.anthropic: Anthropic request: model=mlx-community/Qwen3.5-27B-4bit stream=False tools=26 messages=9 max_tokens=21333
+2026-03-15 22:01:42,933 [INFO] olmlx.routers.anthropic: Stripped 1 billing header block(s) from system prompt
+2026-03-15 22:01:42,933 [DEBUG] olmlx.routers.anthropic: Converted 15 messages, 26 tools
+2026-03-15 22:01:42,933 [INFO] olmlx.engine.inference: Chat prompt with 26 tools
+2026-03-15 22:01:42,934 [DEBUG] olmlx.engine.inference: Prompt (first 1000 chars): <|im_start|>system
+# Tools
+
+You have access to the following functions:
+
+<tools>
+{"type": "function", "function": {"name": "Agent", "description": "Launch a new agent to handle complex, multi-step tasks autonomously.\n\nThe Agent tool launches specialized agents (subprocesses) that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.\n\nAvailable agent types and the tools they have access to:\n- general-purpose: General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you. (Tools: *)\n- statusline-setup: Use this agent to configure the user's Claude Code status line setting. (Tools: Read, Edit)\n- Explore: Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. \"src/c
+2026-03-15 22:01:42,934 [DEBUG] olmlx.engine.inference: Prompt cache disabled: setting=True stream=False make_prompt_cache=True
+Prefill:  15%|█▍        | 8192/55594 [01:05<06:23, 123.62tok/s]Prefill:  15%|█▍        | 8192/55594 [01:16<06:23, 123.62tok/s]Prefill:  18%|█▊        | 10240/55594 [01:23<06:12, 121.83tok/s]Prefill:  18%|█▊        | 10240/55594 [01:36<06:12, 121.83tok/s]Prefill:  22%|██▏       | 12288/55594 [01:40<06:00, 120.14tok/s]Prefill:  22%|██▏       | 12288/55594 [01:56<06:00, 120.14tok/s]Prefill:  26%|██▌       | 14336/55594 [01:58<05:47, 118.64tok/s]Prefill:  29%|██▉       | 16384/55594 [02:16<05:34, 117.25tok/s]Prefill:  29%|██▉       | 16384/55594 [02:26<05:34, 117.25tok/s]Prefill:  33%|███▎      | 18432/55594 [02:34<05:21, 115.73tok/s]Prefill:  33%|███▎      | 18432/55594 [02:46<05:21, 115.73tok/s]Prefill:  37%|███▋      | 20480/55594 [02:52<05:07, 114.22tok/s]Prefill:  37%|███▋      | 20480/55594 [03:06<05:07, 114.22tok/s]Prefill:  41%|████      | 22528/55594 [03:11<04:53, 112.76tok/s]Prefill:  41%|████      | 22528/55594 [03:26<04:53, 112.76tok/s]Prefill:  44%|████▍     | 24576/55594 [03:30<04:38, 111.30tok/s]Prefill:  44%|████▍     | 24576/55594 [03:46<04:38, 111.30tok/s]Prefill:  48%|████▊     | 26624/55594 [03:49<04:23, 109.77tok/s]Prefill:  48%|████▊     | 26624/55594 [04:06<04:23, 109.77tok/s]Prefill:  52%|█████▏    | 28672/55594 [04:09<04:08, 108.38tok/s]Prefill:  52%|█████▏    | 28672/55594 [04:26<04:08, 108.38tok/s]Prefill:  55%|█████▌    | 30720/55594 [04:28<03:52, 107.01tok/s]Prefill:  55%|█████▌    | 30720/55594 [04:46<03:52, 107.01tok/s]Prefill:  59%|█████▉    | 32768/55594 [04:48<03:36, 105.65tok/s]Prefill:  59%|█████▉    | 32768/55594 [05:06<03:36, 105.65tok/s]Prefill:  63%|██████▎   | 34816/55594 [05:09<03:19, 103.99tok/s]Prefill:  63%|██████▎   | 34816/55594 [05:26<03:19, 103.99tok/s]Prefill:  66%|██████▋   | 36864/55594 [05:29<03:02, 102.63tok/s]Prefill:  66%|██████▋   | 36864/55594 [05:46<03:02, 102.63tok/s]Prefill:  70%|██████▉   | 38912/55594 [05:50<02:44, 101.30tok/s]2026-03-15 22:06:44,935 [INFO] olmlx.routers.anthropic: Anthropic request: model=mlx-community/Qwen3.5-27B-4bit stream=False tools=26 messages=9 max_tokens=21333
+2026-03-15 22:06:44,935 [INFO] olmlx.routers.anthropic: Stripped 1 billing header block(s) from system prompt
+2026-03-15 22:06:44,935 [DEBUG] olmlx.routers.anthropic: Converted 15 messages, 26 tools
+2026-03-15 22:06:44,936 [INFO] olmlx.engine.inference: Chat prompt with 26 tools
+2026-03-15 22:06:44,936 [DEBUG] olmlx.engine.inference: Prompt (first 1000 chars): <|im_start|>system
+# Tools
+
+You have access to the following functions:
+
+<tools>
+{"type": "function", "function": {"name": "Agent", "description": "Launch a new agent to handle complex, multi-step tasks autonomously.\n\nThe Agent tool launches specialized agents (subprocesses) that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.\n\nAvailable agent types and the tools they have access to:\n- general-purpose: General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you. (Tools: *)\n- statusline-setup: Use this agent to configure the user's Claude Code status line setting. (Tools: Read, Edit)\n- Explore: Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. \"src/c
+2026-03-15 22:06:44,936 [DEBUG] olmlx.engine.inference: Prompt cache disabled: setting=True stream=False make_prompt_cache=True
+Prefill:  70%|██████▉   | 38912/55594 [06:06<02:44, 101.30tok/s]Prefill:  74%|███████▎  | 40960/55594 [06:11<02:26, 99.94tok/s] Prefill:  74%|███████▎  | 40960/55594 [06:26<02:26, 99.94tok/s]Prefill:  77%|███████▋  | 43008/55594 [06:33<02:07, 98.49tok/s]Prefill:  77%|███████▋  | 43008/55594 [06:46<02:07, 98.49tok/s]Prefill:  81%|████████  | 45056/55594 [06:55<01:49, 96.66tok/s]Prefill:  81%|████████  | 45056/55594 [07:06<01:49, 96.66tok/s]Prefill:  85%|████████▍ | 47104/55594 [07:17<01:29, 95.10tok/s]Prefill:  85%|████████▍ | 47104/55594 [07:36<01:29, 95.10tok/s]Prefill:  88%|████████▊ | 49152/55594 [07:40<01:08, 93.70tok/s]Prefill:  88%|████████▊ | 49152/55594 [07:56<01:08, 93.70tok/s]Prefill:  92%|█████████▏| 51200/55594 [08:03<00:47, 92.17tok/s]Prefill:  92%|█████████▏| 51200/55594 [08:16<00:47, 92.17tok/s]Prefill:  96%|█████████▌| 53248/55594 [08:26<00:25, 90.66tok/s]Prefill:  96%|█████████▌| 53248/55594 [08:36<00:25, 90.66tok/s]Prefill:  99%|█████████▉| 55296/55594 [08:50<00:03, 89.39tok/s]Prefill: 100%|█████████▉| 55593/55594 [08:54<00:00, 88.76tok/s]Prefill: 100%|█████████▉| 55593/55594 [08:54<00:00, 104.07tok/s]
+2026-03-15 22:09:45,972 [INFO] olmlx.engine.inference: Generation complete: 0 prompt tokens, 0 tokens generated (0.0 tok/s), 542.12s total
+2026-03-15 22:09:45,974 [DEBUG] olmlx.routers.anthropic: Raw model output (363 chars): I need to check if a CONTRIBUTING.md file exists and examine the docs directory structure to understand what documentation is missing for the open issues.
+</think>
+
+<tool_call>
+<function=Glob>
+<parameter=pattern>
+**/CONTRIBUTING*
+</parameter>
+</function>
+</tool_call>
+<tool_call>
+<function=Glob>
+<parameter=pattern>
+docs/**/*
+</parameter>
+</function>
+</tool_call>
+Prefill:   0%|          | 0/55594 [00:00<?, ?tok/s]Prefill:   4%|▎         | 2048/55594 [00:16<07:01, 127.05tok/s]Prefill:   7%|▋         | 4096/55594 [00:32<06:48, 126.00tok/s]Prefill:   7%|▋         | 4096/55594 [00:44<06:48, 126.00tok/s]Prefill:  11%|█         | 6144/55594 [00:49<06:36, 124.61tok/s]Prefill:  11%|█         | 6144/55594 [01:04<06:36, 124.61tok/s]Prefill:  15%|█▍        | 8192/55594 [01:06<06:24, 123.26tok/s]Prefill:  18%|█▊        | 10240/55594 [01:23<06:11, 122.04tok/s]Prefill:  18%|█▊        | 10240/55594 [01:34<06:11, 122.04tok/s]Prefill:  22%|██▏       | 12288/55594 [01:40<05:58, 120.70tok/s]Prefill:  22%|██▏       | 12288/55594 [01:54<05:58, 120.70tok/s]Prefill:  26%|██▌       | 14336/55594 [01:57<05:45, 119.31tok/s]2026-03-15 22:11:53,798 [INFO] olmlx.routers.anthropic: Anthropic request: model=mlx-community/Qwen3.5-27B-4bit stream=False tools=26 messages=9 max_tokens=21333
+2026-03-15 22:11:53,798 [INFO] olmlx.routers.anthropic: Stripped 1 billing header block(s) from system prompt
+2026-03-15 22:11:53,798 [DEBUG] olmlx.routers.anthropic: Converted 15 messages, 26 tools
+2026-03-15 22:11:53,798 [INFO] olmlx.engine.inference: Chat prompt with 26 tools
+2026-03-15 22:11:53,798 [DEBUG] olmlx.engine.inference: Prompt (first 1000 chars): <|im_start|>system
+# Tools
+
+You have access to the following functions:
+
+<tools>
+{"type": "function", "function": {"name": "Agent", "description": "Launch a new agent to handle complex, multi-step tasks autonomously.\n\nThe Agent tool launches specialized agents (subprocesses) that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.\n\nAvailable agent types and the tools they have access to:\n- general-purpose: General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you. (Tools: *)\n- statusline-setup: Use this agent to configure the user's Claude Code status line setting. (Tools: Read, Edit)\n- Explore: Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. \"src/c
+2026-03-15 22:11:53,798 [DEBUG] olmlx.engine.inference: Prompt cache disabled: setting=True stream=False make_prompt_cache=True
+Prefill:  26%|██▌       | 14336/55594 [02:14<05:45, 119.31tok/s]Prefill:  29%|██▉       | 16384/55594 [02:15<05:32, 117.76tok/s]Prefill:  33%|███▎      | 18432/55594 [02:33<05:19, 116.33tok/s]Prefill:  33%|███▎      | 18432/55594 [02:44<05:19, 116.33tok/s]Prefill:  37%|███▋      | 20480/55594 [02:52<05:06, 114.58tok/s]Prefill:  37%|███▋      | 20480/55594 [03:04<05:06, 114.58tok/s]Prefill:  41%|████      | 22528/55594 [03:11<04:52, 112.97tok/s]Prefill:  41%|████      | 22528/55594 [03:24<04:52, 112.97tok/s]Prefill:  44%|████▍     | 24576/55594 [03:30<04:38, 111.50tok/s]Prefill:  44%|████▍     | 24576/55594 [03:44<04:38, 111.50tok/s]Prefill:  48%|████▊     | 26624/55594 [03:49<04:23, 109.98tok/s]Prefill:  48%|████▊     | 26624/55594 [04:04<04:23, 109.98tok/s]Prefill:  52%|█████▏    | 28672/55594 [04:08<04:08, 108.46tok/s]Prefill:  52%|█████▏    | 28672/55594 [04:24<04:08, 108.46tok/s]Prefill:  55%|█████▌    | 30720/55594 [04:28<03:52, 107.03tok/s]Prefill:  55%|█████▌    | 30720/55594 [04:44<03:52, 107.03tok/s]Prefill:  59%|█████▉    | 32768/55594 [04:48<03:36, 105.62tok/s]Prefill:  59%|█████▉    | 32768/55594 [05:04<03:36, 105.62tok/s]Prefill:  63%|██████▎   | 34816/55594 [05:08<03:19, 104.23tok/s]Prefill:  63%|██████▎   | 34816/55594 [05:24<03:19, 104.23tok/s]Prefill:  66%|██████▋   | 36864/55594 [05:29<03:02, 102.85tok/s]Prefill:  66%|██████▋   | 36864/55594 [05:44<03:02, 102.85tok/s]Prefill:  70%|██████▉   | 38912/55594 [05:50<02:44, 101.47tok/s]Prefill:  70%|██████▉   | 38912/55594 [06:04<02:44, 101.47tok/s]Prefill:  74%|███████▎  | 40960/55594 [06:11<02:26, 100.17tok/s]Prefill:  74%|███████▎  | 40960/55594 [06:24<02:26, 100.17tok/s]Prefill:  77%|███████▋  | 43008/55594 [06:32<02:07, 98.83tok/s] Prefill:  77%|███████▋  | 43008/55594 [06:45<02:07, 98.83tok/s]Prefill:  81%|████████  | 45056/55594 [06:54<01:48, 97.04tok/s]Prefill:  81%|████████  | 45056/55594 [07:05<01:48, 97.04tok/s]Prefill:  85%|████████▍ | 47104/55594 [07:16<01:29, 95.38tok/s]2026-03-15 22:17:13,155 [INFO] olmlx.routers.anthropic: Anthropic request: model=mlx-community/Qwen3.5-27B-4bit stream=False tools=26 messages=9 max_tokens=21333
+2026-03-15 22:17:13,155 [INFO] olmlx.routers.anthropic: Stripped 1 billing header block(s) from system prompt
+2026-03-15 22:17:13,155 [DEBUG] olmlx.routers.anthropic: Converted 15 messages, 26 tools
+2026-03-15 22:17:13,156 [INFO] olmlx.engine.inference: Chat prompt with 26 tools
+2026-03-15 22:17:13,156 [DEBUG] olmlx.engine.inference: Prompt (first 1000 chars): <|im_start|>system
+# Tools
+
+You have access to the following functions:
+
+<tools>
+{"type": "function", "function": {"name": "Agent", "description": "Launch a new agent to handle complex, multi-step tasks autonomously.\n\nThe Agent tool launches specialized agents (subprocesses) that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.\n\nAvailable agent types and the tools they have access to:\n- general-purpose: General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you. (Tools: *)\n- statusline-setup: Use this agent to configure the user's Claude Code status line setting. (Tools: Read, Edit)\n- Explore: Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. \"src/c
+2026-03-15 22:17:13,156 [DEBUG] olmlx.engine.inference: Prompt cache disabled: setting=True stream=False make_prompt_cache=True
+Prefill:  85%|████████▍ | 47104/55594 [07:35<01:29, 95.38tok/s]Prefill:  88%|████████▊ | 49152/55594 [07:39<01:08, 93.94tok/s]Prefill:  88%|████████▊ | 49152/55594 [07:55<01:08, 93.94tok/s]Prefill:  92%|█████████▏| 51200/55594 [08:02<00:47, 92.61tok/s]Prefill:  92%|█████████▏| 51200/55594 [08:15<00:47, 92.61tok/s]Prefill:  96%|█████████▌| 53248/55594 [08:25<00:25, 91.24tok/s]Prefill:  96%|█████████▌| 53248/55594 [08:45<00:25, 91.24tok/s]Prefill:  99%|█████████▉| 55296/55594 [08:48<00:03, 90.28tok/s]Prefill: 100%|█████████▉| 55593/55594 [08:52<00:00, 89.69tok/s]Prefill: 100%|█████████▉| 55593/55594 [08:52<00:00, 104.44tok/s]
+2026-03-15 22:18:46,107 [INFO] olmlx.engine.inference: Generation complete: 0 prompt tokens, 0 tokens generated (0.0 tok/s), 540.13s total
+2026-03-15 22:18:46,107 [DEBUG] olmlx.routers.anthropic: Raw model output (363 chars): I need to check if a CONTRIBUTING.md file exists and examine the docs directory structure to understand what documentation is missing for the open issues.
+</think>
+
+<tool_call>
+<function=Glob>
+<parameter=pattern>
+**/CONTRIBUTING*
+</parameter>
+</function>
+</tool_call>
+<tool_call>
+<function=Glob>
+<parameter=pattern>
+docs/**/*
+</parameter>
+</function>
+</tool_call>
+Prefill:   0%|          | 0/55594 [00:00<?, ?tok/s]Prefill:   4%|▎         | 2048/55594 [00:16<06:58, 127.98tok/s]Prefill:   7%|▋         | 4096/55594 [00:32<06:45, 126.88tok/s]Prefill:   7%|▋         | 4096/55594 [00:45<06:45, 126.88tok/s]Prefill:  11%|█         | 6144/55594 [00:48<06:33, 125.53tok/s]Prefill:  11%|█         | 6144/55594 [01:05<06:33, 125.53tok/s]Prefill:  15%|█▍        | 8192/55594 [01:05<06:21, 124.20tok/s]Prefill:  18%|█▊        | 10240/55594 [01:22<06:09, 122.77tok/s]Prefill:  18%|█▊        | 10240/55594 [01:35<06:09, 122.77tok/s]Prefill:  22%|██▏       | 12288/55594 [01:39<05:57, 121.19tok/s]Prefill:  22%|██▏       | 12288/55594 [01:55<05:57, 121.19tok/s]Prefill:  26%|██▌       | 14336/55594 [01:57<05:44, 119.66tok/s]Prefill:  26%|██▌       | 14336/55594 [02:15<05:44, 119.66tok/s]Prefill:  29%|██▉       | 16384/55594 [02:15<05:31, 118.16tok/s]Prefill:  33%|███▎      | 18432/55594 [02:33<05:18, 116.62tok/s]Prefill:  33%|███▎      | 18432/55594 [02:45<05:18, 116.62tok/s]Prefill:  37%|███▋      | 20480/55594 [02:51<05:05, 114.96tok/s]Prefill:  37%|███▋      | 20480/55594 [03:05<05:05, 114.96tok/s]Prefill:  41%|████      | 22528/55594 [03:10<04:51, 113.34tok/s]Prefill:  41%|████      | 22528/55594 [03:25<04:51, 113.34tok/s]Prefill:  44%|████▍     | 24576/55594 [03:29<04:37, 111.78tok/s]Prefill:  44%|████▍     | 24576/55594 [03:45<04:37, 111.78tok/s]Prefill:  48%|████▊     | 26624/55594 [03:48<04:22, 110.26tok/s]2026-03-15 22:22:40,724 [INFO] olmlx.routers.anthropic: Anthropic request: model=mlx-community/Qwen3.5-27B-4bit stream=False tools=26 messages=9 max_tokens=21333
+2026-03-15 22:22:40,724 [INFO] olmlx.routers.anthropic: Stripped 1 billing header block(s) from system prompt
+2026-03-15 22:22:40,724 [DEBUG] olmlx.routers.anthropic: Converted 15 messages, 26 tools
+2026-03-15 22:22:40,725 [INFO] olmlx.engine.inference: Chat prompt with 26 tools
+2026-03-15 22:22:40,725 [DEBUG] olmlx.engine.inference: Prompt (first 1000 chars): <|im_start|>system
+# Tools
+
+You have access to the following functions:
+
+<tools>
+{"type": "function", "function": {"name": "Agent", "description": "Launch a new agent to handle complex, multi-step tasks autonomously.\n\nThe Agent tool launches specialized agents (subprocesses) that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.\n\nAvailable agent types and the tools they have access to:\n- general-purpose: General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you. (Tools: *)\n- statusline-setup: Use this agent to configure the user's Claude Code status line setting. (Tools: Read, Edit)\n- Explore: Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. \"src/c
+2026-03-15 22:22:40,725 [DEBUG] olmlx.engine.inference: Prompt cache disabled: setting=True stream=False make_prompt_cache=True
+Prefill:  48%|████▊     | 26624/55594 [04:05<04:22, 110.26tok/s]Prefill:  52%|█████▏    | 28672/55594 [04:07<04:07, 108.64tok/s]Prefill:  52%|█████▏    | 28672/55594 [04:25<04:07, 108.64tok/s]Prefill:  55%|█████▌    | 30720/55594 [04:27<03:51, 107.23tok/s]Prefill:  55%|█████▌    | 30720/55594 [04:45<03:51, 107.23tok/s]Prefill:  59%|█████▉    | 32768/55594 [04:47<03:35, 105.74tok/s]Prefill:  59%|█████▉    | 32768/55594 [05:05<03:35, 105.74tok/s]Prefill:  63%|██████▎   | 34816/55594 [05:07<03:19, 104.12tok/s]Prefill:  63%|██████▎   | 34816/55594 [05:25<03:19, 104.12tok/s]Prefill:  66%|██████▋   | 36864/55594 [05:28<03:02, 102.54tok/s]Prefill:  66%|██████▋   | 36864/55594 [05:45<03:02, 102.54tok/s]Prefill:  70%|██████▉   | 38912/55594 [05:49<02:45, 101.06tok/s]Prefill:  70%|██████▉   | 38912/55594 [06:05<02:45, 101.06tok/s]Prefill:  74%|███████▎  | 40960/55594 [06:10<02:26, 99.64tok/s] Prefill:  74%|███████▎  | 40960/55594 [06:25<02:26, 99.64tok/s]Prefill:  77%|███████▋  | 43008/55594 [06:32<02:08, 98.27tok/s]Prefill:  77%|███████▋  | 43008/55594 [06:45<02:08, 98.27tok/s]Prefill:  81%|████████  | 45056/55594 [06:54<01:49, 96.41tok/s]Prefill:  81%|████████  | 45056/55594 [07:05<01:49, 96.41tok/s]Prefill:  85%|████████▍ | 47104/55594 [07:16<01:29, 94.78tok/s]Prefill:  85%|████████▍ | 47104/55594 [07:35<01:29, 94.78tok/s]Prefill:  88%|████████▊ | 49152/55594 [07:39<01:09, 93.36tok/s]Prefill:  88%|████████▊ | 49152/55594 [07:55<01:09, 93.36tok/s]Prefill:  92%|█████████▏| 51200/55594 [08:02<00:47, 92.03tok/s]Prefill:  92%|█████████▏| 51200/55594 [08:15<00:47, 92.03tok/s]Prefill:  96%|█████████▌| 53248/55594 [08:25<00:25, 90.63tok/s]Prefill:  96%|█████████▌| 53248/55594 [08:45<00:25, 90.63tok/s]Prefill:  99%|█████████▉| 55296/55594 [08:49<00:03, 89.31tok/s]Prefill: 100%|█████████▉| 55593/55594 [08:53<00:00, 88.70tok/s]Prefill: 100%|█████████▉| 55593/55594 [08:53<00:00, 104.22tok/s]
+2026-03-15 22:27:47,442 [INFO] olmlx.engine.inference: Generation complete: 0 prompt tokens, 0 tokens generated (0.0 tok/s), 541.34s total
+2026-03-15 22:27:47,442 [DEBUG] olmlx.routers.anthropic: Raw model output (363 chars): I need to check if a CONTRIBUTING.md file exists and examine the docs directory structure to understand what documentation is missing for the open issues.
+</think>
+
+<tool_call>
+<function=Glob>
+<parameter=pattern>
+**/CONTRIBUTING*
+</parameter>
+</function>
+</tool_call>
+<tool_call>
+<function=Glob>
+<parameter=pattern>
+docs/**/*
+</parameter>
+</function>
+</tool_call>
+Prefill:   0%|          | 0/55594 [00:00<?, ?tok/s]2026-03-15 22:27:51,041 [INFO] olmlx.routers.anthropic: Anthropic request: model=mlx-community/Qwen3.5-27B-4bit stream=False tools=26 messages=9 max_tokens=21333
+2026-03-15 22:27:51,041 [INFO] olmlx.routers.anthropic: Stripped 1 billing header block(s) from system prompt
+2026-03-15 22:27:51,042 [DEBUG] olmlx.routers.anthropic: Converted 15 messages, 26 tools
+2026-03-15 22:27:51,044 [INFO] olmlx.engine.inference: Chat prompt with 26 tools
+2026-03-15 22:27:51,044 [DEBUG] olmlx.engine.inference: Prompt (first 1000 chars): <|im_start|>system
+# Tools
+
+You have access to the following functions:
+
+<tools>
+{"type": "function", "function": {"name": "Agent", "description": "Launch a new agent to handle complex, multi-step tasks autonomously.\n\nThe Agent tool launches specialized agents (subprocesses) that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.\n\nAvailable agent types and the tools they have access to:\n- general-purpose: General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you. (Tools: *)\n- statusline-setup: Use this agent to configure the user's Claude Code status line setting. (Tools: Read, Edit)\n- Explore: Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. \"src/c
+2026-03-15 22:27:51,044 [DEBUG] olmlx.engine.inference: Prompt cache disabled: setting=True stream=False make_prompt_cache=True
+Prefill:   4%|▎         | 2048/55594 [00:16<07:01, 127.08tok/s]Prefill:   7%|▋         | 4096/55594 [00:32<06:48, 125.93tok/s]Prefill:   7%|▋         | 4096/55594 [00:44<06:48, 125.93tok/s]Prefill:  11%|█         | 6144/55594 [00:49<06:36, 124.64tok/s]Prefill:  11%|█         | 6144/55594 [01:04<06:36, 124.64tok/s]Prefill:  15%|█▍        | 8192/55594 [01:05<06:24, 123.35tok/s]Prefill:  18%|█▊        | 10240/55594 [01:23<06:11, 121.95tok/s]Prefill:  18%|█▊        | 10240/55594 [01:34<06:11, 121.95tok/s]Prefill:  22%|██▏       | 12288/55594 [01:40<06:00, 120.27tok/s]Prefill:  22%|██▏       | 12288/55594 [01:54<06:00, 120.27tok/s]Prefill:  26%|██▌       | 14336/55594 [01:58<05:46, 118.99tok/s]Prefill:  26%|██▌       | 14336/55594 [02:14<05:46, 118.99tok/s]Prefill:  29%|██▉       | 16384/55594 [02:15<05:33, 117.71tok/s]Prefill:  33%|███▎      | 18432/55594 [02:33<05:19, 116.43tok/s]Prefill:  33%|███▎      | 18432/55594 [02:44<05:19, 116.43tok/s]Prefill:  37%|███▋      | 20480/55594 [02:52<05:05, 115.06tok/s]Prefill:  37%|███▋      | 20480/55594 [03:04<05:05, 115.06tok/s]Prefill:  41%|████      | 22528/55594 [03:10<04:51, 113.55tok/s]Prefill:  41%|████      | 22528/55594 [03:24<04:51, 113.55tok/s]Prefill:  44%|████▍     | 24576/55594 [03:29<04:36, 112.05tok/s]Prefill:  44%|████▍     | 24576/55594 [03:44<04:36, 112.05tok/s]Prefill:  48%|████▊     | 26624/55594 [03:48<04:22, 110.57tok/s]Prefill:  48%|████▊     | 26624/55594 [04:04<04:22, 110.57tok/s]Prefill:  52%|█████▏    | 28672/55594 [04:08<04:06, 109.06tok/s]Prefill:  52%|█████▏    | 28672/55594 [04:24<04:06, 109.06tok/s]Prefill:  55%|█████▌    | 30720/55594 [04:27<03:51, 107.62tok/s]Prefill:  55%|█████▌    | 30720/55594 [04:44<03:51, 107.62tok/s]Prefill:  59%|█████▉    | 32768/55594 [04:47<03:34, 106.20tok/s]Prefill:  59%|█████▉    | 32768/55594 [05:04<03:34, 106.20tok/s]Prefill:  63%|██████▎   | 34816/55594 [05:07<03:18, 104.78tok/s]2026-03-15 22:32:56,758 [INFO] olmlx.routers.anthropic: Anthropic request: model=mlx-community/Qwen3.5-27B-4bit stream=False tools=26 messages=9 max_tokens=21333
+2026-03-15 22:32:56,758 [INFO] olmlx.routers.anthropic: Stripped 1 billing header block(s) from system prompt
+2026-03-15 22:32:56,758 [DEBUG] olmlx.routers.anthropic: Converted 15 messages, 26 tools
+2026-03-15 22:32:56,758 [INFO] olmlx.engine.inference: Chat prompt with 26 tools
+2026-03-15 22:32:56,758 [DEBUG] olmlx.engine.inference: Prompt (first 1000 chars): <|im_start|>system
+# Tools
+
+You have access to the following functions:
+
+<tools>
+{"type": "function", "function": {"name": "Agent", "description": "Launch a new agent to handle complex, multi-step tasks autonomously.\n\nThe Agent tool launches specialized agents (subprocesses) that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.\n\nAvailable agent types and the tools they have access to:\n- general-purpose: General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you. (Tools: *)\n- statusline-setup: Use this agent to configure the user's Claude Code status line setting. (Tools: Read, Edit)\n- Explore: Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. \"src/c
+2026-03-15 22:32:56,758 [DEBUG] olmlx.engine.inference: Prompt cache disabled: setting=True stream=False make_prompt_cache=True
+Prefill:  63%|██████▎   | 34816/55594 [05:24<03:18, 104.78tok/s]Prefill:  66%|██████▋   | 36864/55594 [05:28<03:01, 103.37tok/s]Prefill:  66%|██████▋   | 36864/55594 [05:44<03:01, 103.37tok/s]Prefill:  70%|██████▉   | 38912/55594 [05:48<02:43, 102.00tok/s]Prefill:  70%|██████▉   | 38912/55594 [06:04<02:43, 102.00tok/s]Prefill:  74%|███████▎  | 40960/55594 [06:09<02:25, 100.67tok/s]Prefill:  74%|███████▎  | 40960/55594 [06:24<02:25, 100.67tok/s]Prefill:  77%|███████▋  | 43008/55594 [06:31<02:06, 99.32tok/s] Prefill:  77%|███████▋  | 43008/55594 [06:44<02:06, 99.32tok/s]Prefill:  81%|████████  | 45056/55594 [06:52<01:48, 97.56tok/s]Prefill:  81%|████████  | 45056/55594 [07:04<01:48, 97.56tok/s]Prefill:  85%|████████▍ | 47104/55594 [07:15<01:28, 95.92tok/s]Prefill:  85%|████████▍ | 47104/55594 [07:34<01:28, 95.92tok/s]Prefill:  88%|████████▊ | 49152/55594 [07:37<01:08, 94.47tok/s]Prefill:  88%|████████▊ | 49152/55594 [07:54<01:08, 94.47tok/s]Prefill:  92%|█████████▏| 51200/55594 [08:00<00:47, 93.11tok/s]Prefill:  92%|█████████▏| 51200/55594 [08:14<00:47, 93.11tok/s]Prefill:  96%|█████████▌| 53248/55594 [08:23<00:25, 91.77tok/s]Prefill:  96%|█████████▌| 53248/55594 [08:34<00:25, 91.77tok/s]Prefill:  99%|█████████▉| 55296/55594 [08:46<00:03, 90.46tok/s]Prefill: 100%|█████████▉| 55593/55594 [08:50<00:00, 89.86tok/s]Prefill: 100%|█████████▉| 55593/55594 [08:50<00:00, 104.80tok/s]
+2026-03-15 22:36:45,687 [INFO] olmlx.engine.inference: Generation complete: 0 prompt tokens, 0 tokens generated (0.0 tok/s), 538.24s total
+2026-03-15 22:36:45,687 [DEBUG] olmlx.routers.anthropic: Raw model output (363 chars): I need to check if a CONTRIBUTING.md file exists and examine the docs directory structure to understand what documentation is missing for the open issues.
+</think>
+
+<tool_call>
+<function=Glob>
+<parameter=pattern>
+**/CONTRIBUTING*
+</parameter>
+</function>
+</tool_call>
+<tool_call>
+<function=Glob>
+<parameter=pattern>
+docs/**/*
+</parameter>
+</function>
+</tool_call>
+Prefill:   0%|          | 0/55594 [00:00<?, ?tok/s]Prefill:   4%|▎         | 2048/55594 [00:15<06:57, 128.39tok/s]Prefill:   4%|▎         | 2048/55594 [00:26<06:57, 128.39tok/s]Prefill:   7%|▋         | 4096/55594 [00:32<06:44, 127.24tok/s]Prefill:   7%|▋         | 4096/55594 [00:46<06:44, 127.24tok/s]Prefill:  11%|█         | 6144/55594 [00:48<06:32, 125.92tok/s]Prefill:  15%|█▍        | 8192/55594 [01:05<06:20, 124.56tok/s]2026-03-15 22:37:57,797 [INFO] olmlx.routers.anthropic: Anthropic request: model=mlx-community/Qwen3.5-27B-4bit stream=False tools=26 messages=9 max_tokens=21333
+2026-03-15 22:37:57,797 [INFO] olmlx.routers.anthropic: Stripped 1 billing header block(s) from system prompt
+2026-03-15 22:37:57,797 [DEBUG] olmlx.routers.anthropic: Converted 15 messages, 26 tools
+2026-03-15 22:37:57,798 [INFO] olmlx.engine.inference: Chat prompt with 26 tools
+2026-03-15 22:37:57,798 [DEBUG] olmlx.engine.inference: Prompt (first 1000 chars): <|im_start|>system
+# Tools
+
+You have access to the following functions:
+
+<tools>
+{"type": "function", "function": {"name": "Agent", "description": "Launch a new agent to handle complex, multi-step tasks autonomously.\n\nThe Agent tool launches specialized agents (subprocesses) that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.\n\nAvailable agent types and the tools they have access to:\n- general-purpose: General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you. (Tools: *)\n- statusline-setup: Use this agent to configure the user's Claude Code status line setting. (Tools: Read, Edit)\n- Explore: Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. \"src/c
+2026-03-15 22:37:57,798 [DEBUG] olmlx.engine.inference: Prompt cache disabled: setting=True stream=False make_prompt_cache=True
+Prefill:  15%|█▍        | 8192/55594 [01:16<06:20, 124.56tok/s]Prefill:  18%|█▊        | 10240/55594 [01:22<06:08, 123.05tok/s]Prefill:  18%|█▊        | 10240/55594 [01:36<06:08, 123.05tok/s]Prefill:  22%|██▏       | 12288/55594 [01:39<05:56, 121.56tok/s]Prefill:  22%|██▏       | 12288/55594 [01:56<05:56, 121.56tok/s]Prefill:  26%|██▌       | 14336/55594 [01:57<05:43, 120.04tok/s]Prefill:  29%|██▉       | 16384/55594 [02:14<05:30, 118.50tok/s]Prefill:  29%|██▉       | 16384/55594 [02:26<05:30, 118.50tok/s]Prefill:  33%|███▎      | 18432/55594 [02:32<05:17, 116.89tok/s]Prefill:  33%|███▎      | 18432/55594 [02:46<05:17, 116.89tok/s]Prefill:  37%|███▋      | 20480/55594 [02:51<05:04, 115.31tok/s]Prefill:  37%|███▋      | 20480/55594 [03:06<05:04, 115.31tok/s]Prefill:  41%|████      | 22528/55594 [03:09<04:50, 113.76tok/s]Prefill:  41%|████      | 22528/55594 [03:26<04:50, 113.76tok/s]Prefill:  44%|████▍     | 24576/55594 [03:28<04:36, 112.22tok/s]Prefill:  44%|████▍     | 24576/55594 [03:46<04:36, 112.22tok/s]Prefill:  48%|████▊     | 26624/55594 [03:47<04:21, 110.71tok/s]Prefill:  48%|████▊     | 26624/55594 [04:06<04:21, 110.71tok/s]Prefill:  52%|█████▏    | 28672/55594 [04:06<04:06, 109.23tok/s]Prefill:  52%|█████▏    | 28672/55594 [04:26<04:06, 109.23tok/s]Prefill:  55%|█████▌    | 30720/55594 [04:26<03:50, 107.77tok/s]Prefill:  55%|█████▌    | 30720/55594 [04:46<03:50, 107.77tok/s]Prefill:  59%|█████▉    | 32768/55594 [04:46<03:34, 106.32tok/s]Prefill:  59%|█████▉    | 32768/55594 [05:06<03:34, 106.32tok/s]Prefill:  63%|██████▎   | 34816/55594 [05:06<03:18, 104.92tok/s]Prefill:  63%|██████▎   | 34816/55594 [05:26<03:18, 104.92tok/s]Prefill:  66%|██████▋   | 36864/55594 [05:26<03:00, 103.50tok/s]Prefill:  66%|██████▋   | 36864/55594 [05:46<03:00, 103.50tok/s]Prefill:  70%|██████▉   | 38912/55594 [05:47<02:43, 102.14tok/s]Prefill:  70%|██████▉   | 38912/55594 [06:06<02:43, 102.14tok/s]Prefill:  74%|███████▎  | 40960/55594 [06:08<02:25, 100.85tok/s]Prefill:  74%|███████▎  | 40960/55594 [06:26<02:25, 100.85tok/s]Prefill:  77%|███████▋  | 43008/55594 [06:29<02:06, 99.56tok/s] Prefill:  77%|███████▋  | 43008/55594 [06:46<02:06, 99.56tok/s]Prefill:  81%|████████  | 45056/55594 [06:51<01:47, 97.68tok/s]Prefill:  81%|████████  | 45056/55594 [07:06<01:47, 97.68tok/s]Prefill:  85%|████████▍ | 47104/55594 [07:13<01:28, 95.80tok/s]Prefill:  85%|████████▍ | 47104/55594 [07:26<01:28, 95.80tok/s]Prefill:  88%|████████▊ | 49152/55594 [07:36<01:08, 94.11tok/s]Prefill:  88%|████████▊ | 49152/55594 [07:56<01:08, 94.11tok/s]Prefill:  92%|█████████▏| 51200/55594 [07:59<00:47, 93.01tok/s]Prefill:  92%|█████████▏| 51200/55594 [08:16<00:47, 93.01tok/s]Prefill:  96%|█████████▌| 53248/55594 [08:22<00:25, 91.80tok/s]Prefill:  96%|█████████▌| 53248/55594 [08:36<00:25, 91.80tok/s]Prefill:  99%|█████████▉| 55296/55594 [08:45<00:03, 90.54tok/s]Prefill: 100%|█████████▉| 55593/55594 [08:49<00:00, 89.94tok/s]Prefill: 100%|█████████▉| 55593/55594 [08:49<00:00, 105.06tok/s]
+2026-03-15 22:45:42,675 [INFO] olmlx.engine.inference: Generation complete: 0 prompt tokens, 0 tokens generated (0.0 tok/s), 536.99s total
+2026-03-15 22:45:42,675 [DEBUG] olmlx.routers.anthropic: Raw model output (363 chars): I need to check if a CONTRIBUTING.md file exists and examine the docs directory structure to understand what documentation is missing for the open issues.
+</think>
+
+<tool_call>
+<function=Glob>
+<parameter=pattern>
+**/CONTRIBUTING*
+</parameter>
+</function>
+</tool_call>
+<tool_call>
+<function=Glob>
+<parameter=pattern>
+docs/**/*
+</parameter>
+</function>
+</tool_call>
+Prefill:   0%|          | 0/55594 [00:00<?, ?tok/s]Prefill:   4%|▎         | 2048/55594 [00:15<06:56, 128.52tok/s]Prefill:   4%|▎         | 2048/55594 [00:29<06:56, 128.52tok/s]Prefill:   7%|▋         | 4096/55594 [00:32<06:44, 127.30tok/s]Prefill:  11%|█         | 6144/55594 [00:48<06:32, 126.03tok/s]Prefill:  11%|█         | 6144/55594 [00:59<06:32, 126.03tok/s]Prefill:  15%|█▍        | 8192/55594 [01:05<06:20, 124.59tok/s]Prefill:  15%|█▍        | 8192/55594 [01:19<06:20, 124.59tok/s]Prefill:  18%|█▊        | 10240/55594 [01:22<06:08, 123.15tok/s]Prefill:  22%|██▏       | 12288/55594 [01:39<05:55, 121.67tok/s]Prefill:  22%|██▏       | 12288/55594 [01:49<05:55, 121.67tok/s]Prefill:  26%|██▌       | 14336/55594 [01:56<05:43, 120.18tok/s]Prefill:  26%|██▌       | 14336/55594 [02:09<05:43, 120.18tok/s]Prefill:  29%|██▉       | 16384/55594 [02:14<05:30, 118.61tok/s]Prefill:  29%|██▉       | 16384/55594 [02:29<05:30, 118.61tok/s]Prefill:  33%|███▎      | 18432/55594 [02:32<05:17, 117.05tok/s]Prefill:  33%|███▎      | 18432/55594 [02:49<05:17, 117.05tok/s]Prefill:  37%|███▋      | 20480/55594 [02:50<05:03, 115.52tok/s]Prefill:  41%|████      | 22528/55594 [03:09<04:50, 113.99tok/s]Prefill:  41%|████      | 22528/55594 [03:19<04:50, 113.99tok/s]Prefill:  44%|████▍     | 24576/55594 [03:28<04:35, 112.47tok/s]Prefill:  44%|████▍     | 24576/55594 [03:39<04:35, 112.47tok/s]Prefill:  48%|████▊     | 26624/55594 [03:47<04:21, 110.88tok/s]Prefill:  48%|████▊     | 26624/55594 [03:59<04:21, 110.88tok/s]Prefill:  52%|█████▏    | 28672/55594 [04:06<04:06, 109.32tok/s]Prefill:  52%|█████▏    | 28672/55594 [04:19<04:06, 109.32tok/s]Prefill:  55%|█████▌    | 30720/55594 [04:26<03:50, 107.83tok/s]Prefill:  55%|█████▌    | 30720/55594 [04:39<03:50, 107.83tok/s]Prefill:  59%|█████▉    | 32768/55594 [04:46<03:34, 106.38tok/s]Prefill:  59%|█████▉    | 32768/55594 [04:59<03:34, 106.38tok/s]Prefill:  63%|██████▎   | 34816/55594 [05:06<03:17, 104.94tok/s]Prefill:  63%|██████▎   | 34816/55594 [05:19<03:17, 104.94tok/s]Prefill:  66%|██████▋   | 36864/55594 [05:26<03:00, 103.53tok/s]Prefill:  66%|██████▋   | 36864/55594 [05:39<03:00, 103.53tok/s]Prefill:  70%|██████▉   | 38912/55594 [05:47<02:43, 102.17tok/s]Prefill:  70%|██████▉   | 38912/55594 [05:59<02:43, 102.17tok/s]Prefill:  74%|███████▎  | 40960/55594 [06:08<02:25, 100.84tok/s]Prefill:  74%|███████▎  | 40960/55594 [06:19<02:25, 100.84tok/s]Prefill:  77%|███████▋  | 43008/55594 [06:29<02:06, 99.50tok/s] Prefill:  77%|███████▋  | 43008/55594 [06:39<02:06, 99.50tok/s]Prefill:  81%|████████  | 45056/55594 [06:51<01:47, 97.82tok/s]Prefill:  81%|████████  | 45056/55594 [07:09<01:47, 97.82tok/s]Prefill:  85%|████████▍ | 47104/55594 [07:13<01:28, 96.25tok/s]Prefill:  85%|████████▍ | 47104/55594 [07:29<01:28, 96.25tok/s]Prefill:  88%|████████▊ | 49152/55594 [07:35<01:07, 94.75tok/s]Prefill:  88%|████████▊ | 49152/55594 [07:49<01:07, 94.75tok/s]Prefill:  92%|█████████▏| 51200/55594 [07:58<00:47, 93.35tok/s]Prefill:  92%|█████████▏| 51200/55594 [08:09<00:47, 93.35tok/s]Prefill:  96%|█████████▌| 53248/55594 [08:21<00:25, 92.01tok/s]Prefill:  96%|█████████▌| 53248/55594 [08:39<00:25, 92.01tok/s]Prefill:  99%|█████████▉| 55296/55594 [08:44<00:03, 90.81tok/s]Prefill: 100%|█████████▉| 55593/55594 [08:48<00:00, 90.20tok/s]Prefill: 100%|█████████▉| 55593/55594 [08:48<00:00, 105.24tok/s]
+2026-03-15 22:54:38,691 [INFO] olmlx.engine.inference: Generation complete: 0 prompt tokens, 0 tokens generated (0.0 tok/s), 536.02s total
+2026-03-15 22:54:38,691 [DEBUG] olmlx.routers.anthropic: Raw model output (363 chars): I need to check if a CONTRIBUTING.md file exists and examine the docs directory structure to understand what documentation is missing for the open issues.
+</think>
+
+<tool_call>
+<function=Glob>
+<parameter=pattern>
+**/CONTRIBUTING*
+</parameter>
+</function>
+</tool_call>
+<tool_call>
+<function=Glob>
+<parameter=pattern>
+docs/**/*
+</parameter>
+</function>
+</tool_call>
+Prefill:   0%|          | 0/55594 [00:00<?, ?tok/s]Prefill:   4%|▎         | 2048/55594 [00:15<06:56, 128.53tok/s]Prefill:   7%|▋         | 4096/55594 [00:32<06:44, 127.39tok/s]Prefill:   7%|▋         | 4096/55594 [00:43<06:44, 127.39tok/s]Prefill:  11%|█         | 6144/55594 [00:48<06:32, 126.05tok/s]Prefill:  11%|█         | 6144/55594 [01:03<06:32, 126.05tok/s]Prefill:  15%|█▍        | 8192/55594 [01:05<06:20, 124.69tok/s]Prefill:  18%|█▊        | 10240/55594 [01:22<06:07, 123.25tok/s]Prefill:  18%|█▊        | 10240/55594 [01:33<06:07, 123.25tok/s]Prefill:  22%|██▏       | 12288/55594 [01:39<05:55, 121.72tok/s]Prefill:  22%|██▏       | 12288/55594 [01:53<05:55, 121.72tok/s]Prefill:  26%|██▌       | 14336/55594 [01:56<05:43, 120.18tok/s]Prefill:  26%|██▌       | 14336/55594 [02:13<05:43, 120.18tok/s]Prefill:  29%|██▉       | 16384/55594 [02:14<05:30, 118.65tok/s]Prefill:  33%|███▎      | 18432/55594 [02:32<05:17, 117.10tok/s]Prefill:  33%|███▎      | 18432/55594 [02:44<05:17, 117.10tok/s]Prefill:  37%|███▋      | 20480/55594 [02:50<05:04, 115.50tok/s]Prefill:  37%|███▋      | 20480/55594 [03:04<05:04, 115.50tok/s]Prefill:  41%|████      | 22528/55594 [03:09<04:50, 113.91tok/s]Prefill:  41%|████      | 22528/55594 [03:24<04:50, 113.91tok/s]Prefill:  44%|████▍     | 24576/55594 [03:28<04:36, 112.38tok/s]Prefill:  44%|████▍     | 24576/55594 [03:44<04:36, 112.38tok/s]Prefill:  48%|████▊     | 26624/55594 [03:47<04:21, 110.87tok/s]Prefill:  48%|████▊     | 26624/55594 [04:04<04:21, 110.87tok/s]Prefill:  52%|█████▏    | 28672/55594 [04:06<04:06, 109.36tok/s]Prefill:  52%|█████▏    | 28672/55594 [04:24<04:06, 109.36tok/s]Prefill:  55%|█████▌    | 30720/55594 [04:26<03:50, 107.90tok/s]Prefill:  55%|█████▌    | 30720/55594 [04:44<03:50, 107.90tok/s]Prefill:  59%|█████▉    | 32768/55594 [04:46<03:34, 106.47tok/s]Prefill:  59%|█████▉    | 32768/55594 [05:04<03:34, 106.47tok/s]Prefill:  63%|██████▎   | 34816/55594 [05:06<03:17, 105.05tok/s]Prefill:  63%|██████▎   | 34816/55594 [05:24<03:17, 105.05tok/s]Prefill:  66%|██████▋   | 36864/55594 [05:26<03:00, 103.61tok/s]Prefill:  66%|██████▋   | 36864/55594 [05:44<03:00, 103.61tok/s]Prefill:  70%|██████▉   | 38912/55594 [05:47<02:43, 102.25tok/s]Prefill:  70%|██████▉   | 38912/55594 [06:04<02:43, 102.25tok/s]Prefill:  74%|███████▎  | 40960/55594 [06:08<02:24, 100.93tok/s]Prefill:  74%|███████▎  | 40960/55594 [06:24<02:24, 100.93tok/s]Prefill:  77%|███████▋  | 43008/55594 [06:29<02:06, 99.61tok/s] Prefill:  77%|███████▋  | 43008/55594 [06:44<02:06, 99.61tok/s]Prefill:  81%|████████  | 45056/55594 [06:51<01:47, 97.84tok/s]Prefill:  81%|████████  | 45056/55594 [07:04<01:47, 97.84tok/s]Prefill:  85%|████████▍ | 47104/55594 [07:13<01:28, 96.22tok/s]Prefill:  85%|████████▍ | 47104/55594 [07:24<01:28, 96.22tok/s]Prefill:  88%|████████▊ | 49152/55594 [07:35<01:08, 94.68tok/s]Prefill:  88%|████████▊ | 49152/55594 [07:54<01:08, 94.68tok/s]Prefill:  92%|█████████▏| 51200/55594 [07:58<00:47, 93.37tok/s]Prefill:  92%|█████████▏| 51200/55594 [08:14<00:47, 93.37tok/s]Prefill:  96%|█████████▌| 53248/55594 [08:21<00:25, 92.07tok/s]Prefill:  96%|█████████▌| 53248/55594 [08:34<00:25, 92.07tok/s]Prefill:  99%|█████████▉| 55296/55594 [08:44<00:03, 90.78tok/s]Prefill: 100%|█████████▉| 55593/55594 [08:48<00:00, 90.22tok/s]Prefill: 100%|█████████▉| 55593/55594 [08:48<00:00, 105.27tok/s]
+2026-03-15 23:03:34,537 [INFO] olmlx.engine.inference: Generation complete: 0 prompt tokens, 0 tokens generated (0.0 tok/s), 535.85s total
+2026-03-15 23:03:34,537 [DEBUG] olmlx.routers.anthropic: Raw model output (363 chars): I need to check if a CONTRIBUTING.md file exists and examine the docs directory structure to understand what documentation is missing for the open issues.
+</think>
+
+<tool_call>
+<function=Glob>
+<parameter=pattern>
+**/CONTRIBUTING*
+</parameter>
+</function>
+</tool_call>
+<tool_call>
+<function=Glob>
+<parameter=pattern>
+docs/**/*
+</parameter>
+</function>
+</tool_call>
+Prefill:   0%|          | 0/55594 [00:00<?, ?tok/s]Prefill:   4%|▎         | 2048/55594 [00:15<06:56, 128.61tok/s]Prefill:   4%|▎         | 2048/55594 [00:28<06:56, 128.61tok/s]Prefill:   7%|▋         | 4096/55594 [00:32<06:44, 127.30tok/s]Prefill:  11%|█         | 6144/55594 [00:48<06:32, 126.06tok/s]Prefill:  11%|█         | 6144/55594 [00:58<06:32, 126.06tok/s]Prefill:  15%|█▍        | 8192/55594 [01:05<06:20, 124.72tok/s]Prefill:  15%|█▍        | 8192/55594 [01:18<06:20, 124.72tok/s]Prefill:  18%|█▊        | 10240/55594 [01:22<06:08, 123.24tok/s]Prefill:  18%|█▊        | 10240/55594 [01:38<06:08, 123.24tok/s]Prefill:  22%|██▏       | 12288/55594 [01:39<05:55, 121.75tok/s]Prefill:  26%|██▌       | 14336/55594 [01:56<05:43, 120.23tok/s]Prefill:  26%|██▌       | 14336/55594 [02:08<05:43, 120.23tok/s]Prefill:  29%|██▉       | 16384/55594 [02:14<05:30, 118.64tok/s]Prefill:  29%|██▉       | 16384/55594 [02:28<05:30, 118.64tok/s]Prefill:  33%|███▎      | 18432/55594 [02:32<05:17, 117.06tok/s]Prefill:  33%|███▎      | 18432/55594 [02:48<05:17, 117.06tok/s]Prefill:  37%|███▋      | 20480/55594 [02:50<05:03, 115.53tok/s]Prefill:  37%|███▋      | 20480/55594 [03:08<05:03, 115.53tok/s]Prefill:  41%|████      | 22528/55594 [03:09<04:50, 113.98tok/s]Prefill:  44%|████▍     | 24576/55594 [03:28<04:35, 112.46tok/s]Prefill:  44%|████▍     | 24576/55594 [03:38<04:35, 112.46tok/s]Prefill:  48%|████▊     | 26624/55594 [03:47<04:21, 110.87tok/s]Prefill:  48%|████▊     | 26624/55594 [03:58<04:21, 110.87tok/s]Prefill:  52%|█████▏    | 28672/55594 [04:06<04:06, 109.31tok/s]Prefill:  52%|█████▏    | 28672/55594 [04:18<04:06, 109.31tok/s]Prefill:  55%|█████▌    | 30720/55594 [04:26<03:50, 107.82tok/s]Prefill:  55%|█████▌    | 30720/55594 [04:38<03:50, 107.82tok/s]Prefill:  59%|█████▉    | 32768/55594 [04:46<03:34, 106.36tok/s]Prefill:  59%|█████▉    | 32768/55594 [04:58<03:34, 106.36tok/s]Prefill:  63%|██████▎   | 34816/55594 [05:06<03:18, 104.93tok/s]Prefill:  63%|██████▎   | 34816/55594 [05:18<03:18, 104.93tok/s]Prefill:  66%|██████▋   | 36864/55594 [05:26<03:00, 103.51tok/s]Prefill:  66%|██████▋   | 36864/55594 [05:38<03:00, 103.51tok/s]Prefill:  70%|██████▉   | 38912/55594 [05:47<02:43, 102.14tok/s]Prefill:  70%|██████▉   | 38912/55594 [05:58<02:43, 102.14tok/s]Prefill:  74%|███████▎  | 40960/55594 [06:08<02:25, 100.79tok/s]Prefill:  74%|███████▎  | 40960/55594 [06:18<02:25, 100.79tok/s]Prefill:  77%|███████▋  | 43008/55594 [06:29<02:06, 99.45tok/s] Prefill:  77%|███████▋  | 43008/55594 [06:48<02:06, 99.45tok/s]Prefill:  81%|████████  | 45056/55594 [06:51<01:47, 97.77tok/s]Prefill:  81%|████████  | 45056/55594 [07:08<01:47, 97.77tok/s]Prefill:  85%|████████▍ | 47104/55594 [07:13<01:28, 96.20tok/s]Prefill:  85%|████████▍ | 47104/55594 [07:28<01:28, 96.20tok/s]Prefill:  88%|████████▊ | 49152/55594 [07:35<01:08, 94.67tok/s]Prefill:  88%|████████▊ | 49152/55594 [07:48<01:08, 94.67tok/s]Prefill:  92%|█████████▏| 51200/55594 [07:58<00:47, 93.32tok/s]Prefill:  92%|█████████▏| 51200/55594 [08:08<00:47, 93.32tok/s]Prefill:  96%|█████████▌| 53248/55594 [08:21<00:25, 91.99tok/s]Prefill:  96%|█████████▌| 53248/55594 [08:38<00:25, 91.99tok/s]Prefill:  99%|█████████▉| 55296/55594 [08:44<00:03, 90.77tok/s]Prefill: 100%|█████████▉| 55593/55594 [08:48<00:00, 90.18tok/s]Prefill: 100%|█████████▉| 55593/55594 [08:48<00:00, 105.23tok/s]
+2026-03-15 23:12:30,601 [INFO] olmlx.engine.inference: Generation complete: 0 prompt tokens, 0 tokens generated (0.0 tok/s), 536.06s total
+2026-03-15 23:12:30,601 [DEBUG] olmlx.routers.anthropic: Raw model output (363 chars): I need to check if a CONTRIBUTING.md file exists and examine the docs directory structure to understand what documentation is missing for the open issues.
+</think>
+
+<tool_call>
+<function=Glob>
+<parameter=pattern>
+**/CONTRIBUTING*
+</parameter>
+</function>
+</tool_call>
+<tool_call>
+<function=Glob>
+<parameter=pattern>
+docs/**/*
+</parameter>
+</function>
+</tool_call>
+Prefill:   0%|          | 0/55594 [00:00<?, ?tok/s]Prefill:   4%|▎         | 2048/55594 [00:15<06:56, 128.53tok/s]Prefill:   7%|▋         | 4096/55594 [00:32<06:44, 127.40tok/s]Prefill:   7%|▋         | 4096/55594 [00:42<06:44, 127.40tok/s]Prefill:  11%|█         | 6144/55594 [00:48<06:32, 126.04tok/s]Prefill:  11%|█         | 6144/55594 [01:02<06:32, 126.04tok/s]Prefill:  15%|█▍        | 8192/55594 [01:05<06:20, 124.68tok/s]Prefill:  18%|█▊        | 10240/55594 [01:22<06:07, 123.25tok/s]Prefill:  18%|█▊        | 10240/55594 [01:33<06:07, 123.25tok/s]Prefill:  22%|██▏       | 12288/55594 [01:39<05:55, 121.71tok/s]Prefill:  22%|██▏       | 12288/55594 [01:53<05:55, 121.71tok/s]Prefill:  26%|██▌       | 14336/55594 [01:56<05:43, 120.16tok/s]Prefill:  26%|██▌       | 14336/55594 [02:13<05:43, 120.16tok/s]Prefill:  29%|██▉       | 16384/55594 [02:14<05:30, 118.63tok/s]Prefill:  33%|███▎      | 18432/55594 [02:32<05:17, 117.10tok/s]Prefill:  33%|███▎      | 18432/55594 [02:43<05:17, 117.10tok/s]Prefill:  37%|███▋      | 20480/55594 [02:50<05:03, 115.56tok/s]Prefill:  37%|███▋      | 20480/55594 [03:03<05:03, 115.56tok/s]Prefill:  41%|████      | 22528/55594 [03:09<04:50, 113.96tok/s]Prefill:  41%|████      | 22528/55594 [03:23<04:50, 113.96tok/s]Prefill:  44%|████▍     | 24576/55594 [03:28<04:35, 112.41tok/s]Prefill:  44%|████▍     | 24576/55594 [03:43<04:35, 112.41tok/s]Prefill:  48%|████▊     | 26624/55594 [03:47<04:21, 110.88tok/s]Prefill:  48%|████▊     | 26624/55594 [04:03<04:21, 110.88tok/s]Prefill:  52%|█████▏    | 28672/55594 [04:06<04:06, 109.35tok/s]Prefill:  52%|█████▏    | 28672/55594 [04:23<04:06, 109.35tok/s]Prefill:  55%|█████▌    | 30720/55594 [04:26<03:50, 107.88tok/s]Prefill:  55%|█████▌    | 30720/55594 [04:43<03:50, 107.88tok/s]Prefill:  59%|█████▉    | 32768/55594 [04:46<03:34, 106.45tok/s]Prefill:  59%|█████▉    | 32768/55594 [05:03<03:34, 106.45tok/s]Prefill:  63%|██████▎   | 34816/55594 [05:06<03:17, 105.03tok/s]Prefill:  63%|██████▎   | 34816/55594 [05:23<03:17, 105.03tok/s]Prefill:  66%|██████▋   | 36864/55594 [05:26<03:00, 103.62tok/s]Prefill:  66%|██████▋   | 36864/55594 [05:43<03:00, 103.62tok/s]Prefill:  70%|██████▉   | 38912/55594 [05:47<02:43, 102.26tok/s]Prefill:  70%|██████▉   | 38912/55594 [06:03<02:43, 102.26tok/s]Prefill:  74%|███████▎  | 40960/55594 [06:08<02:24, 100.94tok/s]Prefill:  74%|███████▎  | 40960/55594 [06:23<02:24, 100.94tok/s]Prefill:  77%|███████▋  | 43008/55594 [06:29<02:06, 99.61tok/s] Prefill:  77%|███████▋  | 43008/55594 [06:43<02:06, 99.61tok/s]Prefill:  81%|████████  | 45056/55594 [06:51<01:47, 97.83tok/s]Prefill:  81%|████████  | 45056/55594 [07:03<01:47, 97.83tok/s]Prefill:  85%|████████▍ | 47104/55594 [07:13<01:28, 96.20tok/s]Prefill:  85%|████████▍ | 47104/55594 [07:23<01:28, 96.20tok/s]Prefill:  88%|████████▊ | 49152/55594 [07:35<01:07, 94.74tok/s]Prefill:  88%|████████▊ | 49152/55594 [07:53<01:07, 94.74tok/s]Prefill:  92%|█████████▏| 51200/55594 [07:58<00:47, 93.40tok/s]Prefill:  92%|█████████▏| 51200/55594 [08:13<00:47, 93.40tok/s]Prefill:  96%|█████████▌| 53248/55594 [08:21<00:25, 92.08tok/s]Prefill:  96%|█████████▌| 53248/55594 [08:33<00:25, 92.08tok/s]Prefill:  99%|█████████▉| 55296/55594 [08:44<00:03, 90.79tok/s]Prefill: 100%|█████████▉| 55593/55594 [08:48<00:00, 90.20tok/s]Prefill: 100%|█████████▉| 55593/55594 [08:48<00:00, 105.27tok/s]
+2026-03-15 23:21:26,431 [INFO] olmlx.engine.inference: Generation complete: 0 prompt tokens, 0 tokens generated (0.0 tok/s), 535.83s total
+2026-03-15 23:21:26,431 [DEBUG] olmlx.routers.anthropic: Raw model output (363 chars): I need to check if a CONTRIBUTING.md file exists and examine the docs directory structure to understand what documentation is missing for the open issues.
+</think>
+
+<tool_call>
+<function=Glob>
+<parameter=pattern>
+**/CONTRIBUTING*
+</parameter>
+</function>
+</tool_call>
+<tool_call>
+<function=Glob>
+<parameter=pattern>
+docs/**/*
+</parameter>
+</function>
+</tool_call>
+2026-03-15 23:26:32,184 [INFO] olmlx.engine.model_manager: Unloading expired model mlx-community/Qwen3.5-27B-4bit:latest
+2026-03-16 08:10:24,783 [INFO] olmlx.routers.anthropic: Anthropic request: model=mlx-community/Qwen3.5-27B-4bit stream=True tools=26 messages=9 max_tokens=32000
+2026-03-16 08:10:24,785 [INFO] olmlx.routers.anthropic: Stripped 1 billing header block(s) from system prompt
+2026-03-16 08:10:24,785 [DEBUG] olmlx.routers.anthropic: Converted 16 messages, 26 tools
+2026-03-16 08:10:24,956 [INFO] olmlx.engine.model_manager: Loading model mlx-community/Qwen3.5-27B-4bit:latest from mlx-community/Qwen3.5-27B-4bit
+2026-03-16 08:10:24,958 [INFO] olmlx.engine.model_manager: Detected model kind for mlx-community/Qwen3.5-27B-4bit: vlm
+2026-03-16 08:10:29,920 [INFO] olmlx.engine.model_manager: Model mlx-community/Qwen3.5-27B-4bit:latest caps: tools=True, thinking=True, thinking_tags=True
+2026-03-16 08:10:29,921 [INFO] olmlx.engine.inference: Chat prompt with 26 tools
+2026-03-16 08:10:29,921 [DEBUG] olmlx.engine.inference: Prompt (first 1000 chars): <|im_start|>system
+# Tools
+
+You have access to the following functions:
+
+<tools>
+{"type": "function", "function": {"name": "Agent", "description": "Launch a new agent to handle complex, multi-step tasks autonomously.\n\nThe Agent tool launches specialized agents (subprocesses) that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.\n\nAvailable agent types and the tools they have access to:\n- general-purpose: General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you. (Tools: *)\n- statusline-setup: Use this agent to configure the user's Claude Code status line setting. (Tools: Read, Edit)\n- Explore: Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. \"src/c
+2026-03-16 08:10:29,963 [DEBUG] olmlx.engine.inference: Prompt cache enabled: 55493 prompt tokens, existing cache=none
+INFO:     127.0.0.1:52838 - "POST /v1/messages?beta=true HTTP/1.1" 200 OK
+2026-03-16 08:10:29,964 [DEBUG] olmlx.engine.inference: Cache lookup: cached=none, new prompt=55493 tokens
+2026-03-16 08:10:29,964 [DEBUG] olmlx.engine.inference: Common prefix length: 0 / 55493 prompt tokens
+2026-03-16 08:10:29,964 [INFO] olmlx.engine.inference: Prompt cache init: creating fresh cache for 55493 tokens
+2026-03-16 08:10:29,964 [DEBUG] olmlx.routers.anthropic: Cache stats for message_start: read=0 creation=55493
+Prefill:   0%|          | 0/55493 [00:00<?, ?tok/s]Prefill:   4%|▎         | 2048/55493 [00:16<07:00, 127.07tok/s]Prefill:   4%|▎         | 2048/55493 [00:30<07:00, 127.07tok/s]Prefill:   7%|▋         | 4096/55493 [00:32<06:46, 126.41tok/s]Prefill:  11%|█         | 6144/55493 [00:48<06:33, 125.26tok/s]Prefill:  11%|█         | 6144/55493 [01:00<06:33, 125.26tok/s]Prefill:  15%|█▍        | 8192/55493 [01:05<06:22, 123.62tok/s]Prefill:  15%|█▍        | 8192/55493 [01:20<06:22, 123.62tok/s]Prefill:  18%|█▊        | 10240/55493 [01:23<06:13, 121.03tok/s]Prefill:  18%|█▊        | 10240/55493 [01:40<06:13, 121.03tok/s]Prefill:  22%|██▏       | 12288/55493 [01:41<06:02, 119.13tok/s]Prefill:  26%|██▌       | 14336/55493 [01:59<05:50, 117.45tok/s]Prefill:  26%|██▌       | 14336/55493 [02:10<05:50, 117.45tok/s]Prefill:  30%|██▉       | 16384/55493 [02:17<05:37, 115.92tok/s]Prefill:  30%|██▉       | 16384/55493 [02:30<05:37, 115.92tok/s]Prefill:  33%|███▎      | 18432/55493 [02:35<05:23, 114.63tok/s]Prefill:  33%|███▎      | 18432/55493 [02:50<05:23, 114.63tok/s]Prefill:  37%|███▋      | 20480/55493 [02:54<05:09, 113.31tok/s]Prefill:  37%|███▋      | 20480/55493 [03:10<05:09, 113.31tok/s]Prefill:  41%|████      | 22528/55493 [03:12<04:54, 112.04tok/s]Prefill:  41%|████      | 22528/55493 [03:30<04:54, 112.04tok/s]Prefill:  44%|████▍     | 24576/55493 [03:31<04:39, 110.79tok/s]Prefill:  44%|████▍     | 24576/55493 [03:50<04:39, 110.79tok/s]Prefill:  48%|████▊     | 26624/55493 [03:50<04:23, 109.63tok/s]Prefill:  48%|████▊     | 26624/55493 [04:10<04:23, 109.63tok/s]Prefill:  52%|█████▏    | 28672/55493 [04:10<04:07, 108.35tok/s]Prefill:  55%|█████▌    | 30720/55493 [04:29<03:51, 107.07tok/s]Prefill:  55%|█████▌    | 30720/55493 [04:40<03:51, 107.07tok/s]Prefill:  59%|█████▉    | 32768/55493 [04:49<03:34, 105.73tok/s]2026-03-16 08:15:24,787 [DEBUG] olmlx.engine.inference: Cache invalidated: generation did not complete
+2026-03-16 08:15:24,787 [WARNING] olmlx.engine.inference: Inference thread still alive after cleanup attempts — deferring Metal sync and lock release until thread exits
+2026-03-16 08:15:24,790 [INFO] olmlx.routers.anthropic: Anthropic request: model=mlx-community/Qwen3.5-27B-4bit stream=False tools=26 messages=9 max_tokens=21333
+2026-03-16 08:15:24,790 [INFO] olmlx.routers.anthropic: Stripped 1 billing header block(s) from system prompt
+2026-03-16 08:15:24,790 [DEBUG] olmlx.routers.anthropic: Converted 16 messages, 26 tools
+2026-03-16 08:15:24,791 [INFO] olmlx.engine.inference: Chat prompt with 26 tools
+2026-03-16 08:15:24,791 [DEBUG] olmlx.engine.inference: Prompt (first 1000 chars): <|im_start|>system
+# Tools
+
+You have access to the following functions:
+
+<tools>
+{"type": "function", "function": {"name": "Agent", "description": "Launch a new agent to handle complex, multi-step tasks autonomously.\n\nThe Agent tool launches specialized agents (subprocesses) that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.\n\nAvailable agent types and the tools they have access to:\n- general-purpose: General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you. (Tools: *)\n- statusline-setup: Use this agent to configure the user's Claude Code status line setting. (Tools: Read, Edit)\n- Explore: Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. \"src/c
+2026-03-16 08:15:24,791 [DEBUG] olmlx.engine.inference: Prompt cache disabled: setting=True stream=False make_prompt_cache=True
+2026-03-16 08:15:24,791 [WARNING] olmlx: ServerBusyError on /v1/messages: Server busy: recovering from previous inference — deferred GPU cleanup in progress
+INFO:     127.0.0.1:52853 - "POST /v1/messages?beta=true HTTP/1.1" 503 Service Unavailable
+2026-03-16 08:15:25,332 [INFO] olmlx.routers.anthropic: Anthropic request: model=mlx-community/Qwen3.5-27B-4bit stream=False tools=26 messages=9 max_tokens=21333
+2026-03-16 08:15:25,332 [INFO] olmlx.routers.anthropic: Stripped 1 billing header block(s) from system prompt
+2026-03-16 08:15:25,332 [DEBUG] olmlx.routers.anthropic: Converted 16 messages, 26 tools
+2026-03-16 08:15:25,333 [INFO] olmlx.engine.inference: Chat prompt with 26 tools
+2026-03-16 08:15:25,333 [DEBUG] olmlx.engine.inference: Prompt (first 1000 chars): <|im_start|>system
+# Tools
+
+You have access to the following functions:
+
+<tools>
+{"type": "function", "function": {"name": "Agent", "description": "Launch a new agent to handle complex, multi-step tasks autonomously.\n\nThe Agent tool launches specialized agents (subprocesses) that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.\n\nAvailable agent types and the tools they have access to:\n- general-purpose: General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you. (Tools: *)\n- statusline-setup: Use this agent to configure the user's Claude Code status line setting. (Tools: Read, Edit)\n- Explore: Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. \"src/c
+2026-03-16 08:15:25,333 [DEBUG] olmlx.engine.inference: Prompt cache disabled: setting=True stream=False make_prompt_cache=True
+2026-03-16 08:15:25,333 [WARNING] olmlx: ServerBusyError on /v1/messages: Server busy: recovering from previous inference — deferred GPU cleanup in progress
+INFO:     127.0.0.1:52853 - "POST /v1/messages?beta=true HTTP/1.1" 503 Service Unavailable
+2026-03-16 08:15:26,341 [INFO] olmlx.routers.anthropic: Anthropic request: model=mlx-community/Qwen3.5-27B-4bit stream=False tools=26 messages=9 max_tokens=21333
+2026-03-16 08:15:26,341 [INFO] olmlx.routers.anthropic: Stripped 1 billing header block(s) from system prompt
+2026-03-16 08:15:26,342 [DEBUG] olmlx.routers.anthropic: Converted 16 messages, 26 tools
+2026-03-16 08:15:26,342 [INFO] olmlx.engine.inference: Chat prompt with 26 tools
+2026-03-16 08:15:26,342 [DEBUG] olmlx.engine.inference: Prompt (first 1000 chars): <|im_start|>system
+# Tools
+
+You have access to the following functions:
+
+<tools>
+{"type": "function", "function": {"name": "Agent", "description": "Launch a new agent to handle complex, multi-step tasks autonomously.\n\nThe Agent tool launches specialized agents (subprocesses) that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.\n\nAvailable agent types and the tools they have access to:\n- general-purpose: General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you. (Tools: *)\n- statusline-setup: Use this agent to configure the user's Claude Code status line setting. (Tools: Read, Edit)\n- Explore: Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. \"src/c
+2026-03-16 08:15:26,342 [DEBUG] olmlx.engine.inference: Prompt cache disabled: setting=True stream=False make_prompt_cache=True
+2026-03-16 08:15:26,342 [WARNING] olmlx: ServerBusyError on /v1/messages: Server busy: recovering from previous inference — deferred GPU cleanup in progress
+INFO:     127.0.0.1:52853 - "POST /v1/messages?beta=true HTTP/1.1" 503 Service Unavailable
+2026-03-16 08:15:28,480 [INFO] olmlx.routers.anthropic: Anthropic request: model=mlx-community/Qwen3.5-27B-4bit stream=False tools=26 messages=9 max_tokens=21333
+2026-03-16 08:15:28,480 [INFO] olmlx.routers.anthropic: Stripped 1 billing header block(s) from system prompt
+2026-03-16 08:15:28,480 [DEBUG] olmlx.routers.anthropic: Converted 16 messages, 26 tools
+2026-03-16 08:15:28,481 [INFO] olmlx.engine.inference: Chat prompt with 26 tools
+2026-03-16 08:15:28,481 [DEBUG] olmlx.engine.inference: Prompt (first 1000 chars): <|im_start|>system
+# Tools
+
+You have access to the following functions:
+
+<tools>
+{"type": "function", "function": {"name": "Agent", "description": "Launch a new agent to handle complex, multi-step tasks autonomously.\n\nThe Agent tool launches specialized agents (subprocesses) that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.\n\nAvailable agent types and the tools they have access to:\n- general-purpose: General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you. (Tools: *)\n- statusline-setup: Use this agent to configure the user's Claude Code status line setting. (Tools: Read, Edit)\n- Explore: Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. \"src/c
+2026-03-16 08:15:28,481 [DEBUG] olmlx.engine.inference: Prompt cache disabled: setting=True stream=False make_prompt_cache=True
+2026-03-16 08:15:28,481 [WARNING] olmlx: ServerBusyError on /v1/messages: Server busy: recovering from previous inference — deferred GPU cleanup in progress
+INFO:     127.0.0.1:52853 - "POST /v1/messages?beta=true HTTP/1.1" 503 Service Unavailable
+Prefill:  59%|█████▉    | 32768/55493 [05:00<03:34, 105.73tok/s]2026-03-16 08:15:32,691 [INFO] olmlx.routers.anthropic: Anthropic request: model=mlx-community/Qwen3.5-27B-4bit stream=False tools=26 messages=9 max_tokens=21333
+2026-03-16 08:15:32,691 [INFO] olmlx.routers.anthropic: Stripped 1 billing header block(s) from system prompt
+2026-03-16 08:15:32,691 [DEBUG] olmlx.routers.anthropic: Converted 16 messages, 26 tools
+2026-03-16 08:15:32,692 [INFO] olmlx.engine.inference: Chat prompt with 26 tools
+2026-03-16 08:15:32,692 [DEBUG] olmlx.engine.inference: Prompt (first 1000 chars): <|im_start|>system
+# Tools
+
+You have access to the following functions:
+
+<tools>
+{"type": "function", "function": {"name": "Agent", "description": "Launch a new agent to handle complex, multi-step tasks autonomously.\n\nThe Agent tool launches specialized agents (subprocesses) that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.\n\nAvailable agent types and the tools they have access to:\n- general-purpose: General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you. (Tools: *)\n- statusline-setup: Use this agent to configure the user's Claude Code status line setting. (Tools: Read, Edit)\n- Explore: Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. \"src/c
+2026-03-16 08:15:32,692 [DEBUG] olmlx.engine.inference: Prompt cache disabled: setting=True stream=False make_prompt_cache=True
+2026-03-16 08:15:32,692 [WARNING] olmlx: ServerBusyError on /v1/messages: Server busy: recovering from previous inference — deferred GPU cleanup in progress
+INFO:     127.0.0.1:52853 - "POST /v1/messages?beta=true HTTP/1.1" 503 Service Unavailable
+Prefill:  63%|██████▎   | 34816/55493 [05:10<03:18, 104.23tok/s]2026-03-16 08:15:42,352 [INFO] olmlx.routers.anthropic: Anthropic request: model=mlx-community/Qwen3.5-27B-4bit stream=False tools=26 messages=9 max_tokens=21333
+2026-03-16 08:15:42,352 [INFO] olmlx.routers.anthropic: Stripped 1 billing header block(s) from system prompt
+2026-03-16 08:15:42,352 [DEBUG] olmlx.routers.anthropic: Converted 16 messages, 26 tools
+2026-03-16 08:15:42,353 [INFO] olmlx.engine.inference: Chat prompt with 26 tools
+2026-03-16 08:15:42,353 [DEBUG] olmlx.engine.inference: Prompt (first 1000 chars): <|im_start|>system
+# Tools
+
+You have access to the following functions:
+
+<tools>
+{"type": "function", "function": {"name": "Agent", "description": "Launch a new agent to handle complex, multi-step tasks autonomously.\n\nThe Agent tool launches specialized agents (subprocesses) that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.\n\nAvailable agent types and the tools they have access to:\n- general-purpose: General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you. (Tools: *)\n- statusline-setup: Use this agent to configure the user's Claude Code status line setting. (Tools: Read, Edit)\n- Explore: Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. \"src/c
+2026-03-16 08:15:42,353 [DEBUG] olmlx.engine.inference: Prompt cache disabled: setting=True stream=False make_prompt_cache=True
+2026-03-16 08:15:42,353 [WARNING] olmlx: ServerBusyError on /v1/messages: Server busy: recovering from previous inference — deferred GPU cleanup in progress
+INFO:     127.0.0.1:52856 - "POST /v1/messages?beta=true HTTP/1.1" 503 Service Unavailable
+Prefill:  63%|██████▎   | 34816/55493 [05:20<03:18, 104.23tok/s]2026-03-16 08:16:00,202 [INFO] olmlx.routers.anthropic: Anthropic request: model=mlx-community/Qwen3.5-27B-4bit stream=False tools=26 messages=9 max_tokens=21333
+2026-03-16 08:16:00,202 [INFO] olmlx.routers.anthropic: Stripped 1 billing header block(s) from system prompt
+2026-03-16 08:16:00,203 [DEBUG] olmlx.routers.anthropic: Converted 16 messages, 26 tools
+2026-03-16 08:16:00,203 [INFO] olmlx.engine.inference: Chat prompt with 26 tools
+2026-03-16 08:16:00,203 [DEBUG] olmlx.engine.inference: Prompt (first 1000 chars): <|im_start|>system
+# Tools
+
+You have access to the following functions:
+
+<tools>
+{"type": "function", "function": {"name": "Agent", "description": "Launch a new agent to handle complex, multi-step tasks autonomously.\n\nThe Agent tool launches specialized agents (subprocesses) that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.\n\nAvailable agent types and the tools they have access to:\n- general-purpose: General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you. (Tools: *)\n- statusline-setup: Use this agent to configure the user's Claude Code status line setting. (Tools: Read, Edit)\n- Explore: Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. \"src/c
+2026-03-16 08:16:00,203 [DEBUG] olmlx.engine.inference: Prompt cache disabled: setting=True stream=False make_prompt_cache=True
+2026-03-16 08:16:00,203 [WARNING] olmlx: ServerBusyError on /v1/messages: Server busy: recovering from previous inference — deferred GPU cleanup in progress
+INFO:     127.0.0.1:52858 - "POST /v1/messages?beta=true HTTP/1.1" 503 Service Unavailable
+Prefill:  66%|██████▋   | 36864/55493 [05:30<03:01, 102.61tok/s]Prefill:  66%|██████▋   | 36864/55493 [05:50<03:01, 102.61tok/s]Prefill:  70%|███████   | 38912/55493 [05:51<02:43, 101.33tok/s]Prefill:  70%|███████   | 38912/55493 [06:10<02:43, 101.33tok/s]Prefill:  74%|███████▍  | 40960/55493 [06:12<02:25, 100.12tok/s]Prefill:  74%|███████▍  | 40960/55493 [06:30<02:25, 100.12tok/s]Prefill:  78%|███████▊  | 43008/55493 [06:33<02:06, 98.92tok/s] Prefill:  78%|███████▊  | 43008/55493 [06:50<02:06, 98.92tok/s]Prefill:  81%|████████  | 45056/55493 [06:55<01:47, 97.13tok/s]Prefill:  81%|████████  | 45056/55493 [07:10<01:47, 97.13tok/s]Prefill:  85%|████████▍ | 47104/55493 [07:18<01:27, 95.44tok/s]Prefill:  85%|████████▍ | 47104/55493 [07:30<01:27, 95.44tok/s]Prefill:  89%|████████▊ | 49152/55493 [07:41<01:07, 93.71tok/s]Prefill:  89%|████████▊ | 49152/55493 [08:00<01:07, 93.71tok/s]Prefill:  92%|█████████▏| 51200/55493 [08:03<00:46, 92.31tok/s]Prefill:  92%|█████████▏| 51200/55493 [08:20<00:46, 92.31tok/s]Prefill:  96%|█████████▌| 53248/55493 [08:27<00:24, 91.16tok/s]Prefill:  96%|█████████▌| 53248/55493 [08:40<00:24, 91.16tok/s]Prefill: 100%|█████████▉| 55296/55493 [08:50<00:02, 89.91tok/s]Prefill: 100%|█████████▉| 55492/55493 [08:53<00:00, 89.11tok/s]Prefill: 100%|█████████▉| 55492/55493 [08:53<00:00, 104.06tok/s]
+2026-03-16 08:19:23,426 [INFO] olmlx.engine.inference: Deferred inference cleanup: thread exited cleanly
+2026-03-16 08:19:23,426 [INFO] olmlx.engine.inference: Deferred inference cleanup: lock released
+2026-03-16 08:21:04,338 [INFO] olmlx.engine.model_manager: Unloading expired model mlx-community/Qwen3.5-27B-4bit:latest
