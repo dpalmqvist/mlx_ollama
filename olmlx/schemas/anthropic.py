@@ -81,6 +81,6 @@ class AnthropicMessagesResponse(BaseModel):
     role: str = "assistant"
     content: list[AnthropicContentBlock]
     model: str
-    stop_reason: str | None = "end_turn"
+    stop_reason: str | None = None
     stop_sequence: str | None = None
     usage: AnthropicUsage

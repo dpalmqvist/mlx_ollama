@@ -510,6 +510,26 @@ class TestAnthropicSchemas:
         )
         assert resp.type == "message"
         assert resp.role == "assistant"
+
+    def test_messages_response_stop_reason_defaults_to_none(self):
+        """stop_reason should default to None per Anthropic API spec (null for in-progress)."""
+        resp = AnthropicMessagesResponse(
+            id="msg_123",
+            content=[AnthropicContentBlock(type="text", text="hi")],
+            model="test",
+            usage=AnthropicUsage(input_tokens=10, output_tokens=20),
+        )
+        assert resp.stop_reason is None
+
+    def test_messages_response_stop_reason_explicit(self):
+        """stop_reason can be explicitly set."""
+        resp = AnthropicMessagesResponse(
+            id="msg_123",
+            content=[AnthropicContentBlock(type="text", text="hi")],
+            model="test",
+            usage=AnthropicUsage(input_tokens=10, output_tokens=20),
+            stop_reason="end_turn",
+        )
         assert resp.stop_reason == "end_turn"
 
     def test_messages_request_temperature_valid_boundary(self):

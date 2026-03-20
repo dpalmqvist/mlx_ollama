@@ -428,6 +428,106 @@ class TestAgentLoop:
         assert "Error" in tool_msgs[0]["content"]
 
     @pytest.mark.asyncio
+    async def test_missing_tool_result_gets_fallback_message(self):
+        """Bug #84: Every tool_call must get a tool result in message history.
+
+        If a tool call ID is somehow missing from results_by_id, a fallback
+        error result must be appended to maintain the message history contract.
+        """
+        mcp = MagicMock()
+        mcp.get_tools_for_chat.return_value = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "read_file",
+                    "description": "Read a file",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"path": {"type": "string"}},
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "write_file",
+                    "description": "Write a file",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"path": {"type": "string"}},
+                    },
+                },
+            },
+        ]
+        mcp.call_tool = AsyncMock(return_value="ok")
+
+        # Use tool_safety that classifies write_file as "confirm" but
+        # then we'll monkey-patch the session to skip it from results
+        session = _make_session(mcp=mcp)
+        call_count = 0
+
+        async def fake_generate(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # Model makes two tool calls
+                yield {
+                    "text": (
+                        '<tool_call>{"name": "read_file", "arguments": {"path": "/a"}}</tool_call>'
+                        '<tool_call>{"name": "write_file", "arguments": {"path": "/b"}}</tool_call>'
+                    ),
+                    "done": False,
+                }
+                yield {"text": "", "done": True, "stats": MagicMock()}
+            else:
+                yield {"text": "Done", "done": False}
+                yield {"text": "", "done": True, "stats": MagicMock()}
+
+        # Patch _exec_tool to drop the write_file result, simulating a missing
+        # result (e.g. gather race or bug in safety classify).
+        original_exec = ChatSession._exec_tool
+
+        async def patched_exec(tu):
+            if tu["name"] == "write_file":
+                return None  # simulate missing result
+            return await original_exec(session, tu)
+
+        with (
+            patch(
+                "olmlx.chat.session.generate_chat",
+                side_effect=lambda *a, **kw: fake_generate(),
+            ),
+            patch.object(session, "_exec_tool", side_effect=patched_exec),
+        ):
+            events = []
+            async for event in session.send_message("Do both"):
+                events.append(event)
+
+        # The key assertion: both tool calls should have messages in history
+        tool_msgs = [m for m in session.messages if m["role"] == "tool"]
+        assert len(tool_msgs) == 2
+        # The missing one should have a fallback error message
+        write_msgs = [m for m in tool_msgs if m["name"] == "write_file"]
+        assert len(write_msgs) == 1
+        assert "no result" in write_msgs[0]["content"].lower()
+
+        # A paired tool_call + tool_result event should be yielded for the fallback
+        fallback_call_events = [
+            e
+            for e in events
+            if e.get("type") == "tool_call" and e.get("name") == "write_file"
+        ]
+        assert len(fallback_call_events) == 1
+
+        fallback_result_events = [
+            e
+            for e in events
+            if e.get("type") == "tool_result" and e.get("name") == "write_file"
+        ]
+        assert len(fallback_result_events) == 1
+        assert "no result" in fallback_result_events[0]["result"].lower()
+
+    @pytest.mark.asyncio
     async def test_no_mcp_no_tools(self):
         """Without MCP, no tools are passed to generate_chat."""
         session = _make_session(mcp=None)

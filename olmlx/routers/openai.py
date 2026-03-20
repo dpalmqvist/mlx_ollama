@@ -182,12 +182,7 @@ async def openai_chat(req: OpenAIChatRequest, request: Request):
             cache_id=cache_id,
         )
         text = result.get("text", "")
-        stats = result.get("stats")
-        usage = OpenAIUsage(
-            prompt_tokens=stats.prompt_eval_count if stats else 0,
-            completion_tokens=stats.eval_count if stats else 0,
-            total_tokens=(stats.prompt_eval_count + stats.eval_count) if stats else 0,
-        )
+        usage = OpenAIUsage.from_stats(result.get("stats"))
         return OpenAIChatResponse(
             id=chat_id,
             created=created,
@@ -243,6 +238,7 @@ async def openai_completions(req: OpenAICompletionRequest, request: Request):
             stream=False,
             max_tokens=max_tokens,
         )
+        usage = OpenAIUsage.from_stats(result.get("stats"))
         return OpenAICompletionResponse(
             id=comp_id,
             created=created,
@@ -254,6 +250,7 @@ async def openai_completions(req: OpenAICompletionRequest, request: Request):
                     finish_reason="stop",
                 )
             ],
+            usage=usage,
         )
 
 

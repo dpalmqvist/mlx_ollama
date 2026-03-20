@@ -72,7 +72,11 @@ class TestOpenAIRouter:
 
     @pytest.mark.asyncio
     async def test_completions_non_streaming(self, app_client):
-        mock_result = {"text": "Completed text", "done": True, "stats": TimingStats()}
+        mock_result = {
+            "text": "Completed text",
+            "done": True,
+            "stats": TimingStats(prompt_eval_count=5, eval_count=15),
+        }
 
         with patch(
             "olmlx.routers.openai.generate_completion", new_callable=AsyncMock
@@ -90,6 +94,11 @@ class TestOpenAIRouter:
         data = resp.json()
         assert data["object"] == "text_completion"
         assert data["choices"][0]["text"] == "Completed text"
+        # Bug #79: usage stats must be present
+        assert data["usage"] is not None
+        assert data["usage"]["prompt_tokens"] == 5
+        assert data["usage"]["completion_tokens"] == 15
+        assert data["usage"]["total_tokens"] == 20
 
     @pytest.mark.asyncio
     async def test_completions_list_prompt(self, app_client):
