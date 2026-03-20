@@ -31,7 +31,6 @@ class TestGetSystemMemoryBytes:
             assert memory_mod.get_system_memory_bytes() == 0
 
 
-
 class TestIsMemoryPressureHigh:
     def test_returns_true_when_above_threshold(self):
         with (
