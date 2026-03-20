@@ -197,17 +197,17 @@ def mock_mlx_primitives(monkeypatch):
     # HuggingFace download
     _start("huggingface_hub.snapshot_download", MagicMock(return_value="/tmp/fake"))
 
-    # Memory functions — patch mx and os on the utils.memory module so the
-    # functions run normally but return deterministic values without a GPU.
+    # Memory functions — patch mx on the utils.memory module for Metal memory,
+    # but patch get_system_memory_bytes directly to avoid @functools.cache poisoning
+    # (patching os.sysconf has no effect after the first cached call).
     _start(
         "olmlx.utils.memory.mx.get_active_memory", MagicMock(return_value=1 * 1024**3)
     )
     _start("olmlx.utils.memory.mx.get_cache_memory", MagicMock(return_value=0))
-    mock_os = _start("olmlx.utils.memory.os")
-    mock_os.sysconf.side_effect = lambda key: {
-        "SC_PAGE_SIZE": 4096,
-        "SC_PHYS_PAGES": 32 * 1024**3 // 4096,  # 32 GB
-    }[key]
+    _start(
+        "olmlx.utils.memory.get_system_memory_bytes",
+        MagicMock(return_value=32 * 1024**3),
+    )
 
     _reset_stream_responses()
 
