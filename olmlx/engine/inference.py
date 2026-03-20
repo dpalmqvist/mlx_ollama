@@ -50,6 +50,18 @@ def set_distributed_coordinator(coordinator):
         _distributed_coordinator = coordinator
 
 
+def _distributed_barrier() -> None:
+    """Lightweight all_sum barrier to synchronize distributed ranks.
+
+    Ensures all ranks have reached the same point before heavy compute
+    begins.  Without this, the coordinator may start its forward pass
+    (which contains all_sum ops) before the worker is ready, causing a
+    Metal GPU timeout.
+    """
+    barrier = mx.distributed.all_sum(mx.array([1.0]))
+    mx.eval(barrier)
+
+
 def _maybe_broadcast_distributed(
     lm,
     prompt_tokens: list[int],
@@ -67,6 +79,7 @@ def _maybe_broadcast_distributed(
             max_tokens=max_tokens,
             gen_kwargs=gen_kwargs,
         )
+        _distributed_barrier()
 
 
 # Resolve generation streams at module load time to avoid repeated
