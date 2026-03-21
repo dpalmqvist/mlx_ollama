@@ -48,7 +48,7 @@ def cmd_serve(_args):
     from olmlx.config import experimental
 
     if experimental.distributed:
-        _launch_distributed_workers()
+        _hosts, strategy, hostfile_layers = _launch_distributed_workers()
         # The ring backend's init() blocks until all ranks connect. Both the
         # coordinator and workers must call init() within each other's retry
         # window (~31s). Workers start ~5-10s after SSH launch. We delay
@@ -76,8 +76,11 @@ def cmd_serve(_args):
         )
         # Store for the app lifespan to retrieve
         global _cli_distributed_group, _cli_distributed_coordinator
+        global _cli_distributed_strategy, _cli_distributed_layer_counts
         _cli_distributed_group = group
         _cli_distributed_coordinator = coordinator
+        _cli_distributed_strategy = strategy
+        _cli_distributed_layer_counts = hostfile_layers
 
     uvicorn.run(
         "olmlx.app:create_app",
@@ -91,6 +94,8 @@ def cmd_serve(_args):
 # Module-level state set by cmd_serve() for the app lifespan to retrieve.
 _cli_distributed_group = None
 _cli_distributed_coordinator = None
+_cli_distributed_strategy = "tensor"
+_cli_distributed_layer_counts = None
 
 _VALID_HOSTNAME_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
 
@@ -257,6 +262,32 @@ def _launch_distributed_workers() -> list[str]:
         )
         sys.exit(1)
 
+    strategy = hostfile.get("strategy", "tensor")
+    if strategy not in ("tensor", "pipeline"):
+        print(
+            f"Error: hostfile strategy must be 'tensor' or 'pipeline', got {strategy!r}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    hostfile_layers = hostfile.get("layers")
+    if hostfile_layers is not None:
+        if not isinstance(hostfile_layers, list) or not all(
+            isinstance(x, int) and x > 0 for x in hostfile_layers
+        ):
+            print(
+                "Error: hostfile 'layers' must be a list of positive integers",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        if len(hostfile_layers) != len(hosts):
+            print(
+                f"Error: hostfile 'layers' has {len(hostfile_layers)} entries "
+                f"but there are {len(hosts)} hosts (must match)",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
     # Validate hostnames to prevent command injection
     for host in hosts:
         if not _VALID_HOSTNAME_RE.match(host):
@@ -305,8 +336,9 @@ def _launch_distributed_workers() -> list[str]:
     remote_working_dir = experimental.distributed_remote_working_dir
 
     # Pre-shard and distribute weights to workers if enabled
+    # (not applicable for pipeline strategy — each rank loads full model)
     pre_sharded = False
-    if experimental.distributed_pre_shard:
+    if experimental.distributed_pre_shard and strategy != "pipeline":
         pre_sharded = _pre_shard_and_distribute(hosts, model, world_size, experimental)
 
     # Pre-compute safe model name for env var paths (used when pre-sharded)
@@ -328,8 +360,13 @@ def _launch_distributed_workers() -> list[str]:
                 experimental.distributed_sideband_port
             ),
             "OLMLX_EXPERIMENTAL_DISTRIBUTED_SECRET": experimental.distributed_secret,
+            "OLMLX_EXPERIMENTAL_DISTRIBUTED_STRATEGY": strategy,
             "MLX_RANK": str(rank),
         }
+        if hostfile_layers is not None:
+            env["OLMLX_EXPERIMENTAL_DISTRIBUTED_LAYER_COUNTS"] = ",".join(
+                str(x) for x in hostfile_layers
+            )
         if pre_sharded:
             env[PRE_SHARDED_DIR_ENV] = f"{worker_shard_dir}/{safe_name}/rank{rank}"
         env_str = " ".join(f"{k}={shlex.quote(v)}" for k, v in env.items())
@@ -378,7 +415,7 @@ def _launch_distributed_workers() -> list[str]:
             _cleanup_workers()
             raise RuntimeError("Worker SSH launch failed — check worker logs")
 
-    return hosts
+    return hosts, strategy, hostfile_layers
 
 
 def _find_executable() -> str:
