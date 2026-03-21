@@ -45,7 +45,12 @@ async def lifespan(app: FastAPI):
         # The CLI starts the ring backend and sideband server before uvicorn
         # (to avoid the slow transformers import blocking the sideband).
         # Retrieve the pre-created state from cmd_serve().
-        from olmlx.cli import _cli_distributed_coordinator, _cli_distributed_group
+        from olmlx.cli import (
+            _cli_distributed_coordinator,
+            _cli_distributed_group,
+            _cli_distributed_layer_counts,
+            _cli_distributed_strategy,
+        )
 
         distributed_group = _cli_distributed_group
         coordinator = _cli_distributed_coordinator
@@ -73,7 +78,19 @@ async def lifespan(app: FastAPI):
             raise
         set_distributed_coordinator(coordinator)
 
-    manager = ModelManager(registry, store, distributed_group=distributed_group)
+    distributed_strategy = "tensor"
+    distributed_layer_counts = None
+    if experimental.distributed:
+        distributed_strategy = _cli_distributed_strategy
+        distributed_layer_counts = _cli_distributed_layer_counts
+
+    manager = ModelManager(
+        registry,
+        store,
+        distributed_group=distributed_group,
+        distributed_strategy=distributed_strategy,
+        distributed_layer_counts=distributed_layer_counts,
+    )
     manager.start_expiry_checker()
 
     settings.models_dir.mkdir(parents=True, exist_ok=True)

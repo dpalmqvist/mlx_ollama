@@ -96,34 +96,53 @@ def worker_main() -> None:
         port=sideband_port,
     )
 
+    # Read distributed strategy config
+    strategy = os.environ.get("OLMLX_EXPERIMENTAL_DISTRIBUTED_STRATEGY", "tensor")
+
     # Load and shard the model
     import mlx_lm
 
     from olmlx.config import PRE_SHARDED_DIR_ENV
 
-    pre_shard_dir = os.environ.get(PRE_SHARDED_DIR_ENV)
-    if pre_shard_dir:
-        try:
-            model, tokenizer = _load_pre_sharded(pre_shard_dir, group)
-        except Exception as e:
-            logger.warning(
-                "Pre-sharded load failed (%s), falling back to HF download", e
-            )
-            pre_shard_dir = None
-    if not pre_shard_dir:
-        logger.info("Loading model %s", model_path)
+    if strategy == "pipeline":
+        # Pipeline mode: load full model, apply pipeline partitioning
+        layer_counts_str = os.environ.get(
+            "OLMLX_EXPERIMENTAL_DISTRIBUTED_LAYER_COUNTS", ""
+        )
+        layer_counts = (
+            [int(x) for x in layer_counts_str.split(",")] if layer_counts_str else None
+        )
+        logger.info("Loading model %s (pipeline strategy)", model_path)
         model, tokenizer = mlx_lm.load(model_path)
 
-        if not hasattr(model, "shard"):
-            logger.error("Model %s does not support shard()", model_path)
-            worker.close()
-            sys.exit(1)
+        from olmlx.engine.pipeline import apply_pipeline
 
-        model.shard(group)
-        # Materialize all lazy weight slices before entering inference.
-        # Without this, the combined lazy eval + all_sum Metal command
-        # buffer can exceed the ~10s GPU timeout for large models (32B+).
-        mx.eval(model.parameters())
+        apply_pipeline(model, group, layer_counts=layer_counts)
+        mx.eval(model.parameters())  # materialize owned weights on GPU
+    else:
+        pre_shard_dir = os.environ.get(PRE_SHARDED_DIR_ENV)
+        if pre_shard_dir:
+            try:
+                model, tokenizer = _load_pre_sharded(pre_shard_dir, group)
+            except Exception as e:
+                logger.warning(
+                    "Pre-sharded load failed (%s), falling back to HF download", e
+                )
+                pre_shard_dir = None
+        if not pre_shard_dir:
+            logger.info("Loading model %s", model_path)
+            model, tokenizer = mlx_lm.load(model_path)
+
+            if not hasattr(model, "shard"):
+                logger.error("Model %s does not support shard()", model_path)
+                worker.close()
+                sys.exit(1)
+
+            model.shard(group)
+            # Materialize all lazy weight slices before entering inference.
+            # Without this, the combined lazy eval + all_sum Metal command
+            # buffer can exceed the ~10s GPU timeout for large models (32B+).
+            mx.eval(model.parameters())
     worker.send_ready(secret=secret)
     logger.info("Model sharded, ready signal sent, entering inference loop")
 

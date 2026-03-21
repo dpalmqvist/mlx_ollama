@@ -314,10 +314,14 @@ class ModelManager:
         registry: ModelRegistry,
         store: ModelStore | None = None,
         distributed_group: Any = None,
+        distributed_strategy: str = "tensor",
+        distributed_layer_counts: list[int] | None = None,
     ):
         self.registry = registry
         self.store = store
         self._distributed_group = distributed_group
+        self._distributed_strategy = distributed_strategy
+        self._distributed_layer_counts = distributed_layer_counts
         self._loaded: dict[str, LoadedModel] = {}
         self._lock = asyncio.Lock()
         self._expiry_task: asyncio.Task | None = None
@@ -810,7 +814,38 @@ class ModelManager:
                     f"Model {hf_path} is a vision-language model which cannot "
                     f"be sharded correctly across workers."
                 )
-            if hasattr(model, "shard"):
+
+            if self._distributed_strategy == "pipeline":
+                from olmlx.engine.pipeline import apply_pipeline
+
+                try:
+                    apply_pipeline(
+                        model,
+                        self._distributed_group,
+                        layer_counts=self._distributed_layer_counts,
+                    )
+                except ValueError:
+                    del model, tokenizer
+                    gc.collect()
+                    mx.clear_cache()
+                    raise
+                # Materialize parameters — pipeline nullified unowned layers
+                # so only owned weights are evaluated (no cross-rank ops).
+                mx.eval(model.parameters())
+                is_distributed = True
+                logger.info(
+                    "Model %s pipeline-sharded for distributed inference", hf_path
+                )
+            elif self._distributed_strategy == "tensor":
+                if not hasattr(model, "shard"):
+                    del model, tokenizer
+                    gc.collect()
+                    mx.clear_cache()
+                    raise ValueError(
+                        f"Model {hf_path} does not support distributed inference "
+                        f"(no shard() method). Supported architectures include: "
+                        f"llama, qwen2, qwen3, deepseek_v2, deepseek_v3, etc."
+                    )
                 model.shard(self._distributed_group)
                 # Materialize all lazy weight slices BEFORE any forward pass.
                 # model.shard() creates lazy array slices; if they're first
@@ -821,15 +856,12 @@ class ModelManager:
                 is_distributed = True
                 logger.info("Model %s sharded for distributed inference", hf_path)
             else:
-                # Release Metal memory before raising — the model weights are
-                # already allocated on the GPU at this point.
                 del model, tokenizer
                 gc.collect()
                 mx.clear_cache()
                 raise ValueError(
-                    f"Model {hf_path} does not support distributed inference "
-                    f"(no shard() method). Supported architectures include: "
-                    f"llama, qwen2, qwen3, deepseek_v2, deepseek_v3, etc."
+                    f"Unknown distributed strategy {self._distributed_strategy!r}. "
+                    f"Supported: 'tensor', 'pipeline'."
                 )
 
         return model, tokenizer, is_vlm, caps, is_distributed

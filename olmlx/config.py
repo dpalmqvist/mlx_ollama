@@ -50,6 +50,7 @@ class ExperimentalSettings(BaseSettings):
     }
 
     distributed: bool = False
+    distributed_strategy: Literal["tensor", "pipeline"] = "tensor"
     distributed_hostfile: Path = Path("~/.olmlx/hostfile.json")
     distributed_backend: str = "ring"
     distributed_port: int = 32323
