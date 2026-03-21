@@ -57,6 +57,11 @@ class ExperimentalSettings(BaseSettings):
     distributed_secret: str = ""
     distributed_remote_working_dir: str = ""
     distributed_remote_python: str = "python"
+    distributed_pre_shard: bool = True
+    distributed_shard_dir: Path = Path("~/.olmlx/shards")
+    distributed_worker_shard_dir: str = "~/.olmlx/shards"
 
 
 experimental = ExperimentalSettings()
+
+PRE_SHARDED_DIR_ENV = "OLMLX_EXPERIMENTAL_DISTRIBUTED_PRE_SHARDED_DIR"

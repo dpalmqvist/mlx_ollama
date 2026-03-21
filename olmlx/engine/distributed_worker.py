@@ -20,6 +20,41 @@ import sys
 logger = logging.getLogger(__name__)
 
 
+def _load_pre_sharded(shard_dir_str, group):
+    """Load model from pre-sharded weights directory.
+
+    1. Load model with pre-sharded weights (smaller shapes)
+    2. model.shard(group) for structural distributed layer conversion
+    3. Reload pre-sharded weights to overwrite double-split values
+    4. Materialize parameters
+    """
+    from pathlib import Path
+
+    import mlx.core as mx
+    import mlx_lm
+
+    shard_dir = Path(shard_dir_str).expanduser()
+    logger.info("Loading pre-sharded weights from %s", shard_dir)
+
+    model, tokenizer = mlx_lm.load(str(shard_dir))
+    if not hasattr(model, "shard"):
+        raise RuntimeError(f"Model in {shard_dir} does not support shard()")
+    model.shard(group)
+
+    # Overwrite double-split weights with correct pre-sharded values
+    weights_path = shard_dir / "model.safetensors"
+    if not weights_path.exists():
+        raise FileNotFoundError(
+            f"Pre-sharded weights not found at {weights_path}. "
+            "The shard directory may be corrupt — delete it to trigger re-sharding."
+        )
+    model.load_weights(str(weights_path), strict=False)
+
+    mx.eval(model.parameters())
+    logger.info("Pre-sharded model loaded and materialized")
+    return model, tokenizer
+
+
 def worker_main() -> None:
     """Main loop for distributed worker nodes."""
     import mlx.core as mx
@@ -64,20 +99,31 @@ def worker_main() -> None:
     # Load and shard the model
     import mlx_lm
 
-    logger.info("Loading model %s", model_path)
-    model, tokenizer = mlx_lm.load(model_path)
+    from olmlx.config import PRE_SHARDED_DIR_ENV
 
-    if not hasattr(model, "shard"):
-        logger.error("Model %s does not support shard()", model_path)
-        worker.close()
-        sys.exit(1)
+    pre_shard_dir = os.environ.get(PRE_SHARDED_DIR_ENV)
+    if pre_shard_dir:
+        try:
+            model, tokenizer = _load_pre_sharded(pre_shard_dir, group)
+        except Exception as e:
+            logger.warning(
+                "Pre-sharded load failed (%s), falling back to HF download", e
+            )
+            pre_shard_dir = None
+    if not pre_shard_dir:
+        logger.info("Loading model %s", model_path)
+        model, tokenizer = mlx_lm.load(model_path)
 
-    model.shard(group)
-    # Materialize all lazy weight slices before entering inference.
-    # model.shard() creates lazy array slices; if they're first evaluated
-    # during a forward pass (with all_sum), the combined Metal command
-    # buffer can exceed the ~10s GPU timeout for large models (32B+).
-    mx.eval(model.parameters())
+        if not hasattr(model, "shard"):
+            logger.error("Model %s does not support shard()", model_path)
+            worker.close()
+            sys.exit(1)
+
+        model.shard(group)
+        # Materialize all lazy weight slices before entering inference.
+        # Without this, the combined lazy eval + all_sum Metal command
+        # buffer can exceed the ~10s GPU timeout for large models (32B+).
+        mx.eval(model.parameters())
     worker.send_ready(secret=secret)
     logger.info("Model sharded, ready signal sent, entering inference loop")
 

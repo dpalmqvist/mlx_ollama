@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import plistlib
+import re
 import shutil
 import subprocess
 import sys
@@ -91,7 +92,7 @@ def cmd_serve(_args):
 _cli_distributed_group = None
 _cli_distributed_coordinator = None
 
-_VALID_HOSTNAME_RE = __import__("re").compile(r"^[a-zA-Z0-9._-]+$")
+_VALID_HOSTNAME_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
 
 
 _worker_procs: list[subprocess.Popen] = []
@@ -120,6 +121,100 @@ def _cleanup_workers():
             pass
     _worker_procs.clear()
     _worker_log_fhs.clear()
+
+
+def _pre_shard_and_distribute(hosts, model, world_size, experimental) -> bool:
+    """Pre-shard model weights and distribute to workers via SCP.
+
+    Returns True on success, False on failure (caller should fall back).
+    """
+    import shlex
+
+    from olmlx.engine.pre_shard import (
+        pre_shard_all_workers,
+        read_shard_marker,
+    )
+    from olmlx.models.store import _safe_dir_name
+
+    store = _create_store()
+    try:
+        model_dir = store.ensure_downloaded(model)
+    except Exception as e:
+        logger.warning("Failed to download model for pre-sharding: %s", e)
+        return False
+
+    safe_name = _safe_dir_name(model)
+    shard_base = Path(experimental.distributed_shard_dir).expanduser() / safe_name
+
+    # Check if valid shards already exist
+    all_valid = True
+    for rank in range(1, world_size):
+        shard_dir = shard_base / f"rank{rank}"
+        marker = read_shard_marker(shard_dir)
+        if (
+            marker is None
+            or marker.get("model_path") != str(model_dir)
+            or marker.get("world_size") != world_size
+            or marker.get("rank") != rank
+        ):
+            all_valid = False
+            break
+
+    if all_valid:
+        print("  Pre-sharded weights already exist, skipping re-shard")
+    else:
+        print(f"  Pre-sharding model for {world_size - 1} worker(s)...")
+        try:
+            pre_shard_all_workers(
+                model_dir,
+                world_size=world_size,
+                output_base=shard_base,
+                progress_cb=lambda r, ws: print(f"    Sharded rank {r}/{ws - 1}"),
+            )
+        except Exception as e:
+            logger.warning("Pre-sharding failed: %s", e)
+            return False
+
+    # SCP shards to each worker
+    # Resolve ~ to absolute path so we can safely shlex.quote for SSH commands.
+    worker_shard_dir = str(Path(experimental.distributed_worker_shard_dir).expanduser())
+    for rank, host in enumerate(hosts[1:], start=1):
+        shard_dir = shard_base / f"rank{rank}"
+        remote_dir = f"{worker_shard_dir}/{safe_name}/rank{rank}"
+
+        # Create remote directory
+        mkdir_cmd = [
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            host,
+            f"mkdir -p {shlex.quote(remote_dir)}",
+        ]
+        try:
+            subprocess.run(mkdir_cmd, check=True, capture_output=True, timeout=30)
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+            logger.warning("Failed to create remote dir on %s: %s", host, e)
+            return False
+
+        # SCP with compression — no shlex.quote: SCP args aren't shell-processed
+        scp_cmd = [
+            "scp",
+            "-C",
+            "-o",
+            "BatchMode=yes",
+            "-r",
+            f"{shard_dir}/.",
+            f"{host}:{remote_dir}/",
+        ]
+        print(f"  Transferring shard to {host} rank {rank}...")
+        try:
+            subprocess.run(scp_cmd, check=True, capture_output=True, timeout=600)
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+            logger.warning("SCP to %s failed: %s", host, e)
+            return False
+
+    print("  Pre-sharded weights distributed to all workers")
+    return True
 
 
 def _launch_distributed_workers() -> list[str]:
@@ -209,6 +304,20 @@ def _launch_distributed_workers() -> list[str]:
     remote_python = experimental.distributed_remote_python
     remote_working_dir = experimental.distributed_remote_working_dir
 
+    # Pre-shard and distribute weights to workers if enabled
+    pre_sharded = False
+    if experimental.distributed_pre_shard:
+        pre_sharded = _pre_shard_and_distribute(hosts, model, world_size, experimental)
+
+    # Pre-compute safe model name for env var paths (used when pre-sharded)
+    if pre_sharded:
+        from olmlx.config import PRE_SHARDED_DIR_ENV
+        from olmlx.models.store import _safe_dir_name
+
+        safe_name = _safe_dir_name(model)
+        # Keep ~ as-is: the worker calls expanduser() on the received path
+        worker_shard_dir = experimental.distributed_worker_shard_dir
+
     # Launch workers on remote hosts (rank 1..N)
     for rank, host in enumerate(hosts[1:], start=1):
         env = {
@@ -221,6 +330,8 @@ def _launch_distributed_workers() -> list[str]:
             "OLMLX_EXPERIMENTAL_DISTRIBUTED_SECRET": experimental.distributed_secret,
             "MLX_RANK": str(rank),
         }
+        if pre_sharded:
+            env[PRE_SHARDED_DIR_ENV] = f"{worker_shard_dir}/{safe_name}/rank{rank}"
         env_str = " ".join(f"{k}={shlex.quote(v)}" for k, v in env.items())
 
         # Build remote shell script that sets up hostfile and runs worker
