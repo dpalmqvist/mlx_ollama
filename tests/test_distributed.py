@@ -815,6 +815,8 @@ class TestFileHandleLeak:
                 distributed_sideband_port=32400,
                 distributed_port=32323,
                 distributed_secret="",
+                distributed_remote_working_dir="",
+                distributed_remote_python="python",
             ),
         )
 
@@ -982,6 +984,8 @@ class TestSSHFailureDetection:
                 distributed_sideband_port=32400,
                 distributed_port=32323,
                 distributed_secret="test-secret",
+                distributed_remote_working_dir="",
+                distributed_remote_python="python",
             ),
         )
 
@@ -1069,6 +1073,8 @@ class TestLogFileHandleLifetime:
                 distributed_sideband_port=32400,
                 distributed_port=32323,
                 distributed_secret="",
+                distributed_remote_working_dir="",
+                distributed_remote_python="python",
             ),
         )
 
@@ -1274,7 +1280,7 @@ class TestSSHCommandConstruction:
         call_args = popen_mock.call_args[0][0]
         remote_cmd = call_args[-1]  # Last arg is the remote command
 
-        assert "cd ~/Documents/olmlx_distributed" in remote_cmd
+        assert "cd '~/Documents/olmlx_distributed'" in remote_cmd
         assert "uv run python -m olmlx.engine.distributed_worker" in remote_cmd
 
         cli_module._cleanup_workers()

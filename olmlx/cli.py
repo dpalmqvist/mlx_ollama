@@ -51,12 +51,16 @@ def cmd_serve(_args):
         # The ring backend's init() blocks until all ranks connect. Both the
         # coordinator and workers must call init() within each other's retry
         # window (~31s). Workers start ~5-10s after SSH launch. We delay
-        # the coordinator to overlap with the worker's init() window.
+        # the coordinator by 3s to overlap with the worker's init() window.
         print("  Waiting 3s for workers to start...")
         time.sleep(3)
         import mlx.core as mx
 
-        group = mx.distributed.init(backend=experimental.distributed_backend)
+        try:
+            group = mx.distributed.init(backend=experimental.distributed_backend)
+        except Exception:
+            _cleanup_workers()
+            raise
         print(f"  Ring initialized: rank {group.rank()}, world_size {group.size()}")
 
         # Start the sideband server NOW, before uvicorn imports the app.
@@ -178,6 +182,14 @@ def _launch_distributed_workers() -> list[str]:
     ring_hostfile_data = [
         [f"{h}:{experimental.distributed_port + i}"] for i, h in enumerate(hosts)
     ]
+    max_port = experimental.distributed_port + len(hosts) - 1
+    if max_port > 65535:
+        print(
+            f"Error: distributed_port {experimental.distributed_port} + "
+            f"{len(hosts)} hosts exceeds port limit 65535",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     ring_hostfile_path = log_dir / "ring_hostfile.json"
     with open(ring_hostfile_path, "w") as f:
         json.dump(ring_hostfile_data, f)
@@ -218,7 +230,7 @@ def _launch_distributed_workers() -> list[str]:
             "export MLX_HOSTFILE=$HOSTFILE",
         ]
         if remote_working_dir:
-            script_parts.append(f"cd {remote_working_dir}")
+            script_parts.append(f"cd {shlex.quote(remote_working_dir)}")
         script_parts.append(
             f"{env_str} {remote_python} -m olmlx.engine.distributed_worker"
         )

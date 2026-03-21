@@ -333,6 +333,7 @@ class DistributedWorker:
             except (ConnectionRefusedError, OSError) as exc:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
+                    self._sock.close()
                     raise ConnectionRefusedError(
                         f"Could not connect to coordinator sideband at "
                         f"{coordinator_host}:{port} after {connect_retry_timeout}s"
