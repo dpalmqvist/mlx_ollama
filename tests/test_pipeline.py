@@ -233,6 +233,81 @@ class TestHostfileParsing:
         assert layers == [44, 20]
 
 
+class TestGptOssDetection:
+    """Test that gpt_oss models are detected."""
+
+    def test_detects_gpt_oss(self):
+        from olmlx.engine.pipeline import _is_gpt_oss
+
+        inner = _make_mock_inner_model(num_layers=4)
+        inner.layer_types = ["sliding_attention", "full_attention"] * 2
+        inner.window_size = 128
+        inner.ga_idx = 1
+        inner.swa_idx = 0
+        assert _is_gpt_oss(inner) is True
+
+    def test_not_gpt_oss_missing_layer_types(self):
+        from olmlx.engine.pipeline import _is_gpt_oss
+
+        inner = _make_mock_inner_model(num_layers=4)
+        assert _is_gpt_oss(inner) is False
+
+    def test_gpt_oss_not_detected_as_llama(self):
+        from olmlx.engine.pipeline import _is_llama_sliding_window
+
+        inner = _make_mock_inner_model(num_layers=4)
+        inner.layer_types = ["sliding_attention", "full_attention"] * 2
+        inner.window_size = 128
+        inner.ga_idx = 1
+        inner.swa_idx = 0
+        # gpt_oss has window_size, not sliding_window — should NOT match Llama
+        assert _is_llama_sliding_window(inner) is False
+
+
+class TestGptOssMonkeyPatch:
+    """Test pipeline patching for gpt_oss models."""
+
+    def test_gpt_oss_pipeline_state_set(self):
+        from olmlx.engine.pipeline import apply_pipeline
+
+        inner = _make_mock_gpt_oss_inner(num_layers=8)
+        model = _make_mock_outer_model(inner)
+        group = _make_mock_group(rank=0, size=2)
+
+        apply_pipeline(model, group, layer_counts=[4, 4])
+
+        assert inner.pipeline_rank == 0
+        assert inner.pipeline_size == 2
+        assert inner.start_idx == 4
+        assert inner.end_idx == 8
+        assert inner.num_layers == 4
+
+    def test_gpt_oss_layer_types_preserved(self):
+        from olmlx.engine.pipeline import apply_pipeline
+
+        inner = _make_mock_gpt_oss_inner(num_layers=8)
+        model = _make_mock_outer_model(inner)
+        group = _make_mock_group(rank=0, size=2)
+
+        apply_pipeline(model, group, layer_counts=[4, 4])
+
+        # _owned_layer_types should be set to the owned range
+        assert hasattr(inner, "_owned_layer_types")
+        assert len(inner._owned_layer_types) == 4
+
+    def test_gpt_oss_call_replaced(self):
+        from olmlx.engine.pipeline import apply_pipeline
+
+        inner = _make_mock_gpt_oss_inner(num_layers=8)
+        original_call = inner.__call__
+        model = _make_mock_outer_model(inner)
+        group = _make_mock_group(rank=0, size=2)
+
+        apply_pipeline(model, group, layer_counts=[4, 4])
+
+        assert inner.__call__ != original_call
+
+
 class TestLlamaDetection:
     """Test that Llama sliding window models are detected."""
 
@@ -286,6 +361,23 @@ def _make_mock_inner_model(num_layers: int):
         norm=MagicMock(),
     )
     # Add a callable __call__ so we can check it gets replaced
+    inner.__call__ = lambda self, *a, **kw: None
+    return inner
+
+
+def _make_mock_gpt_oss_inner(num_layers: int):
+    layer_types = ["sliding_attention", "full_attention"] * (num_layers // 2)
+    if num_layers % 2:
+        layer_types.append("sliding_attention")
+    inner = SimpleNamespace(
+        embed_tokens=MagicMock(),
+        layers=list(_MockLayer(i) for i in range(num_layers)),
+        norm=MagicMock(),
+        layer_types=layer_types,
+        window_size=128,
+        ga_idx=layer_types.index("full_attention"),
+        swa_idx=layer_types.index("sliding_attention"),
+    )
     inner.__call__ = lambda self, *a, **kw: None
     return inner
 

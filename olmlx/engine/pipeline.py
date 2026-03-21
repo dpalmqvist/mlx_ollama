@@ -42,6 +42,16 @@ def _compute_layer_range(rank: int, layer_counts: list[int]) -> tuple[int, int]:
     return start_idx, end_idx
 
 
+def _is_gpt_oss(inner: Any) -> bool:
+    """Detect if the inner model uses gpt_oss-style layer_types attention."""
+    return (
+        hasattr(inner, "layer_types")
+        and hasattr(inner, "window_size")
+        and hasattr(inner, "ga_idx")
+        and hasattr(inner, "swa_idx")
+    )
+
+
 def _is_llama_sliding_window(inner: Any) -> bool:
     """Detect if the inner model uses Llama-style sliding window attention."""
     return (
@@ -126,7 +136,9 @@ def apply_pipeline(
     inner.layers[:start_idx] = [None] * start_idx
 
     # Replace inner model's __call__ with pipeline-aware version
-    if _is_llama_sliding_window(inner):
+    if _is_gpt_oss(inner):
+        _patch_gpt_oss_call(inner)
+    elif _is_llama_sliding_window(inner):
         _patch_llama_call(inner)
     else:
         _patch_standard_call(inner)
@@ -191,6 +203,80 @@ def _patch_standard_call(inner: Any) -> None:
         # Relies on all_gather returning tensors in rank order — this matches
         # the DeepSeek V3.2 reference implementation (deepseek_v32.py:474-476)
         # and is standard MPI semantics for all_gather.
+        if self.pipeline_size > 1:
+            h = mx.distributed.all_gather(h)[: h.shape[0]]
+
+        return self.norm(h)
+
+    inner.__call__ = types.MethodType(pipeline_call, inner)
+
+
+def _patch_gpt_oss_call(inner: Any) -> None:
+    """Replace __call__ for gpt_oss models with layer_types-based dual masks."""
+    from mlx_lm.models.base import create_attention_mask
+
+    # Store the owned slice of layer_types for the iteration loop
+    owned_layer_types = inner.layer_types[inner.start_idx : inner.end_idx]
+    inner._owned_layer_types = owned_layer_types
+
+    # Precompute FA/SWA cache indices from owned layer_types
+    fa_cache_idx = None
+    swa_cache_idx = None
+    for i, lt in enumerate(owned_layer_types):
+        if lt == "full_attention":
+            if fa_cache_idx is None:
+                fa_cache_idx = i
+        else:
+            if swa_cache_idx is None:
+                swa_cache_idx = i
+
+    inner._fa_cache_idx = fa_cache_idx
+    inner._swa_cache_idx = swa_cache_idx
+
+    def pipeline_call(
+        self,
+        inputs: mx.array,
+        cache=None,
+        input_embeddings: mx.array | None = None,
+    ):
+        if input_embeddings is not None:
+            h = input_embeddings
+        elif self.pipeline_rank == self.pipeline_size - 1:
+            h = self.embed_tokens(inputs)
+        else:
+            h = mx.zeros(
+                (inputs.shape[0], inputs.shape[1], self.embed_tokens.weight.shape[-1]),
+                dtype=self.embed_tokens.weight.dtype,
+            )
+
+        if cache is None:
+            cache = [None] * self.num_layers
+
+        fa_mask = create_attention_mask(
+            h, cache[self._fa_cache_idx] if self._fa_cache_idx is not None else None
+        )
+        if self._swa_cache_idx is not None:
+            swa_mask = create_attention_mask(
+                h, cache[self._swa_cache_idx], window_size=self.window_size
+            )
+        else:
+            swa_mask = fa_mask
+
+        if self.pipeline_rank < self.pipeline_size - 1:
+            h = mx.distributed.recv_like(h, self.pipeline_rank + 1)
+
+        for i in range(self.num_layers):
+            layer = self.layers[self.start_idx + i]
+            mask = (
+                fa_mask if self._owned_layer_types[i] == "full_attention" else swa_mask
+            )
+            h = layer(h, mask, cache[i])
+
+        if self.pipeline_rank != 0:
+            h = mx.distributed.send(h, (self.pipeline_rank - 1) % self.pipeline_size)
+            if cache[-1] is not None:
+                cache[-1].keys = mx.depends(cache[-1].keys, h)
+
         if self.pipeline_size > 1:
             h = mx.distributed.all_gather(h)[: h.shape[0]]
 
