@@ -117,7 +117,11 @@ def apply_pipeline(
     inner.end_idx = end_idx
     inner.num_layers = end_idx - start_idx
 
-    # Nullify non-owned layers and truncate
+    # Nullify non-owned layers and truncate.
+    # Note: embed_tokens, norm, and lm_head (on outer model) remain on all ranks.
+    # norm is needed because all_gather broadcasts the final hidden state to all
+    # ranks, each of which must independently produce valid output for the compute
+    # graph. This matches the DeepSeek V3.2 reference implementation.
     inner.layers = inner.layers[:end_idx]
     inner.layers[:start_idx] = [None] * start_idx
 
@@ -151,11 +155,18 @@ def _patch_standard_call(inner: Any) -> None:
         cache=None,
         input_embeddings: mx.array | None = None,
     ):
-        h = (
-            input_embeddings
-            if input_embeddings is not None
-            else self.embed_tokens(inputs)
-        )
+        if input_embeddings is not None:
+            h = input_embeddings
+        elif self.pipeline_rank == self.pipeline_size - 1:
+            # Input rank: compute embeddings
+            h = self.embed_tokens(inputs)
+        else:
+            # Non-input ranks: create zero shape template for recv_like
+            # (avoids wasteful embed_tokens forward pass)
+            h = mx.zeros(
+                (inputs.shape[0], inputs.shape[1], self.embed_tokens.weight.shape[-1]),
+                dtype=self.embed_tokens.weight.dtype,
+            )
 
         if cache is None:
             cache = [None] * self.num_layers
@@ -175,7 +186,11 @@ def _patch_standard_call(inner: Any) -> None:
             if cache[-1] is not None:
                 cache[-1].keys = mx.depends(cache[-1].keys, h)
 
-        # Broadcast result to all ranks
+        # Broadcast result to all ranks so each can independently compute
+        # norm + lm_head (needed to keep the compute graph valid on all ranks).
+        # Relies on all_gather returning tensors in rank order — this matches
+        # the DeepSeek V3.2 reference implementation (deepseek_v32.py:474-476)
+        # and is standard MPI semantics for all_gather.
         if self.pipeline_size > 1:
             h = mx.distributed.all_gather(h)[: h.shape[0]]
 
@@ -209,11 +224,15 @@ def _patch_llama_call(inner: Any) -> None:
         cache=None,
         input_embeddings: mx.array | None = None,
     ):
-        h = (
-            input_embeddings
-            if input_embeddings is not None
-            else self.embed_tokens(inputs)
-        )
+        if input_embeddings is not None:
+            h = input_embeddings
+        elif self.pipeline_rank == self.pipeline_size - 1:
+            h = self.embed_tokens(inputs)
+        else:
+            h = mx.zeros(
+                (inputs.shape[0], inputs.shape[1], self.embed_tokens.weight.shape[-1]),
+                dtype=self.embed_tokens.weight.dtype,
+            )
 
         if cache is None:
             cache = [None] * self.num_layers
@@ -271,7 +290,10 @@ def _patch_outer_layers(model: Any, inner: Any) -> None:
 
                 @layers.setter
                 def layers(self, value):
-                    pass
+                    raise AttributeError(
+                        "model.layers is managed by pipeline parallelism; "
+                        "assign to model.model.layers instead"
+                    )
 
             _pipeline_model_cache[model_cls] = PipelineModel
 

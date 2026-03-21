@@ -109,9 +109,20 @@ def worker_main() -> None:
         layer_counts_str = os.environ.get(
             "OLMLX_EXPERIMENTAL_DISTRIBUTED_LAYER_COUNTS", ""
         )
-        layer_counts = (
-            [int(x) for x in layer_counts_str.split(",")] if layer_counts_str else None
-        )
+        try:
+            layer_counts = (
+                [int(x) for x in layer_counts_str.split(",") if x]
+                if layer_counts_str
+                else None
+            )
+        except ValueError:
+            logger.error(
+                "Invalid OLMLX_EXPERIMENTAL_DISTRIBUTED_LAYER_COUNTS=%r, "
+                "expected comma-separated integers",
+                layer_counts_str,
+            )
+            worker.close()
+            sys.exit(1)
         logger.info("Loading model %s (pipeline strategy)", model_path)
         model, tokenizer = mlx_lm.load(model_path)
 
