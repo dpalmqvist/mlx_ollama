@@ -133,9 +133,7 @@ def worker_main() -> None:
                 from pathlib import Path
 
                 shard_path = Path(pre_shard_dir).expanduser()
-                logger.info(
-                    "Loading pre-sharded pipeline weights from %s", shard_path
-                )
+                logger.info("Loading pre-sharded pipeline weights from %s", shard_path)
                 model, tokenizer = mlx_lm.load(str(shard_path))
                 pre_sharded = True
             except Exception as e:
