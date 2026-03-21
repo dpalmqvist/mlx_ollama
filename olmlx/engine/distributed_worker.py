@@ -24,7 +24,7 @@ def worker_main() -> None:
     """Main loop for distributed worker nodes."""
     import mlx.core as mx
 
-    from olmlx.engine.distributed import DistributedWorker
+    from olmlx.engine.distributed import DistributedWorker, distributed_barrier
 
     logging.basicConfig(
         level=logging.INFO,
@@ -97,8 +97,6 @@ def worker_main() -> None:
             # The coordinator broadcasts via sideband then hits the same
             # barrier.  This prevents Metal GPU timeouts from one rank
             # starting all_sum ops before the other is ready.
-            from olmlx.engine.distributed import distributed_barrier
-
             distributed_barrier()
 
             # Run stream_generate in lockstep with rank 0.

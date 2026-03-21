@@ -226,11 +226,14 @@ def _launch_distributed_workers() -> list[str]:
         # Build remote shell script that sets up hostfile and runs worker
         script_parts = [
             "HOSTFILE=$(mktemp)",
+            'trap "rm -f $HOSTFILE" EXIT',
             f"echo {shlex.quote(ring_hostfile_json)} > $HOSTFILE",
             "export MLX_HOSTFILE=$HOSTFILE",
         ]
         if remote_working_dir:
             script_parts.append(f"cd {shlex.quote(remote_working_dir)}")
+        # Note: remote_python is intentionally not quoted — multi-word values
+        # like "uv run python" must expand to separate shell tokens.
         script_parts.append(
             f"{env_str} {remote_python} -m olmlx.engine.distributed_worker"
         )
