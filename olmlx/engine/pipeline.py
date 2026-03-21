@@ -100,6 +100,10 @@ def apply_pipeline(
             Must sum to total layer count. Length must equal world_size.
     """
     inner = _validate_inner_model(model)
+    if hasattr(inner, "pipeline_rank"):
+        raise RuntimeError(
+            f"apply_pipeline() already applied to {type(model).__name__}"
+        )
     rank = group.rank()
     world_size = group.size()
     total_layers = len(inner.layers)

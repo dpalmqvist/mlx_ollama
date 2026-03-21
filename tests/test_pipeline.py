@@ -108,6 +108,26 @@ class TestLayerCountValidation:
             apply_pipeline(model, group, layer_counts=[32, 16, 16])
 
 
+class TestDoubleApply:
+    """Test that apply_pipeline rejects double application."""
+
+    def test_double_apply_raises(self):
+        from olmlx.engine.pipeline import apply_pipeline
+
+        inner = _make_mock_inner_model(num_layers=8)
+        model = _make_mock_outer_model(inner)
+        group = _make_mock_group(rank=0, size=2)
+
+        apply_pipeline(model, group, layer_counts=[4, 4])
+
+        inner2 = _make_mock_inner_model(num_layers=8)
+        model2 = _make_mock_outer_model(inner2)
+        model2.model = inner  # reuse already-patched inner
+
+        with pytest.raises(RuntimeError, match="already applied"):
+            apply_pipeline(model2, group, layer_counts=[4, 4])
+
+
 class TestUnsupportedModel:
     """Test error for models without standard structure."""
 
