@@ -5,7 +5,6 @@ import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from olmlx.engine.pre_shard import (
     FakeGroup,
@@ -118,7 +117,9 @@ class TestPreShardForRank:
     @patch("mlx.utils.tree_flatten", return_value=[("layer", "params")])
     @patch("mlx.core.save_safetensors")
     @patch("mlx.core.eval")
-    def test_saves_weights(self, mock_eval, mock_save, mock_flatten, mock_load, tmp_path):
+    def test_saves_weights(
+        self, mock_eval, mock_save, mock_flatten, mock_load, tmp_path
+    ):
         model_dir = tmp_path / "model"
         model_dir.mkdir()
         (model_dir / "config.json").write_text("{}")
@@ -143,7 +144,9 @@ class TestPreShardForRank:
     @patch("mlx.utils.tree_flatten", return_value=[("layer", "params")])
     @patch("mlx.core.save_safetensors")
     @patch("mlx.core.eval")
-    def test_writes_marker(self, mock_eval, mock_save, mock_flatten, mock_load, tmp_path):
+    def test_writes_marker(
+        self, mock_eval, mock_save, mock_flatten, mock_load, tmp_path
+    ):
         model_dir = tmp_path / "model"
         model_dir.mkdir()
         (model_dir / "config.json").write_text("{}")
