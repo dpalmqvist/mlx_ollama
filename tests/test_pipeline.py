@@ -227,6 +227,77 @@ class TestMonkeyPatch:
         assert inner.__call__ != original_call
 
 
+class TestPreShardedApplyPipeline:
+    """Test apply_pipeline with pre_sharded=True (reduced model)."""
+
+    def test_sets_start_idx_zero(self):
+        from olmlx.engine.pipeline import apply_pipeline
+
+        # Simulate a pre-sharded rank 0 model with 4 layers (from original 8)
+        inner = _make_mock_inner_model(num_layers=4)
+        model = _make_mock_outer_model(inner)
+        group = _make_mock_group(rank=0, size=2)
+
+        apply_pipeline(model, group, layer_counts=[4, 4], pre_sharded=True)
+
+        assert inner.start_idx == 0
+        assert inner.end_idx == 4
+        assert inner.num_layers == 4
+        assert inner.pipeline_rank == 0
+        assert inner.pipeline_size == 2
+
+    def test_skips_nullification(self):
+        from olmlx.engine.pipeline import apply_pipeline
+
+        inner = _make_mock_inner_model(num_layers=4)
+        model = _make_mock_outer_model(inner)
+        group = _make_mock_group(rank=0, size=2)
+
+        apply_pipeline(model, group, layer_counts=[4, 4], pre_sharded=True)
+
+        # All layers should remain (no nullification)
+        assert all(layer is not None for layer in inner.layers)
+        assert len(inner.layers) == 4
+
+    def test_patches_call(self):
+        from olmlx.engine.pipeline import apply_pipeline
+
+        inner = _make_mock_inner_model(num_layers=4)
+        original_call = inner.__call__
+        model = _make_mock_outer_model(inner)
+        group = _make_mock_group(rank=0, size=2)
+
+        apply_pipeline(model, group, layer_counts=[4, 4], pre_sharded=True)
+
+        assert inner.__call__ != original_call
+
+    def test_outer_layers_patched(self):
+        from olmlx.engine.pipeline import apply_pipeline
+
+        inner = _make_mock_inner_model(num_layers=4)
+        model = _make_mock_outer_model(inner)
+        group = _make_mock_group(rank=0, size=2)
+
+        apply_pipeline(model, group, layer_counts=[4, 4], pre_sharded=True)
+
+        assert len(model.layers) == 4
+
+    def test_gpt_oss_pre_sharded(self):
+        from olmlx.engine.pipeline import apply_pipeline
+
+        # Pre-sharded gpt_oss rank 1 with 4 layers (from original 8)
+        inner = _make_mock_gpt_oss_inner(num_layers=4)
+        model = _make_mock_outer_model(inner)
+        group = _make_mock_group(rank=1, size=2)
+
+        apply_pipeline(model, group, layer_counts=[4, 4], pre_sharded=True)
+
+        assert inner.start_idx == 0
+        assert inner.end_idx == 4
+        assert hasattr(inner, "_owned_layer_types")
+        assert len(inner._owned_layer_types) == 4
+
+
 class TestHostfileParsing:
     """Test backward-compatible hostfile parsing."""
 
