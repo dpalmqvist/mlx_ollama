@@ -128,6 +128,8 @@ def _pre_shard_and_distribute(hosts, model, world_size, experimental) -> bool:
 
     Returns True on success, False on failure (caller should fall back).
     """
+    import shlex
+
     from olmlx.engine.pre_shard import (
         pre_shard_all_workers,
         read_shard_marker,
@@ -174,22 +176,27 @@ def _pre_shard_and_distribute(hosts, model, world_size, experimental) -> bool:
             return False
 
     # SCP shards to each worker
-    # Keep ~ as-is: SSH mkdir uses double quotes (which allow tilde expansion),
-    # SCP expands ~ on the remote side natively, and the worker calls expanduser().
-    worker_shard_dir = experimental.distributed_worker_shard_dir
+    # Resolve ~ to absolute path so we can safely shlex.quote for SSH commands.
+    worker_shard_dir = str(Path(experimental.distributed_worker_shard_dir).expanduser())
     for rank, host in enumerate(hosts[1:], start=1):
         shard_dir = shard_base / f"rank{rank}"
         remote_dir = f"{worker_shard_dir}/{safe_name}/rank{rank}"
 
-        # Create remote directory (double quotes allow tilde expansion)
-        mkdir_cmd = ["ssh", "-o", "BatchMode=yes", host, f'mkdir -p "{remote_dir}"']
+        # Create remote directory
+        mkdir_cmd = [
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            host,
+            f"mkdir -p {shlex.quote(remote_dir)}",
+        ]
         try:
             subprocess.run(mkdir_cmd, check=True, capture_output=True, timeout=30)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
             logger.warning("Failed to create remote dir on %s: %s", host, e)
             return False
 
-        # SCP with compression — SCP handles ~ expansion on the remote side
+        # SCP with compression
         scp_cmd = [
             "scp",
             "-C",
@@ -197,7 +204,7 @@ def _pre_shard_and_distribute(hosts, model, world_size, experimental) -> bool:
             "BatchMode=yes",
             "-r",
             f"{shard_dir}/.",
-            f"{host}:{remote_dir}/",
+            f"{host}:{shlex.quote(remote_dir)}/",
         ]
         print(f"  Transferring shard to {host} rank {rank}...")
         try:

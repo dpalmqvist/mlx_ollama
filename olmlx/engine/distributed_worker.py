@@ -43,8 +43,12 @@ def _load_pre_sharded(shard_dir_str, group):
 
     # Overwrite double-split weights with correct pre-sharded values
     weights_path = shard_dir / "model.safetensors"
-    if weights_path.exists():
-        model.load_weights(str(weights_path), strict=False)
+    if not weights_path.exists():
+        raise FileNotFoundError(
+            f"Pre-sharded weights not found at {weights_path}. "
+            "The shard directory may be corrupt — delete it to trigger re-sharding."
+        )
+    model.load_weights(str(weights_path), strict=False)
 
     mx.eval(model.parameters())
     logger.info("Pre-sharded model loaded and materialized")
