@@ -154,6 +154,14 @@ def _pre_shard_and_distribute(
     safe_name = _safe_dir_name(model)
     shard_base = Path(experimental.distributed_shard_dir).expanduser() / safe_name
 
+    # Resolve default layer_counts for pipeline so marker comparison works
+    # when the hostfile omits an explicit "layers" key.
+    if strategy == "pipeline" and layer_counts is None:
+        from olmlx.engine.pipeline import _compute_layer_counts
+
+        config = json.loads((model_dir / "config.json").read_text())
+        layer_counts = _compute_layer_counts(config["num_hidden_layers"], world_size)
+
     # Check if valid shards already exist
     all_valid = True
     for rank in range(1, world_size):
@@ -183,18 +191,14 @@ def _pre_shard_and_distribute(
                     world_size=world_size,
                     output_base=shard_base,
                     layer_counts=layer_counts,
-                    progress_cb=lambda r, ws: print(
-                        f"    Sharded rank {r}/{ws - 1}"
-                    ),
+                    progress_cb=lambda r, ws: print(f"    Sharded rank {r}/{ws - 1}"),
                 )
             else:
                 pre_shard_all_workers(
                     model_dir,
                     world_size=world_size,
                     output_base=shard_base,
-                    progress_cb=lambda r, ws: print(
-                        f"    Sharded rank {r}/{ws - 1}"
-                    ),
+                    progress_cb=lambda r, ws: print(f"    Sharded rank {r}/{ws - 1}"),
                 )
         except Exception as e:
             logger.warning("Pre-sharding failed: %s", e)
@@ -359,8 +363,12 @@ def _launch_distributed_workers() -> list[str]:
     pre_sharded = False
     if experimental.distributed_pre_shard:
         pre_sharded = _pre_shard_and_distribute(
-            hosts, model, world_size, experimental,
-            strategy=strategy, layer_counts=hostfile_layers,
+            hosts,
+            model,
+            world_size,
+            experimental,
+            strategy=strategy,
+            layer_counts=hostfile_layers,
         )
 
     # Pre-compute safe model name for env var paths (used when pre-sharded)

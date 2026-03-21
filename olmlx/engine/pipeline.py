@@ -122,6 +122,12 @@ def apply_pipeline(
                 f"layer_counts must have {world_size} entries (one per rank), "
                 f"got {len(layer_counts)}"
             )
+        expected = layer_counts[rank]
+        if owned_count != expected:
+            raise ValueError(
+                f"Pre-sharded model has {owned_count} layers but "
+                f"layer_counts[{rank}]={expected}; shard may be stale or incorrect"
+            )
 
         inner.pipeline_rank = rank
         inner.pipeline_size = world_size

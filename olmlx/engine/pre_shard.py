@@ -208,12 +208,26 @@ def pre_shard_pipeline_for_rank(
 
     if layer_counts is None:
         layer_counts = _compute_layer_counts(total_layers, world_size)
+    if sum(layer_counts) != total_layers:
+        raise ValueError(
+            f"layer_counts {layer_counts} sums to {sum(layer_counts)}, "
+            f"but model has {total_layers} layers"
+        )
+    if len(layer_counts) != world_size:
+        raise ValueError(
+            f"layer_counts must have {world_size} entries (one per rank), "
+            f"got {len(layer_counts)}"
+        )
 
     start_idx, end_idx = _compute_layer_range(rank, layer_counts)
 
     logger.info(
         "Pipeline pre-sharding rank %d/%d: layers %d-%d (of %d total)",
-        rank, world_size, start_idx, end_idx - 1, total_layers,
+        rank,
+        world_size,
+        start_idx,
+        end_idx - 1,
+        total_layers,
     )
     weights = _load_safetensors_weights(model_dir, start_idx, end_idx)
     filtered = _filter_pipeline_weights(weights, start_idx, end_idx)
@@ -232,8 +246,12 @@ def pre_shard_pipeline_for_rank(
     (output_dir / "config.json").write_text(json.dumps(config, indent=2))
 
     write_shard_marker(
-        output_dir, rank, world_size, str(model_dir),
-        strategy="pipeline", layer_counts=layer_counts,
+        output_dir,
+        rank,
+        world_size,
+        str(model_dir),
+        strategy="pipeline",
+        layer_counts=layer_counts,
     )
 
     logger.info("Pipeline pre-sharded rank %d saved to %s", rank, output_dir)
@@ -251,8 +269,11 @@ def pre_shard_pipeline_all_workers(
     for rank in range(1, world_size):
         shard_dir = output_base / f"rank{rank}"
         pre_shard_pipeline_for_rank(
-            model_dir, rank=rank, world_size=world_size,
-            output_dir=shard_dir, layer_counts=layer_counts,
+            model_dir,
+            rank=rank,
+            world_size=world_size,
+            output_dir=shard_dir,
+            layer_counts=layer_counts,
         )
         result[rank] = shard_dir
         if progress_cb:

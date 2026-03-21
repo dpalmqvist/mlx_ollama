@@ -363,7 +363,10 @@ class TestPreShardPipelineForRank:
 
         # Rank 1 of 2 with layer_counts=[2, 2]: rank 1 gets layers 0-1
         pre_shard_pipeline_for_rank(
-            model_dir, rank=1, world_size=2, output_dir=output_dir,
+            model_dir,
+            rank=1,
+            world_size=2,
+            output_dir=output_dir,
             layer_counts=[2, 2],
         )
 
@@ -387,7 +390,10 @@ class TestPreShardPipelineForRank:
         output_dir = tmp_path / "output"
 
         pre_shard_pipeline_for_rank(
-            model_dir, rank=1, world_size=2, output_dir=output_dir,
+            model_dir,
+            rank=1,
+            world_size=2,
+            output_dir=output_dir,
             layer_counts=[2, 2],
         )
 
@@ -408,13 +414,20 @@ class TestPreShardPipelineForRank:
 
         # Rank 0 of 2 with [3, 3]: rank 0 gets layers 3-5
         pre_shard_pipeline_for_rank(
-            model_dir, rank=0, world_size=2, output_dir=output_dir,
+            model_dir,
+            rank=0,
+            world_size=2,
+            output_dir=output_dir,
             layer_counts=[3, 3],
         )
 
         config = json.loads((output_dir / "config.json").read_text())
         assert config["num_hidden_layers"] == 3
-        assert config["layer_types"] == ["sliding_attention", "full_attention", "sliding_attention"]
+        assert config["layer_types"] == [
+            "sliding_attention",
+            "full_attention",
+            "sliding_attention",
+        ]
 
     @patch("mlx.core.save_safetensors")
     @patch("olmlx.engine.pre_shard._load_safetensors_weights")
@@ -426,7 +439,10 @@ class TestPreShardPipelineForRank:
         output_dir = tmp_path / "output"
 
         pre_shard_pipeline_for_rank(
-            model_dir, rank=1, world_size=2, output_dir=output_dir,
+            model_dir,
+            rank=1,
+            world_size=2,
+            output_dir=output_dir,
             layer_counts=[2, 2],
         )
 
@@ -439,15 +455,16 @@ class TestPreShardPipelineForRank:
 
     @patch("mlx.core.save_safetensors")
     @patch("olmlx.engine.pre_shard._load_safetensors_weights")
-    def test_copies_non_weight_files(
-        self, mock_load_weights, mock_save, tmp_path
-    ):
+    def test_copies_non_weight_files(self, mock_load_weights, mock_save, tmp_path):
         model_dir, weights = self._make_model_dir(tmp_path, num_layers=4)
         mock_load_weights.return_value = weights
         output_dir = tmp_path / "output"
 
         pre_shard_pipeline_for_rank(
-            model_dir, rank=1, world_size=2, output_dir=output_dir,
+            model_dir,
+            rank=1,
+            world_size=2,
+            output_dir=output_dir,
             layer_counts=[2, 2],
         )
 
@@ -467,7 +484,10 @@ class TestPreShardPipelineForRank:
 
         # Rank 2 (highest) gets first 10 layers (0-9)
         pre_shard_pipeline_for_rank(
-            model_dir, rank=2, world_size=3, output_dir=output_dir,
+            model_dir,
+            rank=2,
+            world_size=3,
+            output_dir=output_dir,
             layer_counts=[19, 7, 10],
         )
 
@@ -478,6 +498,46 @@ class TestPreShardPipelineForRank:
         # 10 layers × 2 keys each = 20
         assert len(layer_keys) == 20
 
+    @patch("mlx.core.save_safetensors")
+    @patch("olmlx.engine.pre_shard._load_safetensors_weights")
+    def test_invalid_layer_counts_sum_raises(
+        self, mock_load_weights, mock_save, tmp_path
+    ):
+        model_dir, weights = self._make_model_dir(tmp_path, num_layers=4)
+        mock_load_weights.return_value = weights
+        output_dir = tmp_path / "output"
+
+        import pytest
+
+        with pytest.raises(ValueError, match="sums to"):
+            pre_shard_pipeline_for_rank(
+                model_dir,
+                rank=0,
+                world_size=2,
+                output_dir=output_dir,
+                layer_counts=[3, 3],  # sums to 6, but model has 4 layers
+            )
+
+    @patch("mlx.core.save_safetensors")
+    @patch("olmlx.engine.pre_shard._load_safetensors_weights")
+    def test_invalid_layer_counts_length_raises(
+        self, mock_load_weights, mock_save, tmp_path
+    ):
+        model_dir, weights = self._make_model_dir(tmp_path, num_layers=4)
+        mock_load_weights.return_value = weights
+        output_dir = tmp_path / "output"
+
+        import pytest
+
+        with pytest.raises(ValueError, match="must have"):
+            pre_shard_pipeline_for_rank(
+                model_dir,
+                rank=0,
+                world_size=2,
+                output_dir=output_dir,
+                layer_counts=[1, 1, 2],  # 3 entries but world_size=2
+            )
+
 
 class TestPreShardPipelineAllWorkers:
     @patch("olmlx.engine.pre_shard.pre_shard_pipeline_for_rank")
@@ -487,18 +547,24 @@ class TestPreShardPipelineAllWorkers:
         output_base = tmp_path / "shards"
 
         result = pre_shard_pipeline_all_workers(
-            model_dir, world_size=3, output_base=output_base,
+            model_dir,
+            world_size=3,
+            output_base=output_base,
             layer_counts=[19, 7, 10],
         )
 
         assert mock_shard.call_count == 2  # ranks 1 and 2
         mock_shard.assert_any_call(
-            model_dir, rank=1, world_size=3,
+            model_dir,
+            rank=1,
+            world_size=3,
             output_dir=output_base / "rank1",
             layer_counts=[19, 7, 10],
         )
         mock_shard.assert_any_call(
-            model_dir, rank=2, world_size=3,
+            model_dir,
+            rank=2,
+            world_size=3,
             output_dir=output_base / "rank2",
             layer_counts=[19, 7, 10],
         )
@@ -513,8 +579,11 @@ class TestPreShardPipelineAllWorkers:
         progress = MagicMock()
 
         pre_shard_pipeline_all_workers(
-            model_dir, world_size=3, output_base=output_base,
-            layer_counts=[19, 7, 10], progress_cb=progress,
+            model_dir,
+            world_size=3,
+            output_base=output_base,
+            layer_counts=[19, 7, 10],
+            progress_cb=progress,
         )
 
         assert progress.call_count == 2
