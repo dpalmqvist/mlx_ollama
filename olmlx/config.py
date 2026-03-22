@@ -70,7 +70,7 @@ class ExperimentalSettings(BaseSettings):
     flash_window_size: Annotated[int, Field(gt=0)] = 5
     flash_io_threads: Annotated[int, Field(gt=0)] = 32
     flash_cache_budget_neurons: Annotated[int, Field(ge=0)] = 1024
-    flash_predictor_rank: Annotated[int, Field(gt=0)] = 128
+    flash_predictor_rank: Annotated[int, Field(gt=0)] = 128  # prepare-time only
 
 
 experimental = ExperimentalSettings()

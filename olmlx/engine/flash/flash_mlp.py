@@ -106,8 +106,7 @@ class FlashMLP(nn.Module):
             min_neurons=self.min_active_neurons,
             max_neurons=self.max_active_neurons,
         )
-        mx.eval(predicted)
-        predicted_list = predicted.tolist()
+        predicted_list = predicted.tolist()  # implicitly evaluates
 
         # Union with window (sets, no MLX→Python→MLX roundtrip)
         window = self.window_manager.get_window(self.layer_idx)

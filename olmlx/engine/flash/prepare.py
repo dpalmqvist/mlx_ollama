@@ -110,40 +110,44 @@ def _record_activations(
         i: ([], []) for i in range(num_layers)
     }
 
-    # Install hooks on each MLP to record inputs and activations
+    # Save original MLPs and replace with recording wrappers.
+    # Instance __call__ patching doesn't work (Python resolves __call__
+    # on the type, not instance), so we replace layer.mlp entirely.
     original_mlps = {}
     for i, layer in enumerate(layers):
         if not hasattr(layer, "mlp"):
             continue
         original_mlps[i] = layer.mlp
 
-    # Install hooks once (not per-sample) to capture MLP inputs/activations.
-    # The hooks re-run gate+up projections because we need intermediate
-    # activation magnitudes, which aren't exposed by the standard forward.
-    def make_hook(layer_idx, orig_call):
-        def hooked_call(x):
-            result = orig_call(x)
+    class _RecordingMLP(nn.Module):
+        """Wrapper that records activation patterns during forward pass."""
+
+        def __init__(self, layer_idx: int, original: nn.Module):
+            super().__init__()
+            self._layer_idx = layer_idx
+            self._original = original
+
+        def __call__(self, x):
+            result = self._original(x)
 
             flat_input = x.reshape(-1, x.shape[-1])
-            mlp = original_mlps[layer_idx]
-            if hasattr(mlp, "gate_proj") and hasattr(mlp, "up_proj"):
-                gate_out = mlp.gate_proj(flat_input)
-                up_out = mlp.up_proj(flat_input)
+            orig = self._original
+            if hasattr(orig, "gate_proj") and hasattr(orig, "up_proj"):
+                gate_out = orig.gate_proj(flat_input)
+                up_out = orig.up_proj(flat_input)
                 intermediate = mx.sigmoid(gate_out) * gate_out * up_out
                 mean_act = mx.abs(intermediate).mean(axis=0)
                 target = (mean_act > activation_threshold).astype(mx.float32)
                 mean_input = flat_input.mean(axis=0)
 
                 mx.eval(mean_input, target)
-                recordings[layer_idx][0].append(mean_input)
-                recordings[layer_idx][1].append(target)
+                recordings[self._layer_idx][0].append(mean_input)
+                recordings[self._layer_idx][1].append(target)
 
             return result
 
-        return hooked_call
-
     for i in original_mlps:
-        layers[i].mlp.__call__ = make_hook(i, original_mlps[i].__call__)
+        layers[i].mlp = _RecordingMLP(i, original_mlps[i])
 
     try:
         total = len(calibration_texts)
@@ -162,9 +166,8 @@ def _record_activations(
             except (ValueError, RuntimeError):
                 logger.debug("Skipping sample %d (model error)", idx)
     finally:
-        # Restore original MLPs
         for i, mlp in original_mlps.items():
-            layers[i].mlp.__call__ = mlp.__call__
+            layers[i].mlp = mlp
 
     return recordings
 

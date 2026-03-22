@@ -120,6 +120,21 @@ class FlashWeightStore:
 
         return layouts
 
+    @staticmethod
+    def _full_pread(fd: int, size: int, offset: int) -> bytes:
+        """Read exactly *size* bytes via pread, retrying on short reads."""
+        buf = b""
+        pos = offset
+        remaining = size
+        while remaining > 0:
+            chunk = os.pread(fd, remaining, pos)
+            if not chunk:
+                raise OSError(f"Unexpected EOF: wanted {size} bytes at offset {offset}")
+            buf += chunk
+            pos += len(chunk)
+            remaining -= len(chunk)
+        return buf
+
     def _read_neuron(
         self, layer_idx: int, neuron_idx: int
     ) -> tuple[mx.array, mx.array, mx.array]:
@@ -127,7 +142,7 @@ class FlashWeightStore:
         layout = self._layouts[layer_idx]
         fd = self._fds[layer_idx]
         offset = int(layout.offsets[neuron_idx])
-        raw = os.pread(fd, layout.neuron_byte_size, offset)
+        raw = self._full_pread(fd, layout.neuron_byte_size, offset)
 
         hidden = layout.hidden_size
         chunk = hidden * _DTYPE_BYTES[layout.dtype]
@@ -185,10 +200,21 @@ class FlashWeightStore:
             mx.stack(down_rows, axis=0),
         )
 
-    def __del__(self):
+    def close(self) -> None:
+        """Release file descriptors and shut down the I/O thread pool."""
+        self._executor.shutdown(wait=True)
         for fd in self._fds.values():
             try:
                 os.close(fd)
             except OSError:
                 pass
-        self._executor.shutdown(wait=False)
+        self._fds.clear()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
+    def __del__(self):
+        self.close()
