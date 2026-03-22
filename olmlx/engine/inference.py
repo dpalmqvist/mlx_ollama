@@ -1127,13 +1127,14 @@ async def _full_completion_inner(
     def _generate_sync():
         """Run generate + synchronize in the same thread so GPU work completes
         before the thread returns to the pool."""
-        _apply_seed(gen_kwargs, consume=not lm.is_vlm)
-
         # Broadcast inside the thread so rank 0 and workers enter MLX
         # computation at the same time (avoids all_sum timeout).
+        # Must happen before _apply_seed which pops seed from gen_kwargs.
         if lm.is_distributed:
             tokens = _tokenize_for_cache(lm.text_tokenizer, prompt)
             _maybe_broadcast_distributed(lm, tokens, prompt, max_tokens, gen_kwargs)
+
+        _apply_seed(gen_kwargs, consume=not lm.is_vlm)
 
         if lm.is_vlm:
             import mlx_vlm
