@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -18,12 +19,15 @@ from olmlx.engine.flash.bundler import (
     parse_header,
 )
 
+_NP_DTYPE = {"float16": np.float16, "float32": np.float32, "bfloat16": np.float16}
+
 
 class NeuronCache:
-    """Per-layer LRU cache for loaded neuron weight chunks."""
+    """Thread-safe per-layer LRU cache for loaded neuron weight chunks."""
 
     def __init__(self, max_neurons_per_layer: int):
         self._max = max_neurons_per_layer
+        self._lock = threading.Lock()
         # layer_idx -> OrderedDict[neuron_idx -> (gate, up, down)]
         self._cache: dict[
             int, OrderedDict[int, tuple[mx.array, mx.array, mx.array]]
@@ -32,13 +36,14 @@ class NeuronCache:
     def get(
         self, layer_idx: int, neuron_idx: int
     ) -> tuple[mx.array, mx.array, mx.array] | None:
-        layer_cache = self._cache.get(layer_idx)
-        if layer_cache is None:
-            return None
-        if neuron_idx not in layer_cache:
-            return None
-        layer_cache.move_to_end(neuron_idx)
-        return layer_cache[neuron_idx]
+        with self._lock:
+            layer_cache = self._cache.get(layer_idx)
+            if layer_cache is None:
+                return None
+            if neuron_idx not in layer_cache:
+                return None
+            layer_cache.move_to_end(neuron_idx)
+            return layer_cache[neuron_idx]
 
     def put(
         self,
@@ -48,24 +53,29 @@ class NeuronCache:
     ) -> None:
         if self._max <= 0:
             return
-        if layer_idx not in self._cache:
-            self._cache[layer_idx] = OrderedDict()
-        layer_cache = self._cache[layer_idx]
-        layer_cache[neuron_idx] = data
-        layer_cache.move_to_end(neuron_idx)
-        while len(layer_cache) > self._max:
-            layer_cache.popitem(last=False)
+        with self._lock:
+            if layer_idx not in self._cache:
+                self._cache[layer_idx] = OrderedDict()
+            layer_cache = self._cache[layer_idx]
+            layer_cache[neuron_idx] = data
+            layer_cache.move_to_end(neuron_idx)
+            while len(layer_cache) > self._max:
+                layer_cache.popitem(last=False)
 
     def get_batch(
         self, layer_idx: int, indices: list[int]
     ) -> dict[int, tuple[mx.array, mx.array, mx.array]]:
         """Return dict mapping neuron_idx -> data for cached neurons."""
-        result = {}
-        for idx in indices:
-            data = self.get(layer_idx, idx)
-            if data is not None:
-                result[idx] = data
-        return result
+        with self._lock:
+            result = {}
+            layer_cache = self._cache.get(layer_idx)
+            if layer_cache is None:
+                return result
+            for idx in indices:
+                if idx in layer_cache:
+                    layer_cache.move_to_end(idx)
+                    result[idx] = layer_cache[idx]
+            return result
 
 
 class FlashWeightStore:
@@ -82,8 +92,12 @@ class FlashWeightStore:
         self._cache = NeuronCache(max_neurons_per_layer=cache_budget_neurons)
         self._layouts = self._load_layouts()
         self._fds: dict[int, int] = {}
-        for layer_idx, layout in self._layouts.items():
-            self._fds[layer_idx] = os.open(str(layout.file_path), os.O_RDONLY)
+        try:
+            for layer_idx, layout in self._layouts.items():
+                self._fds[layer_idx] = os.open(str(layout.file_path), os.O_RDONLY)
+        except Exception:
+            self.close()
+            raise
 
     def _load_layouts(self) -> dict[int, BundledLayerLayout]:
         config_path = self._flash_dir / "flash_layout.json"
@@ -145,14 +159,13 @@ class FlashWeightStore:
         raw = self._full_pread(fd, layout.neuron_byte_size, offset)
 
         hidden = layout.hidden_size
+        np_dtype = _NP_DTYPE[layout.dtype]
         chunk = hidden * _DTYPE_BYTES[layout.dtype]
 
-        gate_col = mx.array(np.frombuffer(raw[:chunk], dtype=np.float16).copy())
-        up_col = mx.array(
-            np.frombuffer(raw[chunk : 2 * chunk], dtype=np.float16).copy()
-        )
+        gate_col = mx.array(np.frombuffer(raw[:chunk], dtype=np_dtype).copy())
+        up_col = mx.array(np.frombuffer(raw[chunk : 2 * chunk], dtype=np_dtype).copy())
         down_row = mx.array(
-            np.frombuffer(raw[2 * chunk : 3 * chunk], dtype=np.float16).copy()
+            np.frombuffer(raw[2 * chunk : 3 * chunk], dtype=np_dtype).copy()
         )
 
         return gate_col, up_col, down_row
@@ -214,7 +227,4 @@ class FlashWeightStore:
         return self
 
     def __exit__(self, *exc):
-        self.close()
-
-    def __del__(self):
         self.close()

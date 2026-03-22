@@ -271,15 +271,22 @@ def prepare_model_for_flash(
     config_path = Path(model_path) / "config.json"
     if config_path.exists():
         config = json.loads(config_path.read_text())
-        hidden_size = config.get("hidden_size")
+        hidden_size = config.get("hidden_size") or config.get("d_model")
         intermediate_size = config.get("intermediate_size")
-        num_layers = config.get("num_hidden_layers")
+        num_layers = config.get("num_hidden_layers") or config.get("num_layers")
     else:
-        # Try to infer from model
+        # Infer from model structure
         layer0 = model.layers[0]
         hidden_size = layer0.mlp.gate_proj.weight.shape[1]
         intermediate_size = layer0.mlp.gate_proj.weight.shape[0]
         num_layers = len(model.layers)
+
+    if None in (hidden_size, intermediate_size, num_layers):
+        raise ValueError(
+            f"Cannot determine model dimensions from {config_path}. "
+            f"Got hidden_size={hidden_size}, intermediate_size={intermediate_size}, "
+            f"num_layers={num_layers}."
+        )
 
     if output_dir is None:
         output_dir = Path(model_path) / "flash"

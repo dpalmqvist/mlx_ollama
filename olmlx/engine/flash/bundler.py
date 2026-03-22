@@ -203,11 +203,15 @@ def bundle_ffn_weights(
     Args:
         model_dir: Directory containing model safetensors files.
         output_dir: Directory to write .flashweights files.
-        dtype: Target dtype string (e.g. "float16").
+        dtype: Target dtype string. Only "float16" is currently supported.
 
     Returns:
         Dict mapping layer index to BundledLayerLayout.
     """
+    if dtype != "float16":
+        raise ValueError(
+            f"Only dtype='float16' is supported for bundling, got '{dtype}'"
+        )
     output_dir.mkdir(parents=True, exist_ok=True)
 
     layers, quant_config = _find_ffn_weights(model_dir)

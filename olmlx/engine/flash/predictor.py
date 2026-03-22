@@ -6,6 +6,7 @@ enabling selective weight loading from SSD.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import mlx.core as mx
@@ -118,7 +119,12 @@ class PredictorBank:
         bank = cls.__new__(cls)
         bank.predictors = []
 
-        for i, f in enumerate(files):
+        for f in files:
+            m = re.search(r"predictor_(\d+)", f.stem)
+            if m is None:
+                raise ValueError(f"Cannot parse layer index from {f.name}")
+            i = int(m.group(1))
+
             pred = SparsityPredictor(hidden_size, intermediate_size, rank)
             weights = dict(mx.load(str(f)))
 
