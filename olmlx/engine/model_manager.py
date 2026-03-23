@@ -249,6 +249,7 @@ class LoadedModel:
     is_distributed: bool = False
     is_flash: bool = False
     is_flash_moe: bool = False
+    weight_store: Any = None
     template_caps: TemplateCaps = field(default_factory=TemplateCaps)
     loaded_at: float = field(default_factory=time.time)
     expires_at: float | None = None
@@ -550,12 +551,24 @@ class ModelManager:
 
                     # Detect if flash mode was used
                     is_flash = False
+                    is_flash_moe = False
+                    _weight_store = None
                     try:
                         from olmlx.engine.flash.flash_model import (
                             FlashModelWrapper,
                         )
 
                         is_flash = isinstance(model, FlashModelWrapper)
+                    except ImportError:
+                        pass
+                    try:
+                        from olmlx.engine.flash.flash_moe_model import (
+                            FlashMoeModelWrapper,
+                        )
+
+                        if isinstance(model, FlashMoeModelWrapper):
+                            is_flash_moe = True
+                            _weight_store = getattr(model, "_weight_store", None)
                     except ImportError:
                         pass
 
@@ -567,6 +580,8 @@ class ModelManager:
                         is_vlm=is_vlm,
                         is_distributed=is_distributed,
                         is_flash=is_flash,
+                        is_flash_moe=is_flash_moe,
+                        weight_store=_weight_store,
                         template_caps=caps,
                         expires_at=expires,
                     )
@@ -676,7 +691,9 @@ class ModelManager:
             raise RuntimeError(
                 f"Model '{normalized}' has {lm.active_refs} active request(s)"
             )
-        self._loaded.pop(normalized)
+        lm = self._loaded.pop(normalized)
+        if lm.weight_store is not None:
+            lm.weight_store.close()
         return True
 
     # Config keys that indicate a vision-language model
@@ -856,9 +873,10 @@ class ModelManager:
         if self.store is None:
             return None
         flash_moe_path = self.store.local_path(hf_path) / "flash_moe"
-        if flash_moe_path.exists() and (
-            flash_moe_path / "flash_moe_layout.json"
-        ).exists():
+        if (
+            flash_moe_path.exists()
+            and (flash_moe_path / "flash_moe_layout.json").exists()
+        ):
             return flash_moe_path
         return None
 
@@ -892,9 +910,7 @@ class ModelManager:
         caps = detect_caps(tokenizer)
 
         # Read flash_moe_config for architecture info
-        moe_config = json.loads(
-            (flash_moe_dir / "flash_moe_config.json").read_text()
-        )
+        moe_config = json.loads((flash_moe_dir / "flash_moe_config.json").read_text())
 
         store = FlashMoeWeightStore(
             flash_moe_dir,

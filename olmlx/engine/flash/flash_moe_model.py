@@ -27,27 +27,23 @@ class _FlashMoEDeepSeek(nn.Module):
 
     def __init__(self, original_moe, flash_moe: FlashMoE):
         super().__init__()
+        if getattr(original_moe, "sharding_group", None) is not None:
+            raise NotImplementedError(
+                "Flash-MoE does not support distributed tensor parallelism. "
+                "Each rank loads all needed experts, so all_sum would produce "
+                "incorrect results. Disable distributed or Flash-MoE."
+            )
         self.gate = original_moe.gate
         self._flash_moe = flash_moe
         if hasattr(original_moe, "shared_experts"):
             self.shared_experts = original_moe.shared_experts
-        self.sharding_group = getattr(original_moe, "sharding_group", None)
 
     def __call__(self, x):
-        if self.sharding_group is not None:
-            from mlx.nn.layers.distributed import sum_gradients
-
-            x = sum_gradients(self.sharding_group)(x)
-
         inds, scores = self.gate(x)
         y = self._flash_moe(x, inds, scores)
         y = y.astype(x.dtype)
         if hasattr(self, "shared_experts"):
             y = y + self.shared_experts(x)
-
-        if self.sharding_group is not None:
-            y = mx.distributed.all_sum(y, group=self.sharding_group)
-
         return y
 
 
@@ -59,17 +55,17 @@ class _FlashMoEGptOss(nn.Module):
 
     def __init__(self, original_mlp, flash_moe: FlashMoE):
         super().__init__()
+        if getattr(original_mlp, "sharding_group", None) is not None:
+            raise NotImplementedError(
+                "Flash-MoE does not support distributed tensor parallelism. "
+                "Each rank loads all needed experts, so all_sum would produce "
+                "incorrect results. Disable distributed or Flash-MoE."
+            )
         self.router = original_mlp.router
         self.num_experts_per_tok = original_mlp.num_experts_per_tok
         self._flash_moe = flash_moe
-        self.sharding_group = getattr(original_mlp, "sharding_group", None)
 
     def __call__(self, x):
-        if self.sharding_group is not None:
-            from mlx.nn.layers.distributed import sum_gradients
-
-            x = sum_gradients(self.sharding_group)(x)
-
         g = self.router(x)
         k = self.num_experts_per_tok
         # topk
@@ -78,10 +74,6 @@ class _FlashMoEGptOss(nn.Module):
         scores = mx.take_along_axis(g, inds, axis=-1)
         scores = mx.softmax(scores, axis=-1)
         y = self._flash_moe(x, inds, scores)
-
-        if self.sharding_group is not None:
-            y = mx.distributed.all_sum(y, group=self.sharding_group)
-
         return y.astype(x.dtype)
 
 
@@ -105,6 +97,7 @@ class FlashMoeModelWrapper(nn.Module):
     ):
         super().__init__()
         self._model = model
+        self._weight_store = weight_store
         _replace_moe_layers(
             model,
             weight_store,

@@ -131,17 +131,23 @@ class FlashMoE(nn.Module):
                 loaded.gate_weight.swapaxes(-1, -2),
                 rhs_indices=remap,
             )
+            if loaded.gate_bias is not None:
+                gate_out = gate_out + loaded.gate_bias[remap].unsqueeze(-2)
             up_out = mx.gather_mm(
                 x_expanded,
                 loaded.up_weight.swapaxes(-1, -2),
                 rhs_indices=remap,
             )
+            if loaded.up_bias is not None:
+                up_out = up_out + loaded.up_bias[remap].unsqueeze(-2)
             activated = self._apply_activation(up_out, gate_out)
             expert_out = mx.gather_mm(
                 activated,
                 loaded.down_weight.swapaxes(-1, -2),
                 rhs_indices=remap,
             )
+            if loaded.down_bias is not None:
+                expert_out = expert_out + loaded.down_bias[remap].unsqueeze(-2)
 
         # expert_out shape: (B, L, K, 1, H) — squeeze the extra dim
         expert_out = expert_out.squeeze(-2)

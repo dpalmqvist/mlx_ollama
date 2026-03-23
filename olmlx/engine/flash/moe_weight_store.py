@@ -45,12 +45,15 @@ class LoadedExperts:
     gate_weight: mx.array
     gate_scales: mx.array | None
     gate_biases: mx.array | None
+    gate_bias: mx.array | None
     up_weight: mx.array
     up_scales: mx.array | None
     up_biases: mx.array | None
+    up_bias: mx.array | None
     down_weight: mx.array
     down_scales: mx.array | None
     down_biases: mx.array | None
+    down_bias: mx.array | None
     is_quantized: bool
     bits: int
     group_size: int
@@ -166,7 +169,7 @@ class FlashMoeWeightStore:
             chunk = os.pread(fd, remaining, pos)
             if not chunk:
                 raise OSError(f"Unexpected EOF: wanted {size} bytes at offset {offset}")
-            buf += chunk
+            buf.extend(chunk)
             pos += len(chunk)
             remaining -= len(chunk)
         return bytes(buf)
@@ -346,12 +349,15 @@ class FlashMoeWeightStore:
                 "gate_weight",
                 "gate_scales",
                 "gate_biases",
+                "gate_bias",
                 "up_weight",
                 "up_scales",
                 "up_biases",
+                "up_bias",
                 "down_weight",
                 "down_scales",
                 "down_biases",
+                "down_bias",
             )
         }
 
@@ -369,12 +375,15 @@ class FlashMoeWeightStore:
             gate_weight=mx.stack(components["gate_weight"]),
             gate_scales=_stack_or_none(components["gate_scales"]),
             gate_biases=_stack_or_none(components["gate_biases"]),
+            gate_bias=_stack_or_none(components["gate_bias"]),
             up_weight=mx.stack(components["up_weight"]),
             up_scales=_stack_or_none(components["up_scales"]),
             up_biases=_stack_or_none(components["up_biases"]),
+            up_bias=_stack_or_none(components["up_bias"]),
             down_weight=mx.stack(components["down_weight"]),
             down_scales=_stack_or_none(components["down_scales"]),
             down_biases=_stack_or_none(components["down_biases"]),
+            down_bias=_stack_or_none(components["down_bias"]),
             is_quantized=layout.is_quantized,
             bits=layout.bits,
             group_size=layout.group_size,

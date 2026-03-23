@@ -182,7 +182,10 @@ def _detect_expert_prefix(
 
     sf_path = model_dir / "model.safetensors"
     if sf_path.exists():
-        tensors = mx.load(str(sf_path))
+        sf_key = str(sf_path)
+        if sf_key not in _shard_cache:
+            _shard_cache[sf_key] = mx.load(sf_key)
+        tensors = _shard_cache[sf_key]
         for prefix in ("switch_mlp", "experts"):
             name = f"model.layers.{sample_layer}.mlp.{prefix}.gate_proj.weight"
             if name in tensors:
@@ -362,7 +365,14 @@ def bundle_moe_experts(
         for layer_idx in moe_layers:
             prefix = f"model.layers.{layer_idx}.mlp.{expert_prefix}"
 
-            all_components, _ = _collect_all_projections(model_dir, prefix, index)
+            all_components, layer_manifest = _collect_all_projections(
+                model_dir, prefix, index
+            )
+            if layer_manifest != manifest:
+                raise ValueError(
+                    f"MoE layer {layer_idx} has different component layout than "
+                    f"layer {moe_layers[0]}. Heterogeneous MoE layers are not supported."
+                )
 
             # Build offset table
             offset_table_size = num_experts * 8
