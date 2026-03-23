@@ -31,11 +31,11 @@ _THINK_RE = re.compile(r"<think>(.*?)</think>", re.DOTALL)
 # <|start|>assistant<|channel|>final<|message|>visible<|end|>
 # <|start|>assistant to=functions.NAME<|channel|>commentary json<|message|>{"args"}<|call|>
 _GPT_OSS_CHANNEL_RE = re.compile(
-    r"<\|start\|>[^<]*<\|channel\|>\s*(\w+)[^<]*<\|message\|>(.*?)<\|(?:end|call|return)\|>",
+    r"(?:<\|start\|>[^<]*)?<\|channel\|>\s*(\w+)[^<]*<\|message\|>(.*?)<\|(?:end|call|return)\|>",
     re.DOTALL,
 )
 _GPT_OSS_TOOL_NAME_RE = re.compile(
-    r"<\|start\|>[^<]*to=functions\.(\w+)[^<]*<\|channel\|>",
+    r"(?:<\|start\|>)?[^<]*to=functions\.(\w+)[^<]*<\|channel\|>",
 )
 _GPT_OSS_DETECT = "<|channel|>"
 _TOOL_CALL_RE = re.compile(r"<tool_call>\s*(.*?)\s*</tool_call>", re.DOTALL)
