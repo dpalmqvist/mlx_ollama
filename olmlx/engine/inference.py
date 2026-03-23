@@ -47,39 +47,6 @@ from olmlx.utils.timing import Timer, TimingStats
 logger = logging.getLogger(__name__)
 
 
-def _make_gpt_oss_eos_guard(tokenizer):
-    """Create a logits processor that suppresses EOS until a 'final' channel is seen.
-
-    gpt-oss models use channel-based output: analysis (thinking), then final (answer).
-    Without this guard, the model often emits <|return|> (EOS) after analysis,
-    never producing the final channel. This processor forces the model to continue
-    generating until it enters the 'final' channel.
-    """
-    channel_id = tokenizer.convert_tokens_to_ids("<|channel|>")
-    final_id = tokenizer.encode("final", add_special_tokens=False)[0]
-    eos_ids = list(tokenizer.eos_token_ids)
-    saw_final = False
-
-    def processor(tokens, logits):
-        nonlocal saw_final
-        if saw_final:
-            return logits
-
-        # Scan generated tokens for <|channel|> followed by "final"
-        toks = tokens.tolist() if hasattr(tokens, "tolist") else tokens
-        for i in range(len(toks) - 1):
-            if toks[i] == channel_id and toks[i + 1] == final_id:
-                saw_final = True
-                return logits
-
-        # Suppress EOS tokens to force the model to continue past analysis
-        for eid in eos_ids:
-            logits[..., eid] = -1e9
-        return logits
-
-    return processor
-
-
 # gpt-oss special tokens used by the streaming filter
 _GPT_OSS_STRUCTURAL_TOKENS = frozenset(
     {
@@ -1047,10 +1014,6 @@ async def _stream_completion(
                 lm, tokens, original_prompt, max_tokens, broadcast_kwargs
             )
 
-        # For gpt-oss models, add EOS guard to force final channel generation
-        if lm.template_caps.has_channel_format and not lm.is_vlm:
-            gen_kwargs["logits_processor"] = _make_gpt_oss_eos_guard(lm.text_tokenizer)
-
         stream = async_mlx_stream(
             lm.model,
             lm.tokenizer,
@@ -1264,10 +1227,6 @@ async def _full_completion_inner(
             _maybe_broadcast_distributed(lm, tokens, prompt, max_tokens, gen_kwargs)
 
         _apply_seed(gen_kwargs, consume=not lm.is_vlm)
-
-        # For gpt-oss models, add EOS guard to force final channel generation
-        if lm.template_caps.has_channel_format and not lm.is_vlm:
-            gen_kwargs["logits_processor"] = _make_gpt_oss_eos_guard(lm.text_tokenizer)
 
         if lm.is_vlm:
             import mlx_vlm
