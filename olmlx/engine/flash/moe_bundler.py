@@ -201,7 +201,7 @@ def _detect_moe_layers(config: dict) -> list[int]:
     """Return list of layer indices that are MoE layers based on config."""
     num_layers = config.get("num_hidden_layers") or config.get("num_layers", 0)
     first_dense = config.get("first_k_dense_replace", 0)
-    freq = config.get("moe_layer_freq", 1)
+    freq = config.get("moe_layer_freq") or 1
 
     moe_layers = []
     for i in range(num_layers):
@@ -304,6 +304,7 @@ def bundle_moe_experts(
         Dict mapping MoE layer index to MoeExpertLayout.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
+    _clear_shard_cache()
 
     # Read model config (handle wrapper models like Kimi-K2.5)
     raw_config = json.loads((model_dir / "config.json").read_text())

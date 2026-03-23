@@ -928,12 +928,11 @@ class ModelManager:
                 num_experts=moe_config["num_experts"],
                 num_experts_per_tok=moe_config["num_experts_per_tok"],
             )
+            # Materialize only non-expert weights
+            mx.eval(wrapped.parameters())
         except Exception:
             store.close()
             raise
-
-        # Materialize only non-expert weights
-        mx.eval(wrapped.parameters())
 
         return wrapped, tokenizer, False, caps
 
