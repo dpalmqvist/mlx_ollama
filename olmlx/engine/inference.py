@@ -46,6 +46,82 @@ from olmlx.utils.timing import Timer, TimingStats
 
 logger = logging.getLogger(__name__)
 
+# gpt-oss special tokens used by the streaming filter
+_GPT_OSS_STRUCTURAL_TOKENS = frozenset(
+    {
+        "<|start|>",
+        "<|channel|>",
+        "<|message|>",
+        "<|end|>",
+        "<|call|>",
+        "<|return|>",
+    }
+)
+
+
+async def _gpt_oss_filter(token_stream):
+    """Filter gpt-oss channel tokens from a stream, yielding only 'final' channel content.
+
+    State machine:
+    - INIT: outside any channel block. Pass through non-structural tokens.
+    - EXPECT_CHANNEL: saw <|channel|>, next token is channel type
+    - IN_ANALYSIS/IN_FINAL/IN_COMMENTARY: inside a channel block, waiting for <|message|>
+    - CONTENT_ANALYSIS/CONTENT_FINAL/CONTENT_COMMENTARY: after <|message|>, in content
+    """
+    INIT = "init"
+    AFTER_START = "after_start"  # saw <|start|>, suppressing role tokens
+    EXPECT_CHANNEL = "expect_channel"
+    IN_BLOCK = "in_block"  # saw channel type, waiting for <|message|>
+    CONTENT = "content"  # after <|message|>, yielding if final
+
+    state = INIT
+    channel = None
+    saw_any_channel = False
+
+    async for token in token_stream:
+        text = token.text
+
+        if text == "<|start|>":
+            state = AFTER_START
+            saw_any_channel = True
+            continue
+
+        if text == "<|channel|>":
+            state = EXPECT_CHANNEL
+            saw_any_channel = True
+            continue
+
+        if state == AFTER_START:
+            # Suppress role tokens (e.g. "assistant", "assistant to=...")
+            continue
+
+        if state == EXPECT_CHANNEL:
+            channel = text.strip()
+            state = IN_BLOCK
+            continue
+
+        if text == "<|message|>" and state == IN_BLOCK:
+            state = CONTENT
+            continue
+
+        if text in ("<|end|>", "<|call|>", "<|return|>"):
+            state = INIT
+            channel = None
+            continue
+
+        if state == CONTENT and channel == "final":
+            yield token
+            continue
+
+        if (
+            state == INIT
+            and not saw_any_channel
+            and text not in _GPT_OSS_STRUCTURAL_TOKENS
+        ):
+            # No channel tokens seen yet — pass through (non-gpt-oss model)
+            yield token
+
+
 # -- Experimental: Distributed inference coordinator --
 # Only set when OLMLX_EXPERIMENTAL_DISTRIBUTED=true; see set_distributed_coordinator().
 _distributed_coordinator = None
@@ -938,9 +1014,14 @@ async def _stream_completion(
             **gen_kwargs,
         )
 
+        # Apply gpt-oss channel filter if model uses channel format
+        token_source = (
+            _gpt_oss_filter(stream) if lm.template_caps.has_channel_format else stream
+        )
+
         with _inference_ref(lm), Timer() as total_timer:
             with Timer() as eval_timer:
-                async for token in stream:
+                async for token in token_source:
                     yield {"text": token.text, "done": False}
                     stats.eval_count = token.generation_tokens
                     stats.prompt_eval_count = token.prompt_tokens
