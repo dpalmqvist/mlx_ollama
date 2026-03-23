@@ -181,7 +181,7 @@ class TestGptOssStreamFilter:
                 result.append(tok.text)
             return result
 
-        return asyncio.get_event_loop().run_until_complete(collect())
+        return asyncio.run(collect())
 
     def test_final_channel_passes_through(self):
         """Only text from final channel should be yielded."""
