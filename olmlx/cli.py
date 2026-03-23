@@ -968,7 +968,7 @@ def _cmd_flash_moe_prepare(args, model_path):
     """Prepare an MoE model for Flash-MoE inference."""
     from olmlx.engine.flash.moe_prepare import prepare_moe_for_flash
 
-    print(f"Detected MoE model — using Flash-MoE preparation (no model loading needed)")
+    print("Detected MoE model — using Flash-MoE preparation (no model loading needed)")
     print(f"  Model path: {model_path}")
     print()
 
@@ -1034,7 +1034,7 @@ def _show_flash_moe_info(model_name, flash_moe_dir):
     config = json.loads(config_path.read_text())
     print(f"Flash-MoE info for '{model_name}':")
     print("  Status:             prepared")
-    print(f"  Type:               MoE (expert offloading)")
+    print("  Type:               MoE (expert offloading)")
     print(f"  Flash directory:    {flash_moe_dir}")
     print(f"  Hidden size:        {config.get('hidden_size')}")
     print(f"  Intermediate size:  {config.get('intermediate_size')}")
@@ -1052,8 +1052,8 @@ def _show_flash_moe_info(model_name, flash_moe_dir):
     else:
         print(f"  Total size:         {total_bytes / (1024**2):.1f} MB")
 
-    print(f"\nTo use Flash-MoE inference:")
-    print(f"  OLMLX_EXPERIMENTAL_FLASH_MOE=true olmlx serve")
+    print("\nTo use Flash-MoE inference:")
+    print("  OLMLX_EXPERIMENTAL_FLASH_MOE=true olmlx serve")
 
 
 def _show_flash_dense_info(model_name, flash_dir):
@@ -1065,7 +1065,7 @@ def _show_flash_dense_info(model_name, flash_dir):
     config = json.loads(config_path.read_text())
     print(f"Flash info for '{model_name}':")
     print("  Status:             prepared")
-    print(f"  Type:               Dense (neuron offloading)")
+    print("  Type:               Dense (neuron offloading)")
     print(f"  Flash directory:    {flash_dir}")
     print(f"  Hidden size:        {config.get('hidden_size')}")
     print(f"  Intermediate size:  {config.get('intermediate_size')}")
@@ -1085,8 +1085,8 @@ def _show_flash_dense_info(model_name, flash_dir):
     total_bytes = sum(f.stat().st_size for f in flash_dir.rglob("*") if f.is_file())
     print(f"  Total size:         {total_bytes / (1024**2):.1f} MB")
 
-    print(f"\nTo use flash inference:")
-    print(f"  OLMLX_EXPERIMENTAL_FLASH=true olmlx serve")
+    print("\nTo use flash inference:")
+    print("  OLMLX_EXPERIMENTAL_FLASH=true olmlx serve")
 
 
 def build_parser() -> argparse.ArgumentParser:
