@@ -62,11 +62,8 @@ _GPT_OSS_STRUCTURAL_TOKENS = frozenset(
 async def _gpt_oss_filter(token_stream):
     """Filter gpt-oss channel tokens from a stream, yielding only 'final' channel content.
 
-    State machine:
-    - INIT: outside any channel block. Pass through non-structural tokens.
-    - EXPECT_CHANNEL: saw <|channel|>, next token is channel type
-    - IN_ANALYSIS/IN_FINAL/IN_COMMENTARY: inside a channel block, waiting for <|message|>
-    - CONTENT_ANALYSIS/CONTENT_FINAL/CONTENT_COMMENTARY: after <|message|>, in content
+    If the model never produces a 'final' channel, falls back to yielding
+    buffered 'analysis' content (otherwise the user sees nothing).
     """
     INIT = "init"
     AFTER_START = "after_start"  # saw <|start|>, suppressing role tokens
@@ -77,6 +74,8 @@ async def _gpt_oss_filter(token_stream):
     state = INIT
     channel = None
     saw_any_channel = False
+    saw_final = False
+    analysis_buffer = []  # buffer analysis tokens in case no final channel
 
     async for token in token_stream:
         text = token.text
@@ -98,6 +97,8 @@ async def _gpt_oss_filter(token_stream):
         if state == EXPECT_CHANNEL:
             channel = text.strip()
             state = IN_BLOCK
+            if channel == "final":
+                saw_final = True
             continue
 
         if text == "<|message|>" and state == IN_BLOCK:
@@ -113,12 +114,21 @@ async def _gpt_oss_filter(token_stream):
             yield token
             continue
 
+        if state == CONTENT and channel == "analysis" and not saw_final:
+            analysis_buffer.append(token)
+            continue
+
         if (
             state == INIT
             and not saw_any_channel
             and text not in _GPT_OSS_STRUCTURAL_TOKENS
         ):
             # No channel tokens seen yet — pass through (non-gpt-oss model)
+            yield token
+
+    # Fallback: if model never produced a final channel, yield analysis content
+    if not saw_final and analysis_buffer:
+        for token in analysis_buffer:
             yield token
 
 

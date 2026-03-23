@@ -316,6 +316,12 @@ def _parse_gpt_oss_channels(
     thinking = "\n".join(thinking_parts)
     visible = " ".join(visible_parts) if visible_parts else ""
 
+    # Fallback: if the model put everything in analysis and nothing in final,
+    # promote analysis content to visible text (otherwise user sees nothing)
+    if not visible and not tool_uses and thinking:
+        visible = thinking
+        thinking = ""
+
     return thinking, visible, tool_uses
 
 

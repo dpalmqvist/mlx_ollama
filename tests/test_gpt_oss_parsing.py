@@ -70,16 +70,16 @@ class TestParseGptOssChannels:
         assert thinking == ""
         assert visible == "Hello world!"
 
-    def test_analysis_only(self):
-        """Output with only analysis channel should produce thinking, no visible text."""
+    def test_analysis_only_falls_back_to_visible(self):
+        """Output with only analysis channel should promote to visible text."""
         text = (
             "<|start|>assistant<|channel|>analysis<|message|>"
             "Hmm interesting question."
             "<|end|>"
         )
         thinking, visible, tools = parse_model_output(text, has_tools=False)
-        assert thinking == "Hmm interesting question."
-        assert visible == ""
+        assert thinking == ""
+        assert visible == "Hmm interesting question."
 
     def test_multiple_final_blocks(self):
         """Multiple final blocks should be concatenated."""
@@ -206,8 +206,8 @@ class TestGptOssStreamFilter:
         result = self._run_filter(tokens)
         assert result == ["visible", " text"]
 
-    def test_only_analysis_yields_nothing(self):
-        """If only analysis channel, nothing should be yielded."""
+    def test_only_analysis_falls_back(self):
+        """If only analysis channel, analysis content should be yielded as fallback."""
         tokens = [
             "<|start|>",
             "assistant",
@@ -219,7 +219,7 @@ class TestGptOssStreamFilter:
             "<|end|>",
         ]
         result = self._run_filter(tokens)
-        assert result == []
+        assert result == ["just", " thinking"]
 
     def test_no_channel_tokens_passthrough(self):
         """Plain text without channel tokens should pass through."""
