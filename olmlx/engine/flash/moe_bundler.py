@@ -321,6 +321,11 @@ def bundle_moe_experts(
         config.get("n_routed_experts")
         or config.get("num_local_experts")  # gpt-oss uses this
     )
+    if num_experts is None:
+        raise ValueError(
+            f"config.json at {model_dir} is missing both "
+            "'n_routed_experts' and 'num_local_experts'"
+        )
 
     # Check for safetensors index (sharded models)
     index_path = model_dir / "model.safetensors.index.json"

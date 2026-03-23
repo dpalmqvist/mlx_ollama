@@ -918,15 +918,19 @@ class ModelManager:
             cache_budget_experts=experimental.flash_moe_cache_budget_experts,
         )
 
-        wrapped = FlashMoeModelWrapper(
-            model,
-            store,
-            moe_layer_indices=moe_config["moe_layer_indices"],
-            hidden_size=moe_config["hidden_size"],
-            intermediate_size=moe_config["intermediate_size"],
-            num_experts=moe_config["num_experts"],
-            num_experts_per_tok=moe_config["num_experts_per_tok"],
-        )
+        try:
+            wrapped = FlashMoeModelWrapper(
+                model,
+                store,
+                moe_layer_indices=moe_config["moe_layer_indices"],
+                hidden_size=moe_config["hidden_size"],
+                intermediate_size=moe_config["intermediate_size"],
+                num_experts=moe_config["num_experts"],
+                num_experts_per_tok=moe_config["num_experts_per_tok"],
+            )
+        except Exception:
+            store.close()
+            raise
 
         # Materialize only non-expert weights
         mx.eval(wrapped.parameters())

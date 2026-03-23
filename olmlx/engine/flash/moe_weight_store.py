@@ -402,7 +402,14 @@ class FlashMoeWeightStore:
         self._fds.clear()
 
     def __del__(self) -> None:
-        self.close()
+        # Use wait=False to avoid deadlock during interpreter shutdown
+        self._executor.shutdown(wait=False)
+        for fd in self._fds.values():
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        self._fds.clear()
 
     def __enter__(self):
         return self

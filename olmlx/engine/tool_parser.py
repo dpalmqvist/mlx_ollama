@@ -296,9 +296,8 @@ def _parse_gpt_oss_channels(
         elif channel == "final":
             visible_parts.append(content)
         elif channel == "commentary" and has_tools and content:
-            # Extract tool name from the block prefix (look backwards from match)
-            prefix = text[max(0, match.start() - 200) : match.start() + 50]
-            name_match = _GPT_OSS_TOOL_NAME_RE.search(prefix)
+            # Extract tool name from within the matched block
+            name_match = _GPT_OSS_TOOL_NAME_RE.search(match.group(0))
             tool_name = name_match.group(1) if name_match else "unknown"
             try:
                 args = json.loads(content)
