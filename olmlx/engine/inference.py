@@ -60,77 +60,105 @@ _GPT_OSS_STRUCTURAL_TOKENS = frozenset(
 )
 
 
-async def _gpt_oss_filter(token_stream):
-    """Filter gpt-oss channel tokens from a stream, yielding only 'final' channel content.
+class _GptOssChannelFilter:
+    """Stateful filter for gpt-oss channel tokens.
 
-    If the model never produces a 'final' channel, falls back to yielding
-    buffered 'analysis' content (otherwise the user sees nothing).
+    Call ``should_yield(text)`` for each token. Returns True if the token's text
+    should be sent to the client. After the stream ends, call
+    ``get_fallback_texts()`` — if non-empty, yield those as fallback (the model
+    produced analysis but no final channel).
+
+    This is a class (not an async generator) so the caller can iterate the raw
+    stream for prompt-cache token accumulation while only yielding filtered text.
     """
-    INIT = "init"
-    AFTER_START = "after_start"  # saw <|start|>, suppressing role tokens
-    EXPECT_CHANNEL = "expect_channel"
-    IN_BLOCK = "in_block"  # saw channel type, waiting for <|message|>
-    CONTENT = "content"  # after <|message|>, yielding if final
 
-    state = INIT
-    channel = None
-    saw_any_channel = False
-    saw_final = False
-    analysis_buffer = []  # buffer analysis tokens in case no final channel
+    _INIT = "init"
+    _AFTER_START = "after_start"
+    _EXPECT_CHANNEL = "expect_channel"
+    _IN_BLOCK = "in_block"
+    _CONTENT = "content"
 
-    async for token in token_stream:
-        text = token.text
+    def __init__(self):
+        self._state = self._INIT
+        self._channel = None
+        self._saw_any_channel = False
+        self._saw_final = False
+        self._analysis_texts: list[str] = []
 
+    def should_yield(self, text: str) -> bool:
+        """Process one token's text and return whether it should be yielded."""
         if text == "<|start|>":
-            state = AFTER_START
-            saw_any_channel = True
-            continue
+            self._state = self._AFTER_START
+            self._saw_any_channel = True
+            return False
 
         if text == "<|channel|>":
-            state = EXPECT_CHANNEL
-            saw_any_channel = True
-            continue
+            self._state = self._EXPECT_CHANNEL
+            self._saw_any_channel = True
+            return False
 
-        if state == AFTER_START:
-            # Suppress role tokens (e.g. "assistant", "assistant to=...")
-            continue
+        if self._state == self._AFTER_START:
+            return False
 
-        if state == EXPECT_CHANNEL:
-            channel = text.strip()
-            state = IN_BLOCK
-            if channel == "final":
-                saw_final = True
-            continue
+        if self._state == self._EXPECT_CHANNEL:
+            self._channel = text.strip()
+            self._state = self._IN_BLOCK
+            if self._channel == "final":
+                self._saw_final = True
+            return False
 
-        if text == "<|message|>" and state == IN_BLOCK:
-            state = CONTENT
-            continue
+        if text == "<|message|>" and self._state == self._IN_BLOCK:
+            self._state = self._CONTENT
+            return False
 
         if text in ("<|end|>", "<|call|>", "<|return|>"):
-            state = INIT
-            channel = None
-            continue
+            self._state = self._INIT
+            self._channel = None
+            return False
 
-        if state == CONTENT and channel == "final":
-            yield token
-            continue
-
-        if state == CONTENT and channel == "analysis" and not saw_final:
-            analysis_buffer.append(token)
-            continue
+        if self._state == self._CONTENT and self._channel == "final":
+            return True
 
         if (
-            state == INIT
-            and not saw_any_channel
+            self._state == self._CONTENT
+            and self._channel == "analysis"
+            and not self._saw_final
+        ):
+            self._analysis_texts.append(text)
+            return False
+
+        if (
+            self._state == self._INIT
+            and not self._saw_any_channel
             and text not in _GPT_OSS_STRUCTURAL_TOKENS
         ):
-            # No channel tokens seen yet — pass through (non-gpt-oss model)
-            yield token
+            return True
 
-    # Fallback: if model never produced a final channel, yield analysis content
-    if not saw_final and analysis_buffer:
-        for token in analysis_buffer:
+        return False
+
+    def get_fallback_texts(self) -> list[str]:
+        """Return buffered analysis texts if no final channel was seen."""
+        if not self._saw_final and self._analysis_texts:
+            return self._analysis_texts
+        return []
+
+
+async def _gpt_oss_filter(token_stream):
+    """Async generator wrapper for backward compatibility with tests."""
+    filt = _GptOssChannelFilter()
+    buffered = []
+    async for token in token_stream:
+        if filt.should_yield(token.text):
             yield token
+        else:
+            buffered.append(token)
+    for text in filt.get_fallback_texts():
+        # Find matching token from buffer
+        for tok in buffered:
+            if tok.text == text:
+                yield tok
+                buffered.remove(tok)
+                break
 
 
 # -- Experimental: Distributed inference coordinator --
@@ -1025,15 +1053,15 @@ async def _stream_completion(
             **gen_kwargs,
         )
 
-        # Apply gpt-oss channel filter if model uses channel format
-        token_source = (
-            _gpt_oss_filter(stream) if lm.template_caps.has_channel_format else stream
+        # Channel filter for gpt-oss models (decides which tokens to yield as text)
+        channel_filter = (
+            _GptOssChannelFilter() if lm.template_caps.has_channel_format else None
         )
 
         with _inference_ref(lm), Timer() as total_timer:
             with Timer() as eval_timer:
-                async for token in token_source:
-                    yield {"text": token.text, "done": False}
+                async for token in stream:
+                    # Always accumulate for prompt cache (raw stream, not filtered)
                     stats.eval_count = token.generation_tokens
                     stats.prompt_eval_count = token.prompt_tokens
                     if token.token is not None:
@@ -1044,6 +1072,16 @@ async def _stream_completion(
                             "(cache token sequence will be incomplete)",
                             token.generation_tokens,
                         )
+                    # Yield text only if the filter allows it (or no filter)
+                    if channel_filter is None or channel_filter.should_yield(
+                        token.text
+                    ):
+                        yield {"text": token.text, "done": False}
+
+            # Fallback: yield analysis content if no final channel was produced
+            if channel_filter is not None:
+                for text in channel_filter.get_fallback_texts():
+                    yield {"text": text, "done": False}
 
             stats.eval_duration = eval_timer.duration_ns
             prompt_tps = getattr(token, "prompt_tps", 0) or 0
@@ -1195,6 +1233,7 @@ async def _full_completion(
     gen_kwargs: dict,
     stats: TimingStats,
     images: list[str] | None = None,
+    has_tools: bool = False,
 ) -> dict:
     async with _inference_locked():
         with _inference_ref(lm):
@@ -1205,6 +1244,7 @@ async def _full_completion(
                 gen_kwargs,
                 stats,
                 images,
+                has_tools=has_tools,
             )
 
 
@@ -1215,6 +1255,7 @@ async def _full_completion_inner(
     gen_kwargs: dict,
     stats: TimingStats,
     images: list[str] | None = None,
+    has_tools: bool = False,
 ) -> dict:
     def _generate_sync():
         """Run generate + synchronize in the same thread so GPU work completes
@@ -1313,7 +1354,7 @@ async def _full_completion_inner(
     if lm.template_caps.has_channel_format and "<|channel|>" in text:
         from olmlx.engine.tool_parser import _parse_gpt_oss_channels
 
-        parsed = _parse_gpt_oss_channels(text, has_tools=False)
+        parsed = _parse_gpt_oss_channels(text, has_tools=has_tools)
         if parsed is not None:
             _, visible, _ = parsed
             text = visible
@@ -1427,7 +1468,9 @@ async def generate_chat(
             cache_id=cache_id,
         )
     else:
-        return await _full_completion(lm, prompt, mt, gen_kwargs, stats, images)
+        return await _full_completion(
+            lm, prompt, mt, gen_kwargs, stats, images, has_tools=bool(tools)
+        )
 
 
 async def generate_embeddings(

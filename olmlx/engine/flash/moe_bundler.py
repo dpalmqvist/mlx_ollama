@@ -347,26 +347,25 @@ def bundle_moe_experts(
 
     layouts: dict[int, MoeExpertLayout] = {}
 
-    # Detect expert weight prefix: "switch_mlp" (DeepSeek-V3) or "experts" (gpt-oss)
-    expert_prefix = _detect_expert_prefix(model_dir, moe_layers[0], index)
-
-    # Process first MoE layer to determine component manifest
-    first_prefix = f"model.layers.{moe_layers[0]}.mlp.{expert_prefix}"
-    _, manifest = _collect_all_projections(model_dir, first_prefix, index)
-    expert_byte_size = sum(entry["nbytes"] for entry in manifest)
-
-    bits = 0
-    group_size = 0
-    quant_mode = "affine"
-    is_quantized = any(
-        e["dtype"] == "uint32" for e in manifest if "weight" in e["name"]
-    )
-    if is_quantized and quant_config:
-        bits = quant_config.get("bits", 4)
-        group_size = quant_config.get("group_size", 32)
-        quant_mode = quant_config.get("mode", "affine")
-
     try:
+        # Detect expert weight prefix: "switch_mlp" (DeepSeek-V3) or "experts" (gpt-oss)
+        expert_prefix = _detect_expert_prefix(model_dir, moe_layers[0], index)
+
+        # Process first MoE layer to determine component manifest
+        first_prefix = f"model.layers.{moe_layers[0]}.mlp.{expert_prefix}"
+        _, manifest = _collect_all_projections(model_dir, first_prefix, index)
+        expert_byte_size = sum(entry["nbytes"] for entry in manifest)
+
+        bits = 0
+        group_size = 0
+        quant_mode = "affine"
+        is_quantized = any(
+            e["dtype"] == "uint32" for e in manifest if "weight" in e["name"]
+        )
+        if is_quantized and quant_config:
+            bits = quant_config.get("bits", 4)
+            group_size = quant_config.get("group_size", 32)
+            quant_mode = quant_config.get("mode", "affine")
         for layer_idx in moe_layers:
             prefix = f"model.layers.{layer_idx}.mlp.{expert_prefix}"
 
