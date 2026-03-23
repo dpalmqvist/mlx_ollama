@@ -1243,14 +1243,18 @@ async def _full_completion_inner(
         else:
             import mlx_lm
 
-            result = mlx_lm.generate(
+            # Use stream_generate to capture token counts (generate() discards them)
+            result = None
+            for response in mlx_lm.stream_generate(
                 lm.model,
                 lm.tokenizer,
                 prompt=prompt,
                 max_tokens=max_tokens,
                 **gen_kwargs,
-            )
+            ):
+                result = response
             from mlx_lm.generate import generation_stream
+
         # Sync the generation_stream specifically — mlx_lm/mlx_vlm run GPU
         # work on this module-level stream, not the default stream.  Without
         # this, generate() may return before GPU work is actually done.
@@ -1264,18 +1268,26 @@ async def _full_completion_inner(
     stats.eval_duration = eval_timer.duration_ns
     stats.total_duration = total_timer.duration_ns
 
+    # Extract token counts from GenerationResult (stream_generate) or string
+    if hasattr(result, "prompt_tokens"):
+        stats.prompt_eval_count = result.prompt_tokens
+    if hasattr(result, "generation_tokens"):
+        stats.eval_count = result.generation_tokens
+
     eval_secs = stats.eval_duration / 1e9 if stats.eval_duration else 0
     gen_tps = stats.eval_count / eval_secs if eval_secs > 0 else 0
+    prompt_tps = stats.prompt_eval_count / eval_secs if eval_secs > 0 else 0
     total_secs = stats.total_duration / 1e9 if stats.total_duration else 0
     logger.info(
-        "Generation complete: %d prompt tokens, %d tokens generated (%.1f tok/s), %.2fs total",
+        "Generation complete: %d prompt tokens (%.1f tok/s), %d tokens generated (%.1f tok/s), %.2fs total",
         stats.prompt_eval_count,
+        prompt_tps,
         stats.eval_count,
         gen_tps,
         total_secs,
     )
 
-    # mlx_vlm.generate returns GenerationResult dataclass
+    # Extract text from GenerationResult or string
     if hasattr(result, "text"):
         text = result.text
     elif isinstance(result, str):
