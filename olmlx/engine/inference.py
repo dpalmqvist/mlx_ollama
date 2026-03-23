@@ -1271,6 +1271,16 @@ async def _full_completion_inner(
         text = result
     else:
         text = str(result)
+
+    # Strip gpt-oss channel tokens for non-streaming path
+    if lm.template_caps.has_channel_format and "<|channel|>" in text:
+        from olmlx.engine.tool_parser import _parse_gpt_oss_channels
+
+        parsed = _parse_gpt_oss_channels(text, has_tools=False)
+        if parsed is not None:
+            _, visible, _ = parsed
+            text = visible
+
     return {"text": text, "done": True, "stats": stats}
 
 
