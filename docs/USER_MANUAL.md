@@ -451,8 +451,8 @@ Contains "/"?
     │
     ▼
  In aliases.json?
-  ├─ Yes → Resolve alias to model name ─┐
-  └─ No ────────────────────────────────┘
+  ├─ Yes → Resolve alias to HuggingFace path → Load model
+  └─ No
     │
     ▼
  In models.json?
@@ -461,7 +461,7 @@ Contains "/"?
 ```
 
 1. **Direct HuggingFace paths** — any name containing `/` is treated as a HF repo ID (e.g., `mlx-community/Qwen3-8B-4bit`)
-2. **Aliases** — checked in `~/.olmlx/aliases.json`
+2. **Aliases** — checked in `~/.olmlx/aliases.json` (aliases store HuggingFace paths directly, no further lookup needed)
 3. **Mappings** — checked in `~/.olmlx/models.json`
 
 Names without a `:tag` suffix automatically get `:latest` appended (e.g., `llama3.2` -> `llama3.2:latest`).
@@ -745,8 +745,8 @@ curl http://localhost:11434/v1/chat/completions \
 | `top_p` | float | 0-1 range |
 | `stream` | boolean | Enable SSE streaming |
 | `stop` | string/array | Stop sequences |
-| `max_tokens` | int | Output token limit |
-| `max_completion_tokens` | int | Alias for `max_tokens` (takes precedence) |
+| `max_tokens` | int | Output token limit. Default: **512** when neither field is set |
+| `max_completion_tokens` | int | Alias for `max_tokens` (takes precedence). Default: **512** when neither field is set |
 | `presence_penalty` | float | -2 to 2 |
 | `frequency_penalty` | float | -2 to 2 |
 | `tools` | array | Tool definitions |
@@ -1031,10 +1031,10 @@ Map Claude model names to local models via `OLMLX_ANTHROPIC_MODELS`:
 
 ```bash
 # In .env or environment
-OLMLX_ANTHROPIC_MODELS='{"claude_3_5_sonnet_20241022": "mlx-community/Qwen3-8B-4bit"}'
+OLMLX_ANTHROPIC_MODELS='{"sonnet": "mlx-community/Qwen3-8B-4bit"}'
 ```
 
-> **Note:** Keys use underscores instead of dashes (environment variable parsing constraint). The key `claude_3_5_sonnet_20241022` matches API requests for `claude-3-5-sonnet-20241022`.
+> **Note:** Keys must be a single segment keyword from the model name (split on `-` and `:`). For example, `"sonnet"` matches any model whose name contains the segment `sonnet` (e.g. `claude-3-5-sonnet-20241022`, `claude-sonnet-4-5`). Longer keys take priority over shorter ones.
 
 #### Using with Claude Code
 
@@ -1042,7 +1042,7 @@ Point Claude Code at your olmlx instance:
 
 ```bash
 export ANTHROPIC_BASE_URL=http://localhost:11434
-export ANTHROPIC_API_KEY=unused
+export ANTHROPIC_API_KEY=local-olmlx  # any non-empty string; not validated by olmlx
 claude
 ```
 
