@@ -1,11 +1,7 @@
 """Tests for olmlx.engine.flash.flash_moe_model — Flash-MoE model wrapper."""
 
-import json
-from pathlib import Path
-
 import mlx.core as mx
 import mlx.nn as nn
-import numpy as np
 import pytest
 
 from tests.test_flash_moe_bundler import _make_synthetic_moe_weights
@@ -64,14 +60,20 @@ class _MockMoEGate(nn.Module):
 class _MockMoE(nn.Module):
     """Mock DeepseekV3MoE."""
 
-    def __init__(self, hidden_size, intermediate_size, num_experts, num_experts_per_tok):
+    def __init__(
+        self, hidden_size, intermediate_size, num_experts, num_experts_per_tok
+    ):
         super().__init__()
-        self.config = type("Config", (), {
-            "n_shared_experts": 1,
-            "moe_intermediate_size": intermediate_size,
-            "n_routed_experts": num_experts,
-            "num_experts_per_tok": num_experts_per_tok,
-        })()
+        self.config = type(
+            "Config",
+            (),
+            {
+                "n_shared_experts": 1,
+                "moe_intermediate_size": intermediate_size,
+                "n_routed_experts": num_experts,
+                "num_experts_per_tok": num_experts_per_tok,
+            },
+        )()
         self.gate = _MockMoEGate(num_experts, num_experts_per_tok)
         self.switch_mlp = _MockSwitchGLU(hidden_size, intermediate_size, num_experts)
         self.shared_experts = _MockMLP(hidden_size, intermediate_size)
@@ -85,10 +87,14 @@ class _MockMoE(nn.Module):
 
 
 class _MockDecoderLayer(nn.Module):
-    def __init__(self, hidden_size, intermediate_size, num_experts, num_experts_per_tok, is_moe):
+    def __init__(
+        self, hidden_size, intermediate_size, num_experts, num_experts_per_tok, is_moe
+    ):
         super().__init__()
         if is_moe:
-            self.mlp = _MockMoE(hidden_size, intermediate_size, num_experts, num_experts_per_tok)
+            self.mlp = _MockMoE(
+                hidden_size, intermediate_size, num_experts, num_experts_per_tok
+            )
         else:
             self.mlp = _MockMLP(hidden_size, intermediate_size)
 
@@ -96,24 +102,47 @@ class _MockDecoderLayer(nn.Module):
 class _MockModel(nn.Module):
     """Mock model with mix of dense and MoE layers."""
 
-    def __init__(self, hidden_size, intermediate_size, num_experts, num_experts_per_tok,
-                 num_dense, num_moe):
+    def __init__(
+        self,
+        hidden_size,
+        intermediate_size,
+        num_experts,
+        num_experts_per_tok,
+        num_dense,
+        num_moe,
+    ):
         super().__init__()
-        self.args = type("Args", (), {
-            "hidden_size": hidden_size,
-            "moe_intermediate_size": intermediate_size,
-            "n_routed_experts": num_experts,
-            "num_experts_per_tok": num_experts_per_tok,
-        })()
+        self.args = type(
+            "Args",
+            (),
+            {
+                "hidden_size": hidden_size,
+                "moe_intermediate_size": intermediate_size,
+                "n_routed_experts": num_experts,
+                "num_experts_per_tok": num_experts_per_tok,
+            },
+        )()
         layers = []
         for i in range(num_dense):
-            layers.append(_MockDecoderLayer(
-                hidden_size, intermediate_size, num_experts, num_experts_per_tok, is_moe=False
-            ))
+            layers.append(
+                _MockDecoderLayer(
+                    hidden_size,
+                    intermediate_size,
+                    num_experts,
+                    num_experts_per_tok,
+                    is_moe=False,
+                )
+            )
         for i in range(num_moe):
-            layers.append(_MockDecoderLayer(
-                hidden_size, intermediate_size, num_experts, num_experts_per_tok, is_moe=True
-            ))
+            layers.append(
+                _MockDecoderLayer(
+                    hidden_size,
+                    intermediate_size,
+                    num_experts,
+                    num_experts_per_tok,
+                    is_moe=True,
+                )
+            )
         self.layers = layers
 
     def __call__(self, x, cache=None):
@@ -147,9 +176,13 @@ class TestFlashMoeModelWrapper:
 
         from olmlx.engine.flash.moe_weight_store import FlashMoeWeightStore
 
-        store = FlashMoeWeightStore(output_dir, num_io_threads=4, cache_budget_experts=16)
+        store = FlashMoeWeightStore(
+            output_dir, num_io_threads=4, cache_budget_experts=16
+        )
 
-        model = _MockModel(hidden, inter, experts, num_experts_per_tok, num_dense, num_moe)
+        model = _MockModel(
+            hidden, inter, experts, num_experts_per_tok, num_dense, num_moe
+        )
         return model, store, hidden, inter, experts, num_experts_per_tok
 
     def test_replaces_moe_layers(self, model_and_store):

@@ -1,21 +1,14 @@
 """Tests for olmlx.engine.flash.flash_moe — runtime FlashMoE module."""
 
-import json
-from pathlib import Path
-
 import mlx.core as mx
 import mlx.nn as nn
-import numpy as np
-import pytest
 
 from tests.test_flash_moe_bundler import _make_synthetic_moe_weights
 
 
 def _setup_flash_moe(tmp_path, hidden=64, inter=32, experts=8, num_experts_per_tok=2):
     """Create bundled MoE weights and return a FlashMoE instance + reference weights."""
-    model_dir = _make_synthetic_moe_weights(
-        hidden, inter, experts, 1, 0, tmp_path
-    )
+    model_dir = _make_synthetic_moe_weights(hidden, inter, experts, 1, 0, tmp_path)
     output_dir = tmp_path / "flash_moe"
 
     from olmlx.engine.flash.moe_bundler import bundle_moe_experts
@@ -48,11 +41,13 @@ class TestFlashMoE:
 
         x = mx.random.normal((2, 5, hidden))
         # Simulate router indices and scores
-        inds = mx.array([[[0, 3], [1, 5], [2, 7], [4, 6], [0, 1]],
-                         [[3, 5], [2, 4], [6, 7], [1, 0], [5, 3]]])
+        inds = mx.array(
+            [
+                [[0, 3], [1, 5], [2, 7], [4, 6], [0, 1]],
+                [[3, 5], [2, 4], [6, 7], [1, 0], [5, 3]],
+            ]
+        )
         scores = mx.ones(inds.shape, dtype=mx.float32) * 0.5
-
-        from olmlx.engine.flash.flash_moe import FlashMoE
 
         output = flash_moe(x, inds, scores)
         assert output.shape == x.shape
@@ -85,7 +80,7 @@ class TestFlashMoE:
         manual_output = mx.zeros((1, hidden))
         for i, (eidx, score) in enumerate([(0, 0.6), (2, 0.4)]):
             g = x_flat @ gate_w[eidx].T  # (1, inter)
-            u = x_flat @ up_w[eidx].T    # (1, inter)
+            u = x_flat @ up_w[eidx].T  # (1, inter)
             activated = nn.silu(g) * u
             expert_out = activated @ down_w[eidx].T  # (1, hidden)
             manual_output = manual_output + expert_out * score

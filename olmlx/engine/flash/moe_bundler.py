@@ -75,6 +75,10 @@ def parse_moe_header(data: bytes) -> dict:
         expert_byte_size,
         _,
     ) = _MOE_HEADER_STRUCT.unpack(data[:MOE_HEADER_SIZE])
+    if magic != MOE_HEADER_MAGIC:
+        raise ValueError(
+            f"Invalid .flashexperts magic: expected {MOE_HEADER_MAGIC:#010x}, got {magic:#010x}"
+        )
     return {
         "magic": magic,
         "version": version,
@@ -109,9 +113,7 @@ class MoeExpertLayout:
 _shard_cache: dict[str, dict] = {}
 
 
-def _load_tensor(
-    model_dir: Path, name: str, index: dict | None
-) -> np.ndarray:
+def _load_tensor(model_dir: Path, name: str, index: dict | None) -> np.ndarray:
     """Load a single tensor from safetensors, handling sharded models.
 
     Uses mx.load() which handles all dtypes including bfloat16.
@@ -254,12 +256,14 @@ def _collect_all_projections(
             # Per-expert shape and size (first dim is num_experts)
             per_expert_shape = list(arr.shape[1:])
             dtype_str = _DTYPE_TO_STR.get(arr.dtype, str(arr.dtype))
-            manifest.append({
-                "name": f"{proj}.{comp_name}",
-                "shape": per_expert_shape,
-                "dtype": dtype_str,
-                "nbytes": int(arr[0].nbytes),
-            })
+            manifest.append(
+                {
+                    "name": f"{proj}.{comp_name}",
+                    "shape": per_expert_shape,
+                    "dtype": dtype_str,
+                    "nbytes": int(arr[0].nbytes),
+                }
+            )
 
     # Also check for per-projection linear biases (e.g., gpt-oss has bias=True)
     for proj in ("gate_proj", "up_proj", "down_proj"):
@@ -268,12 +272,14 @@ def _collect_all_projections(
             all_components.append((proj, "bias", bias))
             per_expert_shape = list(bias.shape[1:])
             dtype_str = _DTYPE_TO_STR.get(bias.dtype, str(bias.dtype))
-            manifest.append({
-                "name": f"{proj}.bias",
-                "shape": per_expert_shape,
-                "dtype": dtype_str,
-                "nbytes": int(bias[0].nbytes),
-            })
+            manifest.append(
+                {
+                    "name": f"{proj}.bias",
+                    "shape": per_expert_shape,
+                    "dtype": dtype_str,
+                    "nbytes": int(bias[0].nbytes),
+                }
+            )
 
     return all_components, manifest
 
@@ -303,6 +309,11 @@ def bundle_moe_experts(
     intermediate_size = config.get("moe_intermediate_size") or config.get(
         "intermediate_size"
     )
+    if intermediate_size is None:
+        raise ValueError(
+            f"config.json at {model_dir} is missing both "
+            "'moe_intermediate_size' and 'intermediate_size'"
+        )
     num_experts = (
         config.get("n_routed_experts")
         or config.get("num_local_experts")  # gpt-oss uses this
@@ -339,61 +350,66 @@ def bundle_moe_experts(
     bits = 0
     group_size = 0
     quant_mode = "affine"
-    is_quantized = any(e["dtype"] == "uint32" for e in manifest if "weight" in e["name"])
+    is_quantized = any(
+        e["dtype"] == "uint32" for e in manifest if "weight" in e["name"]
+    )
     if is_quantized and quant_config:
         bits = quant_config.get("bits", 4)
         group_size = quant_config.get("group_size", 32)
         quant_mode = quant_config.get("mode", "affine")
 
-    for layer_idx in moe_layers:
-        prefix = f"model.layers.{layer_idx}.mlp.{expert_prefix}"
+    try:
+        for layer_idx in moe_layers:
+            prefix = f"model.layers.{layer_idx}.mlp.{expert_prefix}"
 
-        all_components, _ = _collect_all_projections(model_dir, prefix, index)
+            all_components, _ = _collect_all_projections(model_dir, prefix, index)
 
-        # Build offset table
-        offset_table_size = num_experts * 8
-        data_start = MOE_HEADER_SIZE + offset_table_size
-        offsets = np.array(
-            [data_start + i * expert_byte_size for i in range(num_experts)],
-            dtype=np.uint64,
-        )
-
-        file_path = output_dir / f"layer_{layer_idx:02d}.flashexperts"
-        with open(file_path, "wb") as f:
-            f.write(
-                _encode_moe_header(
-                    num_experts,
-                    hidden_size,
-                    intermediate_size,
-                    is_quantized,
-                    bits,
-                    group_size,
-                    expert_byte_size,
-                )
+            # Build offset table
+            offset_table_size = num_experts * 8
+            data_start = MOE_HEADER_SIZE + offset_table_size
+            offsets = np.array(
+                [data_start + i * expert_byte_size for i in range(num_experts)],
+                dtype=np.uint64,
             )
-            f.write(offsets.tobytes())
 
-            for expert_idx in range(num_experts):
-                for _proj, _comp, arr in all_components:
-                    f.write(arr[expert_idx].tobytes())
+            file_path = output_dir / f"layer_{layer_idx:02d}.flashexperts"
+            with open(file_path, "wb") as f:
+                f.write(
+                    _encode_moe_header(
+                        num_experts,
+                        hidden_size,
+                        intermediate_size,
+                        is_quantized,
+                        bits,
+                        group_size,
+                        expert_byte_size,
+                    )
+                )
+                f.write(offsets.tobytes())
 
-        layouts[layer_idx] = MoeExpertLayout(
-            layer_idx=layer_idx,
-            num_experts=num_experts,
-            hidden_size=hidden_size,
-            intermediate_size=intermediate_size,
-            expert_byte_size=expert_byte_size,
-            file_path=file_path,
-            offsets=offsets,
-            is_quantized=is_quantized,
-            bits=bits,
-            group_size=group_size,
-        )
+                for expert_idx in range(num_experts):
+                    for _proj, _comp, arr in all_components:
+                        f.write(arr[expert_idx].tobytes())
 
-        logger.info("Bundled MoE layer %d: %d experts", layer_idx, num_experts)
+            layouts[layer_idx] = MoeExpertLayout(
+                layer_idx=layer_idx,
+                num_experts=num_experts,
+                hidden_size=hidden_size,
+                intermediate_size=intermediate_size,
+                expert_byte_size=expert_byte_size,
+                file_path=file_path,
+                offsets=offsets,
+                is_quantized=is_quantized,
+                bits=bits,
+                group_size=group_size,
+            )
 
-        # Free memory for this layer
-        del all_components
+            logger.info("Bundled MoE layer %d: %d experts", layer_idx, num_experts)
+
+            # Free memory for this layer
+            del all_components
+            _clear_shard_cache()
+    finally:
         _clear_shard_cache()
 
     # Write layout JSON with component manifest

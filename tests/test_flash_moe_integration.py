@@ -1,10 +1,8 @@
 """Integration tests for Flash-MoE: config, model_manager, CLI, prepare."""
 
 import json
-from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 
 from tests.test_flash_moe_bundler import _make_synthetic_moe_weights
 
@@ -71,9 +69,7 @@ class TestPrepareMoeForFlash:
     def test_full_preparation(self, tmp_path):
         """Full preparation pipeline should produce correct output files."""
         hidden, inter, experts = 64, 32, 4
-        model_dir = _make_synthetic_moe_weights(
-            hidden, inter, experts, 2, 1, tmp_path
-        )
+        model_dir = _make_synthetic_moe_weights(hidden, inter, experts, 2, 1, tmp_path)
         output_dir = tmp_path / "flash_moe"
 
         from olmlx.engine.flash.moe_prepare import prepare_moe_for_flash

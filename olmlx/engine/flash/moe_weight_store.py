@@ -86,9 +86,7 @@ class ExpertCache:
             while len(layer_cache) > self._max:
                 layer_cache.popitem(last=False)
 
-    def get_batch(
-        self, layer_idx: int, indices: list[int]
-    ) -> dict[int, dict]:
+    def get_batch(self, layer_idx: int, indices: list[int]) -> dict[int, dict]:
         with self._lock:
             result = {}
             layer_cache = self._cache.get(layer_idx)
@@ -161,7 +159,7 @@ class FlashMoeWeightStore:
     @staticmethod
     def _full_pread(fd: int, size: int, offset: int) -> bytes:
         """Read exactly *size* bytes via pread, retrying on short reads."""
-        buf = b""
+        buf = bytearray()
         pos = offset
         remaining = size
         while remaining > 0:
@@ -171,7 +169,7 @@ class FlashMoeWeightStore:
             buf += chunk
             pos += len(chunk)
             remaining -= len(chunk)
-        return buf
+        return bytes(buf)
 
     def _read_expert(self, layer_idx: int, expert_idx: int) -> dict:
         """Read a single expert's weights from SSD."""
@@ -185,7 +183,9 @@ class FlashMoeWeightStore:
         elif layout.is_quantized:
             return self._parse_quantized_expert(raw, layout)
         else:
-            return self._parse_float16_expert(raw, layout.hidden_size, layout.intermediate_size)
+            return self._parse_float16_expert(
+                raw, layout.hidden_size, layout.intermediate_size
+            )
 
     @staticmethod
     def _parse_expert_with_manifest(raw: bytes, manifest: list[dict]) -> dict:
@@ -255,9 +255,18 @@ class FlashMoeWeightStore:
         )
 
         return {
-            "gate_weight": gate_w, "gate_scales": None, "gate_biases": None, "gate_bias": None,
-            "up_weight": up_w, "up_scales": None, "up_biases": None, "up_bias": None,
-            "down_weight": down_w, "down_scales": None, "down_biases": None, "down_bias": None,
+            "gate_weight": gate_w,
+            "gate_scales": None,
+            "gate_biases": None,
+            "gate_bias": None,
+            "up_weight": up_w,
+            "up_scales": None,
+            "up_biases": None,
+            "up_bias": None,
+            "down_weight": down_w,
+            "down_scales": None,
+            "down_biases": None,
+            "down_bias": None,
         }
 
     @staticmethod
@@ -332,10 +341,17 @@ class FlashMoeWeightStore:
 
         # Collect per-component lists
         components: dict[str, list] = {
-            k: [] for k in (
-                "gate_weight", "gate_scales", "gate_biases",
-                "up_weight", "up_scales", "up_biases",
-                "down_weight", "down_scales", "down_biases",
+            k: []
+            for k in (
+                "gate_weight",
+                "gate_scales",
+                "gate_biases",
+                "up_weight",
+                "up_scales",
+                "up_biases",
+                "down_weight",
+                "down_scales",
+                "down_biases",
             )
         }
 
@@ -375,6 +391,9 @@ class FlashMoeWeightStore:
             except OSError:
                 pass
         self._fds.clear()
+
+    def __del__(self) -> None:
+        self.close()
 
     def __enter__(self):
         return self

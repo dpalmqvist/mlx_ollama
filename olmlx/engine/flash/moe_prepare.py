@@ -69,9 +69,13 @@ def prepare_moe_for_flash(
     intermediate_size = text_config.get("moe_intermediate_size") or text_config.get(
         "intermediate_size"
     )
-    num_experts = (
-        text_config.get("n_routed_experts")
-        or text_config.get("num_local_experts")
+    if intermediate_size is None:
+        raise ValueError(
+            f"config.json at {model_dir} is missing both "
+            "'moe_intermediate_size' and 'intermediate_size'"
+        )
+    num_experts = text_config.get("n_routed_experts") or text_config.get(
+        "num_local_experts"
     )
     num_layers = text_config.get("num_hidden_layers") or text_config.get("num_layers")
     first_dense = text_config.get("first_k_dense_replace", 0)

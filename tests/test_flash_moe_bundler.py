@@ -1,11 +1,9 @@
 """Tests for olmlx.engine.flash.moe_bundler — MoE expert weight bundling."""
 
 import json
-import struct
 from pathlib import Path
 
 import numpy as np
-import pytest
 
 
 # ---------------------------------------------------------------------------
@@ -57,9 +55,9 @@ def _make_synthetic_moe_weights(
         prefix = f"model.layers.{layer}.mlp"
 
         # Router (gate) — should NOT be bundled
-        tensors[f"{prefix}.gate.weight"] = rng.randn(
-            num_experts, hidden_size
-        ).astype(np.float16)
+        tensors[f"{prefix}.gate.weight"] = rng.randn(num_experts, hidden_size).astype(
+            np.float16
+        )
         tensors[f"{prefix}.gate.e_score_correction_bias"] = rng.randn(
             num_experts
         ).astype(np.float16)
@@ -197,9 +195,7 @@ class TestBundleMoeExperts:
     def test_bundle_header_is_correct(self, tmp_path):
         """Header should contain correct magic, version, and dimensions."""
         hidden, inter, experts = 64, 32, 4
-        model_dir = _make_synthetic_moe_weights(
-            hidden, inter, experts, 1, 0, tmp_path
-        )
+        model_dir = _make_synthetic_moe_weights(hidden, inter, experts, 1, 0, tmp_path)
         output_dir = tmp_path / "flash_moe"
 
         from olmlx.engine.flash.moe_bundler import (
@@ -224,9 +220,7 @@ class TestBundleMoeExperts:
     def test_bundle_preserves_expert_data(self, tmp_path):
         """Bundled expert data must match the original safetensors weights."""
         hidden, inter, experts = 64, 32, 8
-        model_dir = _make_synthetic_moe_weights(
-            hidden, inter, experts, 1, 0, tmp_path
-        )
+        model_dir = _make_synthetic_moe_weights(hidden, inter, experts, 1, 0, tmp_path)
         output_dir = tmp_path / "flash_moe"
 
         from safetensors.numpy import load_file
@@ -257,9 +251,9 @@ class TestBundleMoeExperts:
         gate_read = np.frombuffer(raw[:gate_size], dtype=np.float16).reshape(
             inter, hidden
         )
-        up_read = np.frombuffer(raw[gate_size : gate_size + up_size], dtype=np.float16).reshape(
-            inter, hidden
-        )
+        up_read = np.frombuffer(
+            raw[gate_size : gate_size + up_size], dtype=np.float16
+        ).reshape(inter, hidden)
         down_read = np.frombuffer(
             raw[gate_size + up_size : gate_size + up_size + down_size], dtype=np.float16
         ).reshape(hidden, inter)
@@ -298,15 +292,15 @@ class TestBundleMoeExperts:
 
         # Verify expert 1's gate_proj packed weight matches original
         expert_idx = 1
-        gate_packed_orig = original[
-            "model.layers.0.mlp.switch_mlp.gate_proj.weight"
-        ][expert_idx]
-        gate_scales_orig = original[
-            "model.layers.0.mlp.switch_mlp.gate_proj.scales"
-        ][expert_idx]
-        gate_biases_orig = original[
-            "model.layers.0.mlp.switch_mlp.gate_proj.biases"
-        ][expert_idx]
+        gate_packed_orig = original["model.layers.0.mlp.switch_mlp.gate_proj.weight"][
+            expert_idx
+        ]
+        gate_scales_orig = original["model.layers.0.mlp.switch_mlp.gate_proj.scales"][
+            expert_idx
+        ]
+        gate_biases_orig = original["model.layers.0.mlp.switch_mlp.gate_proj.biases"][
+            expert_idx
+        ]
 
         # Read expert from bundle
         expert_offset = int(layout.offsets[expert_idx])
@@ -341,9 +335,7 @@ class TestBundleMoeExperts:
     def test_bundle_offset_table_sequential(self, tmp_path):
         """Offsets should be sequential, each expert_byte_size apart."""
         hidden, inter, experts = 64, 32, 8
-        model_dir = _make_synthetic_moe_weights(
-            hidden, inter, experts, 1, 0, tmp_path
-        )
+        model_dir = _make_synthetic_moe_weights(hidden, inter, experts, 1, 0, tmp_path)
         output_dir = tmp_path / "flash_moe"
 
         from olmlx.engine.flash.moe_bundler import bundle_moe_experts
@@ -392,9 +384,9 @@ class TestBundleMoeExperts:
             "model.layers.0.mlp.switch_mlp.gate_proj.weight": rng.randn(
                 experts, inter, hidden
             ).astype(np.float16),
-            "model.layers.0.mlp.gate.weight": rng.randn(
-                experts, hidden
-            ).astype(np.float16),
+            "model.layers.0.mlp.gate.weight": rng.randn(experts, hidden).astype(
+                np.float16
+            ),
         }
         save_file(shard1, str(model_dir / "model-00001-of-00002.safetensors"))
 

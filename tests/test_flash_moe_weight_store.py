@@ -1,8 +1,5 @@
 """Tests for olmlx.engine.flash.moe_weight_store — runtime expert loading."""
 
-import json
-from pathlib import Path
-
 import mlx.core as mx
 import numpy as np
 import pytest
@@ -100,8 +97,6 @@ class TestFlashMoeWeightStore:
         """Loaded expert weights should have correct dimensions."""
         store, _, hidden, inter, _ = store_with_model
         expert_indices = [0, 2, 5]
-
-        from olmlx.engine.flash.moe_weight_store import FlashMoeWeightStore
 
         loaded = store.load_experts(1, expert_indices)  # layer 1 is first MoE layer
 

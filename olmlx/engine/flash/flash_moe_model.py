@@ -34,11 +34,20 @@ class _FlashMoEDeepSeek(nn.Module):
         self.sharding_group = getattr(original_moe, "sharding_group", None)
 
     def __call__(self, x):
+        if self.sharding_group is not None:
+            from mlx.nn.layers.distributed import sum_gradients
+
+            x = sum_gradients(self.sharding_group)(x)
+
         inds, scores = self.gate(x)
         y = self._flash_moe(x, inds, scores)
         y = y.astype(x.dtype)
         if hasattr(self, "shared_experts"):
             y = y + self.shared_experts(x)
+
+        if self.sharding_group is not None:
+            y = mx.distributed.all_sum(y, group=self.sharding_group)
+
         return y
 
 
