@@ -40,39 +40,21 @@ olmlx is a drop-in replacement for the Ollama API server, built on Apple's [MLX]
 
 ### Architecture Overview
 
-```mermaid
-graph LR
-    subgraph Clients
-        A[Ollama CLI / SDK]
-        B[OpenAI SDK]
-        C[Claude Code]
-        D[curl / HTTP]
-    end
-
-    subgraph olmlx Server
-        E[FastAPI]
-        subgraph Routers
-            F[Ollama API]
-            G[OpenAI API]
-            H[Anthropic API]
-        end
-        I[Inference Engine]
-        J[Model Manager]
-        K[Prompt Cache]
-    end
-
-    L[MLX Framework]
-    M[Apple Silicon GPU]
-
-    A --> F
-    B --> G
-    C --> H
-    D --> F & G & H
-    F & G & H --> I
-    I --> J
-    I --> K
-    J --> L
-    L --> M
+```
+┌─────────────────┐      ┌─────────────────────────────────────┐
+│     Clients     │      │           olmlx Server              │
+│                 │      │                                     │
+│ Ollama CLI/SDK ─┼─────→│─→ Ollama API ──┐                   │
+│ OpenAI SDK ─────┼─────→│─→ OpenAI API ──┼→ Inference Engine │
+│ Claude Code ────┼─────→│─→ Anthropic API┘    ├ Model Mgr   │
+│ curl / HTTP ────┼─────→│─→ (any router)      └ Prompt Cache │
+└─────────────────┘      └──────────┬──────────────────────────┘
+                                    │
+                                    ▼
+                              MLX Framework
+                                    │
+                                    ▼
+                            Apple Silicon GPU
 ```
 
 ---
@@ -157,24 +139,19 @@ curl http://localhost:11434/api/chat -d '{
 
 ### Sequence Overview
 
-```mermaid
-sequenceDiagram
-    participant User
-    participant olmlx
-    participant HuggingFace
-    participant GPU as Apple Silicon GPU
-
-    User->>olmlx: POST /api/pull {"model": "llama3.2:latest"}
-    olmlx->>olmlx: Resolve name -> HuggingFace path
-    olmlx->>HuggingFace: Download model weights
-    HuggingFace-->>olmlx: Model files (safetensors)
-    olmlx-->>User: {"status": "success"}
-
-    User->>olmlx: POST /api/chat {"model": "llama3.2:latest", ...}
-    olmlx->>olmlx: Load model into GPU memory
-    olmlx->>GPU: Run inference (stream_generate)
-    GPU-->>olmlx: Generated tokens
-    olmlx-->>User: Streaming NDJSON response
+```
+User                olmlx               HuggingFace       Apple Silicon GPU
+ │                    │                      │                    │
+ │─ POST /api/pull ──→│                      │                    │
+ │  {model: llama3.2} │── Download weights ─→│                    │
+ │                    │←── safetensors ──────│                    │
+ │←── {status: ok} ──│                      │                    │
+ │                    │                      │                    │
+ │─ POST /api/chat ──→│                      │                    │
+ │                    │── Load model ────────────────────────────→│
+ │                    │── stream_generate ───────────────────────→│
+ │                    │←── generated tokens ─────────────────────│
+ │←── streaming NDJSON│                      │                    │
 ```
 
 ---
@@ -411,25 +388,32 @@ The `name` field is required; `description` is optional but recommended — it's
 
 When tools are available, the chat operates as a full agent loop:
 
-```mermaid
-flowchart TD
-    A[User sends message] --> B[Model generates response]
-    B --> C{Response contains<br>tool calls?}
-    C -- No --> D[Display response to user]
-    C -- Yes --> E{Check tool<br>safety policy}
-    E -- allow --> F[Execute tool calls]
-    E -- confirm --> G[Prompt user for approval]
-    E -- deny --> H[Block tool, report to model]
-    G -- Approved --> F
-    G -- Denied --> H
-    F --> I[Feed results back to model]
-    H --> I
-    I --> J{Turn limit<br>reached?}
-    J -- No --> B
-    J -- Yes --> K[Display partial response<br>+ max turns warning]
-    D --> L[Wait for next user message]
-    K --> L
-    L --> A
+```
+User sends message
+       │
+       ▼
+┌─ Model generates response ◄──────────────────────┐
+│      │                                            │
+│      ▼                                            │
+│  Contains tool calls?                             │
+│   ├─ No → Display response → Wait for next msg ──┘
+│   └─ Yes                                          │
+│      │                                            │
+│      ▼                                            │
+│  Check tool safety policy                         │
+│   ├─ allow ──→ Execute tool calls ─┐              │
+│   ├─ confirm → Prompt user ─┬─ Approved → Execute │
+│   │                         └─ Denied ──┐         │
+│   └─ deny ──→ Block tool ──────────────┤         │
+│                                         │         │
+│              Feed results back ◄────────┘         │
+│                     │                             │
+│                     ▼                             │
+│              Turn limit reached?                  │
+│               ├─ No ─────────────────────────────→┘
+│               └─ Yes → Display + max turns warning
+│                              │
+└──────────────────────────────┘
 ```
 
 The model can make up to `--max-turns` (default 25) consecutive tool calls before stopping. Repetition detection automatically halts the loop if the model gets stuck repeating the same output.
@@ -457,18 +441,23 @@ The model can make up to `--max-turns` (default 25) consecutive tool calls befor
 
 olmlx resolves model names through a registry chain:
 
-```mermaid
-flowchart LR
-    A[Model Name] --> B{Contains /?}
-    B -- Yes --> C[Treat as HuggingFace path<br>Auto-register in models.json]
-    B -- No --> D{In aliases.json?}
-    D -- Yes --> E[Resolve alias -> model name]
-    D -- No --> F{In models.json?}
-    E --> F
-    F -- Yes --> G[Resolve to HuggingFace path]
-    F -- No --> H[Error: model not found]
-    C --> I[Load model]
-    G --> I
+```
+Model Name
+    │
+    ▼
+Contains "/"?
+ ├─ Yes → Treat as HuggingFace path (auto-register) → Load model
+ └─ No
+    │
+    ▼
+ In aliases.json?
+  ├─ Yes → Resolve alias to model name ─┐
+  └─ No ────────────────────────────────┘
+    │
+    ▼
+ In models.json?
+  ├─ Yes → Resolve to HuggingFace path → Load model
+  └─ No  → Error: model not found
 ```
 
 1. **Direct HuggingFace paths** — any name containing `/` is treated as a HF repo ID (e.g., `mlx-community/Qwen3-8B-4bit`)
@@ -1134,11 +1123,12 @@ All settings are configured via `OLMLX_`-prefixed environment variables. You can
 
 ### Configuration Precedence
 
-```mermaid
-graph TD
-    A[Environment Variables] -->|highest priority| D[Resolved Settings]
-    B[.env File] -->|medium priority| D
-    C[Built-in Defaults] -->|lowest priority| D
+```
+ Priority        Source
+ ──────────────────────────────────────
+ highest    Environment Variables ──┐
+ medium     .env File ─────────────┤→ Resolved Settings
+ lowest     Built-in Defaults ─────┘
 ```
 
 ---
@@ -1147,65 +1137,44 @@ graph TD
 
 ### Request Processing Flow
 
-```mermaid
-flowchart LR
-    subgraph Client
-        A[HTTP Request]
-    end
-
-    subgraph Router Layer
-        B[Ollama Router]
-        C[OpenAI Router]
-        D[Anthropic Router]
-    end
-
-    subgraph Inference Engine
-        E[Model Manager]
-        F[ensure_loaded]
-        G[Prompt Cache]
-        H[Inference Lock]
-        I[stream_generate<br>via MLX]
-    end
-
-    subgraph Response
-        J[NDJSON Stream]
-        K[SSE Stream]
-        L[JSON Response]
-    end
-
-    A --> B & C & D
-    B & C & D --> E
-    E --> F
-    F --> G
-    G --> H
-    H --> I
-    B --> J
-    C --> K
-    D --> K
-    B & C & D --> L
+```
+               ┌─────────────┐    ┌──────────────────────────────┐    ┌────────────┐
+               │Router Layer │    │       Inference Engine        │    │  Response   │
+               │             │    │                               │    │            │
+HTTP ─────────→│ Ollama    ──┼───→│ Model Manager                │    │ NDJSON     │
+Request        │ OpenAI   ──┼───→│  → ensure_loaded             │    │ SSE Stream │
+               │ Anthropic──┼───→│  → Prompt Cache              │    │ JSON       │
+               │             │    │  → Inference Lock            │    │            │
+               └──────┬──────┘    │  → stream_generate (MLX)  ──┼───→└────────────┘
+                      │           └──────────────────────────────┘
+                      └──────────────────────────────────────────────→ (non-streaming)
 ```
 
 ### Model Lifecycle
 
-```mermaid
-stateDiagram-v2
-    [*] --> NotLoaded
-
-    NotLoaded --> Loading: ensure_loaded()
-    Loading --> Loaded: Success
-    Loading --> NotLoaded: MemoryError / Timeout
-
-    Loaded --> Active: Request arrives<br>(active_refs++)
-    Active --> Loaded: Request completes<br>(active_refs--)
-
-    Loaded --> KeepAlive: Timer refreshed<br>on each request
-    KeepAlive --> Expired: TTL elapsed &<br>active_refs == 0
-    Expired --> NotLoaded: Expiry checker<br>unloads model
-
-    Loaded --> Evicted: LRU eviction<br>(new model needs slot)
-    Evicted --> NotLoaded: active_refs == 0
-
-    Active --> Active: Cannot evict<br>while active_refs > 0
+```
+                       ensure_loaded()
+              ┌──────── NotLoaded ◄────────────────────────────┐
+              │              ▲                                  │
+              ▼              │ MemoryError / Timeout            │
+           Loading ──────────┘                                 │
+              │                                                │
+              │ Success                                        │
+              ▼                                                │
+           Loaded ◄──────────────────────┐                     │
+              │                          │                     │
+              ├─ Request arrives ──→  Active  (active_refs++)  │
+              │  (active_refs++)     Cannot evict while > 0    │
+              │                      Request completes ────────┘
+              │                        (active_refs--)         │
+              ├─ Timer refreshed → KeepAlive                   │
+              │                      │ TTL elapsed &           │
+              │                      │ active_refs == 0        │
+              │                      ▼                         │
+              │                   Expired ─── unloads model ──→┘
+              │
+              └─ LRU eviction ──→ Evicted ─── active_refs=0 ─→┘
+                (new model needs slot)
 ```
 
 **Key behaviors:**
@@ -1219,27 +1188,22 @@ stateDiagram-v2
 
 olmlx bridges synchronous MLX generation into async FastAPI responses:
 
-```mermaid
-sequenceDiagram
-    participant Router as FastAPI Router
-    participant Queue as asyncio.Queue
-    participant Thread as Background Thread
-    participant MLX as mlx_lm.stream_generate
-
-    Router->>Thread: Start generation thread
-    Thread->>MLX: Call stream_generate()
-
-    loop For each token
-        MLX-->>Thread: Generated token
-        Thread->>Queue: Put StreamToken
-        Queue-->>Router: Await next token
-        Router-->>Router: Yield to HTTP response
-    end
-
-    MLX-->>Thread: Generation complete
-    Thread->>Thread: Sync Metal streams
-    Thread->>Queue: Put sentinel (None)
-    Queue-->>Router: StopAsyncIteration
+```
+FastAPI Router       asyncio.Queue      Background Thread     mlx_lm.stream_generate
+      │                    │                    │                       │
+      │── Start thread ───────────────────────→│                       │
+      │                    │                    │── stream_generate() ─→│
+      │                    │                    │                       │
+      │                    │    ┌── for each token ──────────────────┐  │
+      │                    │    │               │◄── generated token ──│
+      │                    │◄── put StreamToken─│                    │  │
+      │◄── await next ────│    │               │                    │  │
+      │── yield to HTTP    │    └───────────────────────────────────┘  │
+      │                    │                    │                       │
+      │                    │                    │◄── generation done ──│
+      │                    │                    │── sync Metal streams  │
+      │                    │◄── put None ──────│                       │
+      │◄── StopIteration ─│                    │                       │
 ```
 
 The queue has a max size of 32 items to provide backpressure. On client disconnect, the cancellation event is set and the thread drains cleanly, ensuring GPU resources are released.
@@ -1250,21 +1214,34 @@ When enabled (`OLMLX_PROMPT_CACHE=true`), olmlx reuses KV cache state across req
 
 **How it works:**
 
-```mermaid
-flowchart TD
-    A[Incoming request with x-cache-id] --> B{Cache slot exists<br>for this ID?}
-    B -- Yes --> C{Prompt shares<br>common prefix?}
-    B -- No --> D[Process full prompt]
-    C -- Yes --> E[Skip shared prefix<br>Process only new tokens]
-    C -- No --> D
-    D --> F[Generate response]
-    E --> F
-    F --> G[Store updated KV cache]
-    G --> H{Memory slots full?}
-    H -- No --> I[Keep in memory]
-    H -- Yes --> J{Disk offload<br>enabled?}
-    J -- Yes --> K[Evict LRU to disk]
-    J -- No --> L[Evict LRU permanently]
+```
+Incoming request with x-cache-id
+         │
+         ▼
+  Cache slot exists for this ID?
+   ├─ No  → Process full prompt ──────────────────┐
+   └─ Yes                                         │
+         │                                        │
+         ▼                                        │
+   Prompt shares common prefix?                   │
+    ├─ No  → Process full prompt ─────────────────┤
+    └─ Yes → Skip shared prefix, process new only─┤
+                                                  │
+                                                  ▼
+                                        Generate response
+                                                  │
+                                                  ▼
+                                     Store updated KV cache
+                                                  │
+                                                  ▼
+                                       Memory slots full?
+                                        ├─ No  → Keep in memory
+                                        └─ Yes
+                                              │
+                                              ▼
+                                        Disk offload enabled?
+                                         ├─ Yes → Evict LRU to disk
+                                         └─ No  → Evict LRU permanently
 ```
 
 1. Each request can include an `x-cache-id` header identifying the conversation
@@ -1318,15 +1295,28 @@ LLM in a Flash enables SSD-based inference, allowing you to run models that are 
 
 ### How It Works
 
-```mermaid
-flowchart TD
-    A[Full Model Weights on SSD] --> B[Activation Predictor]
-    B --> C{For each layer:<br>Which neurons<br>will activate?}
-    C --> D[Load only active<br>neurons from SSD]
-    D --> E[Compute layer with<br>sparse weights]
-    E --> F[Cache frequently<br>used neurons in RAM]
-    F --> G[Next layer]
-    G --> C
+```
+Full Model Weights on SSD
+         │
+         ▼
+  Activation Predictor
+         │
+         ▼
+  ┌─ For each layer: ◄──────────────────┐
+  │  Which neurons will activate?        │
+  │      │                               │
+  │      ▼                               │
+  │  Load only active neurons from SSD   │
+  │      │                               │
+  │      ▼                               │
+  │  Compute layer with sparse weights   │
+  │      │                               │
+  │      ▼                               │
+  │  Cache frequently used neurons in RAM│
+  │      │                               │
+  │      ▼                               │
+  │  Next layer ─────────────────────────┘
+  └─────────────────────────────────────
 ```
 
 The approach works in two phases:
@@ -1424,71 +1414,49 @@ Run models across multiple Apple Silicon machines using MLX's ring distributed b
 
 ### Architecture
 
-```mermaid
-graph TB
-    subgraph Coordinator["Coordinator (Rank 0)"]
-        A[olmlx serve]
-        B[Sideband Server<br>TCP :32400]
-        C[uvicorn / FastAPI]
-        D[model.shard]
-    end
-
-    subgraph Worker["Worker (Rank 1)"]
-        E[distributed_worker.py]
-        F[Sideband Client]
-        G[model.shard]
-        H[stream_generate<br>output discarded]
-    end
-
-    Client[HTTP Client :11434] --> C
-
-    B <-->|"Inference params<br>(prompt, max_tokens)"| F
-    D <-->|"all_sum<br>(Ring Backend)"| G
-
-    A --> B
-    A --> C
-    A --> D
-    E --> F
-    E --> G
-    E --> H
-
-    style Coordinator fill:#e1f0ff,stroke:#4a90d9
-    style Worker fill:#fff3e1,stroke:#d9944a
+```
+┌─── Coordinator (Rank 0) ──────────────┐     ┌─── Worker (Rank 1) ────────────────┐
+│                                       │     │                                    │
+│  olmlx serve                          │     │  distributed_worker.py             │
+│   ├─ Sideband Server (TCP :32400) ◄───┼─────┼──► Sideband Client                │
+│   │     (inference params:             │     │     (prompt, max_tokens)           │
+│   │      prompt, max_tokens)           │     │                                    │
+│   ├─ uvicorn / FastAPI ◄── HTTP :11434│     │  model.shard ◄── all_sum ─────────┤
+│   └─ model.shard ──── all_sum ────────┼─────┼──►  (Ring Backend)                │
+│                                       │     │                                    │
+│                                       │     │  stream_generate (output discarded)│
+└───────────────────────────────────────┘     └────────────────────────────────────┘
 ```
 
 ### Startup Sequence
 
-```mermaid
-sequenceDiagram
-    participant CLI as Coordinator CLI
-    participant Worker as Worker (SSH)
-    participant Ring as MLX Ring Backend
-    participant Sideband as Sideband (TCP)
-
-    CLI->>Worker: Launch via SSH
-    Note over CLI: Sleep 3s for worker startup
-    CLI->>Ring: mx.distributed.init()
-    Worker->>Ring: mx.distributed.init()
-    Ring-->>CLI: Group established
-    Ring-->>Worker: Group established
-
-    CLI->>Sideband: Start sideband server (:32400)
-    Worker->>Sideband: Connect (retries up to 120s)
-
-    CLI->>CLI: Load model + shard
-    Worker->>Worker: Load model + shard
-    CLI->>CLI: mx.eval(model.parameters())
-    Worker->>Worker: mx.eval(model.parameters())
-
-    Worker->>Sideband: Send "ready"
-    CLI->>CLI: Start uvicorn
-
-    Note over CLI,Worker: Server ready for requests
-
-    CLI->>Sideband: Broadcast inference params
-    CLI->>Ring: stream_generate (all_sum sync)
-    Worker->>Ring: stream_generate (all_sum sync)
-    Ring-->>CLI: Generated tokens
+```
+Coordinator CLI          Worker (SSH)          MLX Ring Backend     Sideband (TCP)
+      │                       │                       │                    │
+      │── Launch via SSH ────→│                       │                    │
+      │   (sleep 3s)          │                       │                    │
+      │── mx.distributed.init() ────────────────────→│                    │
+      │                       │── mx.distributed.init() ────────────────→│
+      │◄── group established ─────────────────────────│                    │
+      │                       │◄── group established ─│                    │
+      │                       │                       │                    │
+      │── Start sideband server ─────────────────────────────────────────→│
+      │                       │── Connect (retries up to 120s) ─────────→│
+      │                       │                       │                    │
+      │── Load model + shard  │                       │                    │
+      │                       │── Load model + shard  │                    │
+      │── mx.eval(params)     │                       │                    │
+      │                       │── mx.eval(params)     │                    │
+      │                       │                       │                    │
+      │                       │── Send "ready" ──────────────────────────→│
+      │── Start uvicorn       │                       │                    │
+      │                       │                       │                    │
+      │          ═══ Server ready for requests ═══    │                    │
+      │                       │                       │                    │
+      │── Broadcast inference params ────────────────────────────────────→│
+      │── stream_generate ───────────────────────────→│                    │
+      │                       │── stream_generate ───→│                    │
+      │◄── generated tokens ──────────────────────────│                    │
 ```
 
 ### Prerequisites
