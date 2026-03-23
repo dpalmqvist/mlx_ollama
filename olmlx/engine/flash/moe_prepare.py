@@ -28,6 +28,7 @@ def is_moe_model(model_path: str | Path) -> bool:
     return (
         config.get("n_routed_experts") is not None
         or config.get("num_local_experts") is not None
+        or config.get("num_experts") is not None
     )
 
 
@@ -74,8 +75,10 @@ def prepare_moe_for_flash(
             f"config.json at {model_dir} is missing both "
             "'moe_intermediate_size' and 'intermediate_size'"
         )
-    num_experts = text_config.get("n_routed_experts") or text_config.get(
-        "num_local_experts"
+    num_experts = (
+        text_config.get("n_routed_experts")
+        or text_config.get("num_local_experts")
+        or text_config.get("num_experts")
     )
     num_layers = text_config.get("num_hidden_layers") or text_config.get("num_layers")
     first_dense = text_config.get("first_k_dense_replace", 0)
