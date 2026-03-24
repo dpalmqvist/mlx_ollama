@@ -281,9 +281,6 @@ def _stream_record_activations(
         progress_callback("Streaming layers", 0.05)
 
     recordings: dict[int, tuple[list[mx.array], list[mx.array]]] = {}
-    # Samples that fail at layer N are skipped for all subsequent layers
-    # (their hidden state would be stale from layer N-1)
-    skip_samples: set[int] = set()
 
     for layer_idx in range(num_layers):
         layer = layers[layer_idx]
@@ -298,7 +295,7 @@ def _stream_record_activations(
             )
 
         for i in range(len(hidden_states)):
-            if i in skip_samples:
+            if hidden_states[i] is None:
                 continue
             mask = _create_causal_mask(hidden_states[i])
             try:
@@ -306,8 +303,11 @@ def _stream_record_activations(
                 mx.eval(hidden_states[i])
             except (ValueError, RuntimeError):
                 logger.debug("Skipping sample %d at layer %d", i, layer_idx)
-                skip_samples.add(i)
+                hidden_states[i] = None  # free stale tensor
         recordings[layer_idx] = recording_data
+
+        if not recording_data[0]:
+            logger.warning("No activations recorded for layer %d", layer_idx)
 
         layer.mlp = original_mlp
         _nullify_module_params(layer)

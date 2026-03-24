@@ -26,9 +26,9 @@ def is_moe_model(model_path: str | Path) -> bool:
     if "text_config" in config:
         config = config["text_config"]
     return (
-        config.get("n_routed_experts") is not None
-        or config.get("num_local_experts") is not None
-        or config.get("num_experts") is not None
+        (config.get("n_routed_experts") or 0) > 1
+        or (config.get("num_local_experts") or 0) > 1
+        or (config.get("num_experts") or 0) > 1
     )
 
 
