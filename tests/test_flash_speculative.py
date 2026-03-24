@@ -111,9 +111,8 @@ class TestSpeculativeFlashDecoder:
         decoder._vocab_size = vocab_size
 
         draft_tokens = [0, 0, 0]  # draft always picks 0
-        draft_logits = mx.stack([draft_probs[0]] * 3)  # (3, vocab)
 
-        accepted = decoder._verify(draft_tokens, draft_logits, target_probs)
+        accepted = decoder._verify(draft_tokens, target_probs)
 
         # Target wants 7, draft gave 0 — first token rejected
         assert len(accepted) >= 1  # at least the corrected first token

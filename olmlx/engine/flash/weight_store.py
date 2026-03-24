@@ -191,6 +191,7 @@ class FlashWeightStore:
                 self._buffers[layer_idx] = PreallocatedNeuronBuffer(
                     max_neurons=cache_budget_neurons,
                     hidden_size=layout.hidden_size,
+                    dtype=_NP_DTYPE[layout.dtype],
                 )
         else:
             self._cache = NeuronCache(max_neurons_per_layer=cache_budget_neurons)
@@ -301,20 +302,52 @@ class FlashWeightStore:
     def _load_neurons_preallocated(
         self, layer_idx: int, neuron_indices: list[int]
     ) -> tuple[mx.array, mx.array, mx.array]:
-        """Load neurons using the preallocated buffer path."""
+        """Load neurons using the preallocated buffer path.
+
+        Holds the buffer lock across insert + read to prevent concurrent
+        requests from evicting neurons between insertion and get_matrices.
+        """
         buf = self._buffers[layer_idx]
         _, missing = buf.get_cached_indices(neuron_indices)
 
+        # Fetch missing neurons via parallel I/O (outside lock)
+        loaded: dict[int, tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
         if missing:
             futures = {
                 idx: self._executor.submit(self._read_neuron_raw, layer_idx, idx)
                 for idx in missing
             }
             for idx, future in futures.items():
-                gate, up, down = future.result()
-                buf.insert(idx, gate, up, down)
+                loaded[idx] = future.result()
 
-        return buf.get_matrices(neuron_indices)
+        # Insert and read under one lock acquisition to prevent eviction races
+        with buf._lock:
+            for idx, (gate, up, down) in loaded.items():
+                if idx not in buf._neuron_to_slot:
+                    # Re-check: another thread may have inserted it
+                    if buf._num_used < buf._max:
+                        slot = buf._num_used
+                        buf._num_used += 1
+                    else:
+                        evict_idx, _ = buf._access_order.popitem(last=False)
+                        slot = buf._neuron_to_slot.pop(evict_idx)
+                    buf._gate[slot] = gate
+                    buf._up[slot] = up
+                    buf._down[slot] = down
+                    buf._neuron_to_slot[idx] = slot
+                    buf._access_order[idx] = None
+                else:
+                    buf._access_order.move_to_end(idx)
+
+            slots = [buf._neuron_to_slot[idx] for idx in neuron_indices]
+            for idx in neuron_indices:
+                if idx in buf._access_order:
+                    buf._access_order.move_to_end(idx)
+            gate_data = buf._gate[slots].T.copy()
+            up_data = buf._up[slots].T.copy()
+            down_data = buf._down[slots].copy()
+
+        return mx.array(gate_data), mx.array(up_data), mx.array(down_data)
 
     def _load_neurons_cache(
         self, layer_idx: int, neuron_indices: list[int]

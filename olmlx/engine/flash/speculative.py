@@ -100,7 +100,6 @@ class SpeculativeFlashDecoder:
     def _verify(
         self,
         draft_tokens: list[int],
-        draft_logits: mx.array,
         target_logits: mx.array,
     ) -> list[int]:
         """Verify draft tokens against target model logits.
@@ -111,7 +110,6 @@ class SpeculativeFlashDecoder:
 
         Args:
             draft_tokens: list of draft token IDs, length lambda.
-            draft_logits: (lambda, vocab) draft model logits.
             target_logits: (lambda+1, vocab) target model logits
                            (positions correspond to verifying each draft
                            token + one extra for the bonus token).
@@ -165,7 +163,7 @@ class SpeculativeFlashDecoder:
         ]  # (lambda+1, vocab)
 
         # 3. Verify
-        accepted = self._verify(draft_tokens, draft_logits, target_logits)
+        accepted = self._verify(draft_tokens, target_logits)
 
         # 4. Update acceptance rate
         # How many of the lambda draft tokens were accepted
