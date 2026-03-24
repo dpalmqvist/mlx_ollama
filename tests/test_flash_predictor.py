@@ -2,7 +2,11 @@
 
 import mlx.core as mx
 
-from olmlx.engine.flash.predictor import PredictorBank, SparsityPredictor
+from olmlx.engine.flash.predictor import (
+    PredictorBank,
+    SparsityPredictor,
+    compute_layer_ranks,
+)
 
 
 class TestSparsityPredictor:
@@ -110,3 +114,67 @@ class TestPredictorBank:
         s1 = bank.predictors[1](x)
         mx.eval(s0, s1)
         assert not mx.array_equal(s0, s1)
+
+    def test_per_layer_ranks(self):
+        """PredictorBank with per-layer ranks has correct weight shapes."""
+        hidden, inter = 16, 32
+        ranks = [4, 8, 16]
+        bank = PredictorBank(3, hidden, inter, ranks=ranks)
+
+        for i, rank in enumerate(ranks):
+            assert bank.predictors[i].down.weight.shape == (rank, hidden)
+            assert bank.predictors[i].up.weight.shape == (inter, rank)
+
+    def test_per_layer_ranks_save_load_roundtrip(self, tmp_path):
+        """Save and load a bank with varying ranks per layer."""
+        hidden, inter = 16, 32
+        ranks = [4, 8, 16]
+        bank = PredictorBank(3, hidden, inter, ranks=ranks)
+        save_path = tmp_path / "predictors"
+        bank.save(save_path)
+
+        loaded = PredictorBank.load(save_path)
+        assert len(loaded.predictors) == 3
+
+        x = mx.random.normal((1, hidden))
+        for i in range(3):
+            # Verify shapes match per-layer rank
+            assert loaded.predictors[i].down.weight.shape == (ranks[i], hidden)
+            assert loaded.predictors[i].up.weight.shape == (inter, ranks[i])
+            # Verify weight values match
+            orig = bank.predictors[i](x)
+            load = loaded.predictors[i](x)
+            mx.eval(orig, load)
+            assert mx.allclose(orig, load, atol=1e-6)
+
+    def test_uniform_rank_still_works(self):
+        """Passing only rank= (no ranks=) still works as before."""
+        bank = PredictorBank(3, 16, 32, rank=8)
+        for pred in bank.predictors:
+            assert pred.down.weight.shape == (8, 16)
+
+
+class TestComputeLayerRanks:
+    def test_basic(self):
+        ranks = compute_layer_ranks(
+            8, base_rank=128, sensitive_layers=4, sensitive_rank_multiplier=4
+        )
+        assert len(ranks) == 8
+        assert ranks[:4] == [128, 128, 128, 128]
+        assert ranks[4:] == [512, 512, 512, 512]
+
+    def test_zero_sensitive_layers(self):
+        ranks = compute_layer_ranks(8, base_rank=128, sensitive_layers=0)
+        assert all(r == 128 for r in ranks)
+
+    def test_all_sensitive(self):
+        ranks = compute_layer_ranks(
+            4, base_rank=64, sensitive_layers=4, sensitive_rank_multiplier=2
+        )
+        assert all(r == 128 for r in ranks)
+
+    def test_more_sensitive_than_layers(self):
+        ranks = compute_layer_ranks(
+            2, base_rank=64, sensitive_layers=10, sensitive_rank_multiplier=3
+        )
+        assert all(r == 192 for r in ranks)

@@ -310,3 +310,38 @@ class TestFlashWeightStore:
 
         # Different layers should have different weights (extremely unlikely to match)
         assert not mx.array_equal(g0, g1)
+
+    def test_bypass_cache_flag_stored(self, tmp_path):
+        """FlashWeightStore stores the bypass_cache flag."""
+        hidden, inter, num_layers = 16, 8, 1
+        model_dir = _make_synthetic_mlp_weights(hidden, inter, num_layers, tmp_path)
+        output_dir = tmp_path / "flash"
+        bundle_ffn_weights(model_dir, output_dir)
+
+        store = FlashWeightStore(output_dir, bypass_cache=True)
+        assert store._bypass_cache is True
+        store.close()
+
+        store2 = FlashWeightStore(output_dir, bypass_cache=False)
+        assert store2._bypass_cache is False
+        store2.close()
+
+    def test_bypass_cache_reads_correctly(self, tmp_path):
+        """With bypass_cache=True, reads still return correct data."""
+        from safetensors.numpy import load_file
+
+        hidden, inter, num_layers = 16, 8, 1
+        model_dir = _make_synthetic_mlp_weights(hidden, inter, num_layers, tmp_path)
+        output_dir = tmp_path / "flash"
+        bundle_ffn_weights(model_dir, output_dir)
+
+        original = load_file(str(model_dir / "model.safetensors"))
+        gate_w = original["model.layers.0.mlp.gate_proj.weight"]
+
+        store = FlashWeightStore(output_dir, bypass_cache=True)
+        indices = [0, 3, 5]
+        gate_cols, _, _ = store.load_neurons(0, indices)
+
+        expected = mx.array(gate_w[indices].T)
+        assert mx.allclose(gate_cols, expected, atol=1e-6)
+        store.close()

@@ -855,12 +855,14 @@ class ModelManager:
             window_size=experimental.flash_window_size,
             io_threads=experimental.flash_io_threads,
             cache_budget_neurons=experimental.flash_cache_budget_neurons,
+            memory_budget_fraction=experimental.flash_memory_budget_fraction,
         )
 
         weight_store = FlashWeightStore(
             flash_dir,
             num_io_threads=flash_config.io_threads,
             cache_budget_neurons=flash_config.cache_budget_neurons,
+            bypass_cache=experimental.flash_bypass_os_cache,
         )
 
         # Wrap model — this replaces FFN layers and frees original weights

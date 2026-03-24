@@ -72,6 +72,22 @@ class SparsityPredictor(nn.Module):
         return mx.sort(indices)
 
 
+def compute_layer_ranks(
+    num_layers: int,
+    base_rank: int = 128,
+    sensitive_layers: int = 4,
+    sensitive_rank_multiplier: int = 4,
+) -> list[int]:
+    """Compute per-layer predictor ranks with higher rank for sensitive layers.
+
+    The last `sensitive_layers` layers get `base_rank * sensitive_rank_multiplier`.
+    """
+    ranks = [base_rank] * num_layers
+    for i in range(max(0, num_layers - sensitive_layers), num_layers):
+        ranks[i] = base_rank * sensitive_rank_multiplier
+    return ranks
+
+
 class PredictorBank:
     """Collection of per-layer sparsity predictors."""
 
@@ -81,11 +97,21 @@ class PredictorBank:
         hidden_size: int,
         intermediate_size: int,
         rank: int = 128,
+        ranks: list[int] | None = None,
     ):
-        self.predictors = [
-            SparsityPredictor(hidden_size, intermediate_size, rank)
-            for _ in range(num_layers)
-        ]
+        if ranks is not None:
+            if len(ranks) != num_layers:
+                raise ValueError(
+                    f"ranks length {len(ranks)} != num_layers {num_layers}"
+                )
+            self.predictors = [
+                SparsityPredictor(hidden_size, intermediate_size, r) for r in ranks
+            ]
+        else:
+            self.predictors = [
+                SparsityPredictor(hidden_size, intermediate_size, rank)
+                for _ in range(num_layers)
+            ]
 
     def save(self, path: Path) -> None:
         """Save all predictor weights to a directory."""
@@ -108,14 +134,6 @@ class PredictorBank:
         if not files:
             raise FileNotFoundError(f"No predictor files found in {path}")
 
-        # Peek at first predictor to get dimensions
-        first_weights = dict(mx.load(str(files[0])))
-        # Expect keys like "layer_0.down.weight", "layer_0.up.weight"
-        down_weight_key = [k for k in first_weights if "down.weight" in k][0]
-        up_weight_key = [k for k in first_weights if "up.weight" in k][0]
-        rank, hidden_size = first_weights[down_weight_key].shape
-        intermediate_size, _ = first_weights[up_weight_key].shape
-
         bank = cls.__new__(cls)
         bank.predictors = []
 
@@ -125,11 +143,15 @@ class PredictorBank:
                 raise ValueError(f"Cannot parse layer index from {f.name}")
             i = int(m.group(1))
 
-            pred = SparsityPredictor(hidden_size, intermediate_size, rank)
             weights = dict(mx.load(str(f)))
-
             down_w = weights[f"layer_{i}.down.weight"]
             up_w = weights[f"layer_{i}.up.weight"]
+
+            # Read rank per-file to support mixed ranks
+            rank, hidden_size = down_w.shape
+            intermediate_size, _ = up_w.shape
+
+            pred = SparsityPredictor(hidden_size, intermediate_size, rank)
             pred.down.weight = down_w
             pred.up.weight = up_w
             bank.predictors.append(pred)
