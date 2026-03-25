@@ -213,6 +213,8 @@ class _RecordingMLP(nn.Module):
             orig.down_proj = real_down_proj
 
         # Record activation pattern from intercepted tensor
+        if "activated" not in captured:
+            return result
         flat_input = x.reshape(-1, x.shape[-1])
         activated = captured["activated"]
         flat_activated = activated.reshape(-1, activated.shape[-1])

@@ -202,7 +202,9 @@ def _detect_moe_layers(config: dict) -> list[int]:
     num_layers = config.get("num_hidden_layers") or config.get("num_layers", 0)
     first_dense = config.get("first_k_dense_replace", 0)
     # Qwen3-MoE uses decoder_sparse_step instead of moe_layer_freq
-    freq_raw = config.get("moe_layer_freq") or config.get("decoder_sparse_step")
+    freq_raw = config.get("moe_layer_freq")
+    if freq_raw is None:
+        freq_raw = config.get("decoder_sparse_step")
     if freq_raw == 0:
         raise ValueError("moe_layer_freq / decoder_sparse_step is 0 — invalid config")
     freq = freq_raw or 1
