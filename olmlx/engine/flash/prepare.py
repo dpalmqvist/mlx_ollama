@@ -48,9 +48,8 @@ def _create_causal_mask(h: mx.array) -> mx.array | None:
 
 def _nullify_module_params(module: nn.Module) -> None:
     """Replace all parameter arrays with tiny placeholders to free VRAM."""
-    placeholder = mx.zeros((1,))
     new_params = tree_map(
-        lambda x: placeholder if isinstance(x, mx.array) else x,
+        lambda x: mx.zeros((1,)) if isinstance(x, mx.array) else x,
         module.parameters(),
     )
     module.update(new_params)
@@ -294,6 +293,11 @@ def _stream_record_activations(
         hidden_states.append(h)
 
     _nullify_module_params(embed)
+    # Free LM head and final norm — not needed for layer-by-layer streaming
+    for attr in ("lm_head", "norm", "output"):
+        submod = getattr(inner, attr, None) or getattr(model, attr, None)
+        if submod is not None and isinstance(submod, nn.Module):
+            _nullify_module_params(submod)
     gc.collect()
     mx.clear_cache()
 

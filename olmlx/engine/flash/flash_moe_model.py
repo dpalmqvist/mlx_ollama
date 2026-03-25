@@ -202,8 +202,12 @@ def _replace_moe_layers(
             activation=activation,
         )
 
-        # Detect router style and create appropriate replacement
-        if hasattr(moe_module, "shared_expert_gate"):
+        # Detect router style and create appropriate replacement.
+        # Qwen3-Next check must come first: it has both 'gate' and 'shared_expert_gate',
+        # but its gate is a plain nn.Linear (returns logits), unlike DeepSeek's gate
+        # which returns (inds, scores). We require both 'shared_expert_gate' and 'top_k'
+        # to distinguish from potential DeepSeek variants that might add shared experts.
+        if hasattr(moe_module, "shared_expert_gate") and hasattr(moe_module, "top_k"):
             # Qwen3-Next style: plain nn.Linear gate + shared_expert + shared_expert_gate
             replacement = _FlashMoEQwen3Next(moe_module, flash_moe)
         elif hasattr(moe_module, "gate"):
