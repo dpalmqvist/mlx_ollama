@@ -101,6 +101,7 @@ class _FlashMoEQwen3Next(nn.Module):
 
     def __call__(self, x):
         gates = self.gate(x)
+        gates = mx.softmax(gates, axis=-1, precise=True)
         k = self.top_k
         inds = mx.argpartition(gates, kth=-k, axis=-1)[..., -k:]
         scores = mx.take_along_axis(gates, inds, axis=-1)
@@ -203,7 +204,7 @@ def _replace_moe_layers(
         )
 
         # Detect router style and create appropriate replacement
-        if hasattr(moe_module, "shared_expert_gate"):
+        if getattr(moe_module, "shared_expert_gate", None) is not None:
             # Qwen3-Next style: plain nn.Linear gate + shared_expert + shared_expert_gate
             replacement = _FlashMoEQwen3Next(moe_module, flash_moe)
         elif hasattr(moe_module, "gate"):

@@ -263,7 +263,9 @@ class TestFlashMoeModelWrapper:
 class _MockQwen3NextSparseMoeBlock(nn.Module):
     """Mock Qwen3NextSparseMoeBlock — gate is a plain nn.Linear."""
 
-    def __init__(self, hidden_size, intermediate_size, num_experts, num_experts_per_tok):
+    def __init__(
+        self, hidden_size, intermediate_size, num_experts, num_experts_per_tok
+    ):
         super().__init__()
         self.gate = nn.Linear(hidden_size, num_experts, bias=False)
         self.switch_mlp = _MockSwitchGLU(hidden_size, intermediate_size, num_experts)
@@ -275,9 +277,10 @@ class _MockQwen3NextSparseMoeBlock(nn.Module):
 
     def __call__(self, x):
         gates = self.gate(x)
+        gates = mx.softmax(gates, axis=-1, precise=True)
         k = self.top_k
         inds = mx.argpartition(gates, kth=-k, axis=-1)[..., -k:]
-        scores = mx.take_along_axis(gates, inds, axis=-1)
+        _scores = mx.take_along_axis(gates, inds, axis=-1)
         y = x  # simplified
         shared_y = self.shared_expert(x)
         shared_y = mx.sigmoid(self.shared_expert_gate(x)) * shared_y
@@ -285,7 +288,9 @@ class _MockQwen3NextSparseMoeBlock(nn.Module):
 
 
 class _MockQwen3NextDecoderLayer(nn.Module):
-    def __init__(self, hidden_size, intermediate_size, num_experts, num_experts_per_tok, is_moe):
+    def __init__(
+        self, hidden_size, intermediate_size, num_experts, num_experts_per_tok, is_moe
+    ):
         super().__init__()
         if is_moe:
             self.mlp = _MockQwen3NextSparseMoeBlock(
@@ -296,23 +301,47 @@ class _MockQwen3NextDecoderLayer(nn.Module):
 
 
 class _MockQwen3NextModel(nn.Module):
-    def __init__(self, hidden_size, intermediate_size, num_experts, num_experts_per_tok, num_dense, num_moe):
+    def __init__(
+        self,
+        hidden_size,
+        intermediate_size,
+        num_experts,
+        num_experts_per_tok,
+        num_dense,
+        num_moe,
+    ):
         super().__init__()
-        self.args = type("Args", (), {
-            "hidden_size": hidden_size,
-            "moe_intermediate_size": intermediate_size,
-            "num_experts": num_experts,
-            "num_experts_per_tok": num_experts_per_tok,
-        })()
+        self.args = type(
+            "Args",
+            (),
+            {
+                "hidden_size": hidden_size,
+                "moe_intermediate_size": intermediate_size,
+                "num_experts": num_experts,
+                "num_experts_per_tok": num_experts_per_tok,
+            },
+        )()
         layers = []
         for i in range(num_dense):
-            layers.append(_MockQwen3NextDecoderLayer(
-                hidden_size, intermediate_size, num_experts, num_experts_per_tok, is_moe=False
-            ))
+            layers.append(
+                _MockQwen3NextDecoderLayer(
+                    hidden_size,
+                    intermediate_size,
+                    num_experts,
+                    num_experts_per_tok,
+                    is_moe=False,
+                )
+            )
         for i in range(num_moe):
-            layers.append(_MockQwen3NextDecoderLayer(
-                hidden_size, intermediate_size, num_experts, num_experts_per_tok, is_moe=True
-            ))
+            layers.append(
+                _MockQwen3NextDecoderLayer(
+                    hidden_size,
+                    intermediate_size,
+                    num_experts,
+                    num_experts_per_tok,
+                    is_moe=True,
+                )
+            )
         self.layers = layers
 
     def __call__(self, x, cache=None):
@@ -334,12 +363,18 @@ class TestFlashMoeQwen3Next:
         output_dir = tmp_path / "flash_moe"
 
         from olmlx.engine.flash.moe_bundler import bundle_moe_experts
+
         bundle_moe_experts(model_dir, output_dir)
 
         from olmlx.engine.flash.moe_weight_store import FlashMoeWeightStore
-        store = FlashMoeWeightStore(output_dir, num_io_threads=4, cache_budget_experts=16)
 
-        model = _MockQwen3NextModel(hidden, inter, experts, num_experts_per_tok, num_dense, num_moe)
+        store = FlashMoeWeightStore(
+            output_dir, num_io_threads=4, cache_budget_experts=16
+        )
+
+        model = _MockQwen3NextModel(
+            hidden, inter, experts, num_experts_per_tok, num_dense, num_moe
+        )
         return model, store, hidden, inter, experts, num_experts_per_tok
 
     def test_replaces_qwen3_next_moe_layers(self, model_and_store):
@@ -364,7 +399,7 @@ class TestFlashMoeQwen3Next:
             assert hasattr(mlp, "shared_expert_gate")
 
     def test_qwen3_next_forward_pass(self, model_and_store):
-        """Forward pass through Qwen3-Next Flash-MoE wrapper should not raise."""
+        """Forward pass through Qwen3-Next Flash-MoE wrapper produces valid output."""
         model, store, hidden, inter, experts, num_experts_per_tok = model_and_store
 
         from olmlx.engine.flash.flash_moe_model import FlashMoeModelWrapper
@@ -374,8 +409,12 @@ class TestFlashMoeQwen3Next:
             model, store, moe_layer_indices, hidden, inter, experts, num_experts_per_tok
         )
 
+        mx.random.seed(42)
         x = mx.random.normal((1, 4, hidden))
         # This should NOT raise "not enough values to unpack"
         result = wrapped.layers[1].mlp(x)
         mx.eval(result)
         assert result.shape == (1, 4, hidden)
+        # Numerical correctness: no NaN/Inf and experts actually contribute
+        assert mx.all(mx.isfinite(result)).item(), "Output contains NaN or Inf"
+        assert not mx.array_equal(result, x), "Output unchanged — experts had no effect"
