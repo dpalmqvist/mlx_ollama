@@ -55,7 +55,7 @@ class TestSpeculativeFlashDecoder:
 
     def test_draft_generate_returns_tokens(self, decoder):
         prompt = mx.array([[1, 2, 3]])
-        draft_tokens, draft_logits = decoder._draft_generate(prompt, n=4)
+        draft_tokens = decoder._draft_generate(prompt, n=4)
         assert len(draft_tokens) == 4
         assert all(0 <= t < 32 for t in draft_tokens)
 

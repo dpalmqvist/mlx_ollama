@@ -130,7 +130,10 @@ class PredictorBank:
     @classmethod
     def load(cls, path: Path) -> PredictorBank:
         """Load predictor bank from a directory."""
-        files = sorted(path.glob("predictor_*.npz"))
+        files = sorted(
+            path.glob("predictor_*.npz"),
+            key=lambda f: int(re.search(r"(\d+)", f.name).group(1)),
+        )
         if not files:
             raise FileNotFoundError(f"No predictor files found in {path}")
 

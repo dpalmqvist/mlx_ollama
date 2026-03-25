@@ -34,7 +34,7 @@ class SpeculativeFlashDecoder:
         self._alpha = 0.5  # initial acceptance rate estimate
         self._alpha_ema = acceptance_rate_ema
 
-    def _draft_generate(self, prompt: mx.array, n: int) -> tuple[list[int], mx.array]:
+    def _draft_generate(self, prompt: mx.array, n: int) -> list[int]:
         """Generate n candidate tokens with the draft model.
 
         Creates a fresh KV cache per call so the prompt is processed once
@@ -47,11 +47,9 @@ class SpeculativeFlashDecoder:
             n: Number of tokens to generate.
 
         Returns:
-            (tokens, logits) where tokens is list[int] of length n,
-            and logits is (n, vocab_size).
+            List of generated token IDs, length n.
         """
         tokens: list[int] = []
-        all_logits: list[mx.array] = []
 
         # Try to create a per-call KV cache for O(1) decode steps
         cache = None
@@ -69,7 +67,6 @@ class SpeculativeFlashDecoder:
             mx.eval(next_logits)
             next_token = int(mx.argmax(next_logits, axis=-1).item())
             tokens.append(next_token)
-            all_logits.append(next_logits.squeeze(0))
 
             # Decode: each step only processes the new token
             for _ in range(n - 1):
@@ -79,7 +76,6 @@ class SpeculativeFlashDecoder:
                 mx.eval(next_logits)
                 next_token = int(mx.argmax(next_logits, axis=-1).item())
                 tokens.append(next_token)
-                all_logits.append(next_logits.squeeze(0))
         else:
             # Fallback: no KV cache, rebuild full sequence each step
             for _ in range(n):
@@ -92,9 +88,8 @@ class SpeculativeFlashDecoder:
                 mx.eval(next_logits)
                 next_token = int(mx.argmax(next_logits, axis=-1).item())
                 tokens.append(next_token)
-                all_logits.append(next_logits.squeeze(0))
 
-        return tokens, mx.stack(all_logits)
+        return tokens
 
     def _verify(
         self,
@@ -146,7 +141,7 @@ class SpeculativeFlashDecoder:
             (accepted_tokens, num_draft_generated).
         """
         # 1. Draft model generates lambda candidates
-        draft_tokens, draft_logits = self._draft_generate(prompt, self._lambda)
+        draft_tokens = self._draft_generate(prompt, self._lambda)
 
         # 2. Target model verifies all candidates + 1 in one pass
         # TODO: use a KV cache for the target model so only the new lambda

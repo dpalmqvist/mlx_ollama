@@ -85,7 +85,7 @@ def _get_c4_calibration_data(num_samples: int = 10000) -> list[str]:
             texts.append(text[:2048])
             if len(texts) >= num_samples:
                 break
-    except Exception as exc:
+    except (ConnectionError, OSError) as exc:
         actual = min(num_samples, 256)
         logger.warning(
             "Failed to stream C4 dataset (%s: %s); "
