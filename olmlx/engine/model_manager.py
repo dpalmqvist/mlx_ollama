@@ -870,9 +870,10 @@ class ModelManager:
         wrapped = FlashModelWrapper(model, predictor_bank, weight_store, flash_config)
 
         if experimental.flash_speculative:
-            logger.warning(
-                "flash_speculative is enabled but speculative decoding is not yet "
-                "integrated into the inference pipeline — setting has no effect"
+            raise NotImplementedError(
+                "flash_speculative is not yet integrated into the inference pipeline. "
+                "SpeculativeFlashDecoder exists but requires target-model KV cache "
+                "support before it can be used for production inference."
             )
 
         return wrapped, tokenizer, False, caps

@@ -63,10 +63,8 @@ def _get_c4_calibration_data(num_samples: int = 10000) -> list[str]:
     try:
         import datasets as _ds_mod
 
-        if _ds_mod is None:
-            raise ImportError("datasets mocked as None")
         load_dataset = _ds_mod.load_dataset
-    except (ImportError, TypeError):
+    except ImportError:
         actual = min(num_samples, 256)
         logger.warning(
             "HuggingFace datasets not installed; "

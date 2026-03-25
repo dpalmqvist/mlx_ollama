@@ -75,7 +75,7 @@ class SparsityPredictor(nn.Module):
 def compute_layer_ranks(
     num_layers: int,
     base_rank: int = 128,
-    sensitive_layers: int = 4,
+    sensitive_layers: int = 0,
     sensitive_rank_multiplier: int = 4,
 ) -> list[int]:
     """Compute per-layer predictor ranks with higher rank for sensitive layers.
