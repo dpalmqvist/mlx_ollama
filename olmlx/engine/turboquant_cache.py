@@ -63,7 +63,7 @@ class TurboQuantKVCache(_BaseCache):
 
         # Allocate or expand buffers
         if self._key_indices is None or (prev + num_steps) > self._key_indices.shape[2]:
-            new_steps = (self.step + num_steps - 1) // self.step * self.step
+            new_steps = (num_steps + self.step - 1) // self.step * self.step
             idx_shape = (B, n_heads, new_steps, packed_dim)
             nrm_shape = (B, n_heads, new_steps, 1)
 
@@ -121,6 +121,11 @@ class TurboQuantKVCache(_BaseCache):
     def trim(self, n: int) -> int:
         n = min(self.offset, n)
         self.offset -= n
+        if self.offset == 0:
+            self._key_indices = None
+            self._key_norms = None
+            self._value_indices = None
+            self._value_norms = None
         return n
 
     def make_mask(self, *args, **kwargs):

@@ -122,10 +122,10 @@ def turboquant_quantize(
     head_dim = x.shape[-1]
     codebook = get_codebook(bits, head_dim)
 
-    # Compute and store vector norms
-    norms = mx.sqrt(mx.sum(x * x, axis=-1, keepdims=True))
+    # Compute norms in float32 to avoid overflow (float16 max ~65504)
+    norms = mx.sqrt(mx.sum(x.astype(mx.float32) ** 2, axis=-1, keepdims=True))
     # Normalize to unit sphere (avoid division by zero)
-    x_norm = x / mx.maximum(norms, mx.array(1e-8))
+    x_norm = x / mx.maximum(norms.astype(x.dtype), mx.array(1e-8, dtype=x.dtype))
 
     # Rotate: y = x_norm @ Πᵀ  (equivalent to Π @ x_norm per vector)
     y = x_norm @ rotation.matrix.T
