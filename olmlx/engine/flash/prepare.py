@@ -22,7 +22,7 @@ import mlx.nn as nn
 from mlx.utils import tree_map
 
 from olmlx.engine.flash.bundler import bundle_ffn_weights
-from olmlx.engine.flash.predictor import PredictorBank
+from olmlx.engine.flash.predictor import PredictorBank, compute_layer_ranks
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +53,58 @@ def _nullify_module_params(module: nn.Module) -> None:
         module.parameters(),
     )
     module.update(new_params)
+
+
+def _get_c4_calibration_data(num_samples: int = 10000) -> list[str]:
+    """Load calibration data from C4 dataset via HuggingFace datasets.
+
+    Falls back to synthetic data if the datasets library is not installed.
+    """
+    try:
+        import datasets as _ds_mod
+
+        load_dataset = _ds_mod.load_dataset
+    except ImportError:
+        actual = min(num_samples, 256)
+        logger.warning(
+            "HuggingFace datasets not installed; "
+            "falling back to %d synthetic calibration samples (requested %d). "
+            "Install with: pip install datasets",
+            actual,
+            num_samples,
+        )
+        return _get_calibration_data(actual)
+
+    try:
+        ds = load_dataset("allenai/c4", "en", split="train", streaming=True)
+        ds_iter = iter(ds)
+        texts: list[str] = []
+        try:
+            for example in ds_iter:
+                text = example.get("text", "")
+                if len(text) < 100:
+                    continue
+                texts.append(text[:2048])
+                if len(texts) >= num_samples:
+                    break
+        finally:
+            # Close the streaming iterator to release HTTP connections
+            if hasattr(ds_iter, "close"):
+                ds_iter.close()
+    except Exception as exc:
+        actual = min(num_samples, 256)
+        logger.warning(
+            "Failed to stream C4 dataset (%s: %s); "
+            "falling back to %d synthetic calibration samples",
+            type(exc).__name__,
+            exc,
+            actual,
+        )
+        return _get_calibration_data(actual)
+
+    if len(texts) < num_samples:
+        logger.warning("Only got %d C4 samples (requested %d)", len(texts), num_samples)
+    return texts
 
 
 def _get_calibration_data(num_samples: int = 256) -> list[str]:
@@ -353,15 +405,17 @@ def _train_predictors(
     hidden_size: int,
     intermediate_size: int,
     rank: int = 128,
+    ranks: list[int] | None = None,
     epochs: int = 5,
     lr: float = 1e-3,
+    balanced_loss: bool = True,
     progress_callback: Callable[[str, float], None] | None = None,
 ) -> PredictorBank:
     """Train per-layer sparsity predictors from recorded activations."""
     from mlx.optimizers import Adam
 
     num_layers = len(recordings)
-    bank = PredictorBank(num_layers, hidden_size, intermediate_size, rank)
+    bank = PredictorBank(num_layers, hidden_size, intermediate_size, rank, ranks=ranks)
 
     total_steps = num_layers * epochs
     step = 0
@@ -380,12 +434,25 @@ def _train_predictors(
         pred = bank.predictors[layer_idx]
         optimizer = Adam(learning_rate=lr)
 
+        # Compute inverse-frequency class weights for balanced loss.
+        # pos_weight = num_neg / num_pos makes total positive and negative
+        # loss contributions equal regardless of class imbalance.
+        if balanced_loss:
+            eps_w = 1e-7
+            num_pos = float(mx.sum(targets).item()) + eps_w
+            num_neg = float(mx.sum(1 - targets).item()) + eps_w
+            pos_w = min(num_neg / num_pos, 1000.0)
+            neg_w = 1.0
+        else:
+            pos_w = 1.0
+            neg_w = 1.0
+
         def loss_fn(model, x, y):
             scores = model(x)
-            # Binary cross-entropy
             eps = 1e-7
             return -mx.mean(
-                y * mx.log(scores + eps) + (1 - y) * mx.log(1 - scores + eps)
+                pos_w * y * mx.log(scores + eps)
+                + neg_w * (1 - y) * mx.log(1 - scores + eps)
             )
 
         loss_and_grad = nn.value_and_grad(pred, loss_fn)
@@ -409,7 +476,10 @@ def prepare_model_for_flash(
     model_path: str,
     output_dir: Path | None = None,
     rank: int = 128,
+    sensitive_layers: int = 0,
+    sensitive_rank_multiplier: int = 4,
     num_samples: int = 256,
+    calibration_dataset: str | None = None,
     activation_threshold: float = 0.01,
     epochs: int = 5,
     progress_callback: Callable[[str, float], None] | None = None,
@@ -443,7 +513,11 @@ def prepare_model_for_flash(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Step 1: Generate calibration data
-    calibration_texts = _get_calibration_data(num_samples)
+    if calibration_dataset == "synthetic":
+        calibration_texts = _get_calibration_data(num_samples)
+    else:
+        # Default to C4 (also handles calibration_dataset="c4" or None)
+        calibration_texts = _get_c4_calibration_data(num_samples)
 
     # Step 2: Stream-record activations (one layer at a time)
     recordings, hidden_size, intermediate_size, num_layers = _stream_record_activations(
@@ -459,11 +533,19 @@ def prepare_model_for_flash(
     if progress_callback:
         progress_callback("Training predictors", 0.4)
 
+    # Compute per-layer ranks if sensitive_layers is set
+    layer_ranks = None
+    if sensitive_layers > 0:
+        layer_ranks = compute_layer_ranks(
+            num_layers, rank, sensitive_layers, sensitive_rank_multiplier
+        )
+
     predictor_bank = _train_predictors(
         recordings,
         hidden_size,
         intermediate_size,
         rank=rank,
+        ranks=layer_ranks,
         epochs=epochs,
         progress_callback=lambda desc, frac: (
             progress_callback(desc, 0.4 + frac * 0.2) if progress_callback else None
@@ -489,7 +571,11 @@ def prepare_model_for_flash(
         "intermediate_size": intermediate_size,
         "num_layers": num_layers,
         "predictor_rank": rank,
+        "predictor_ranks": layer_ranks,
+        "sensitive_layers": sensitive_layers,
+        "sensitive_rank_multiplier": sensitive_rank_multiplier,
         "num_calibration_samples": num_samples,
+        "calibration_dataset": calibration_dataset or "c4",
         "activation_threshold": activation_threshold,
         "prepared_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }

@@ -71,6 +71,14 @@ class ExperimentalSettings(BaseSettings):
     flash_io_threads: Annotated[int, Field(gt=0)] = 32
     flash_cache_budget_neurons: Annotated[int, Field(ge=0)] = 1024
     flash_predictor_rank: Annotated[int, Field(gt=0)] = 128  # prepare-time only
+    flash_predictor_sensitive_layers: Annotated[int, Field(ge=0)] = 0
+    flash_predictor_sensitive_rank_multiplier: Annotated[int, Field(gt=0)] = 4
+    flash_bypass_os_cache: bool = False
+    flash_preallocated_buffer: bool = False
+    flash_memory_budget_fraction: Annotated[float, Field(gt=0, le=1.0)] | None = None
+    flash_speculative: bool = False
+    flash_speculative_draft_model: str | None = None
+    flash_speculative_tokens: Annotated[int, Field(gt=0)] = 4
 
     # Flash MoE (SSD-based expert offloading for MoE models)
     flash_moe: bool = False

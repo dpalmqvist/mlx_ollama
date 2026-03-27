@@ -6,6 +6,7 @@ that loads only predicted-active neuron weights from SSD.
 
 from __future__ import annotations
 
+import logging
 from collections import deque
 
 import mlx.core as mx
@@ -14,20 +15,38 @@ import mlx.nn as nn
 from olmlx.engine.flash.predictor import SparsityPredictor
 from olmlx.engine.flash.weight_store import FlashWeightStore
 
+logger = logging.getLogger(__name__)
+
 
 class WindowManager:
     """Sliding window of recently activated neurons per layer.
 
     Keeps track of neurons activated in the last k tokens to reduce
     incremental SSD reads between successive tokens.
+
+    When memory_budget_fraction is set, dynamically shrinks the window
+    if the total cached neuron count exceeds the budget (Paper Appendix C.3).
     """
 
-    def __init__(self, num_layers: int, window_size: int = 5):
+    def __init__(
+        self,
+        num_layers: int,
+        window_size: int = 5,
+        memory_budget_fraction: float | None = None,
+        intermediate_size: int | None = None,
+    ):
         self.window_size = window_size
-        self._history: dict[int, deque[set[int]]] = {
-            i: deque(maxlen=window_size) for i in range(num_layers)
-        }
-        # Cached union of recent window indices per layer
+        self._budget_neurons: int | None = None
+        if memory_budget_fraction is not None and intermediate_size is not None:
+            self._budget_neurons = int(intermediate_size * memory_budget_fraction)
+
+        # Use deque without maxlen when dynamic budgeting is enabled
+        if self._budget_neurons is not None:
+            self._history: dict[int, deque[set[int]]] = {
+                i: deque() for i in range(num_layers)
+            }
+        else:
+            self._history = {i: deque(maxlen=window_size) for i in range(num_layers)}
         self._cached_window: dict[int, set[int]] = {i: set() for i in range(num_layers)}
         self._dirty: dict[int, bool] = {i: False for i in range(num_layers)}
 
@@ -50,11 +69,44 @@ class WindowManager:
     def update(self, layer_idx: int, active_indices: mx.array) -> None:
         """Record newly activated neurons for this token."""
         if layer_idx not in self._history:
-            self._history[layer_idx] = deque(maxlen=self.window_size)
+            if self._budget_neurons is not None:
+                self._history[layer_idx] = deque()
+            else:
+                self._history[layer_idx] = deque(maxlen=self.window_size)
             self._cached_window[layer_idx] = set()
         mx.eval(active_indices)
         self._history[layer_idx].append(set(active_indices.tolist()))
         self._dirty[layer_idx] = True
+
+        # Enforce max window size for dynamic mode
+        if self._budget_neurons is not None:
+            while len(self._history[layer_idx]) > self.window_size:
+                self._history[layer_idx].popleft()
+                self._dirty[layer_idx] = True
+
+        self._adjust_window_size(layer_idx)
+
+    def _adjust_window_size(self, layer_idx: int) -> None:
+        """Shrink window if neuron count exceeds memory budget."""
+        if self._budget_neurons is None:
+            return
+        window = self.get_window(layer_idx)
+        while len(window) > self._budget_neurons and len(self._history[layer_idx]) > 1:
+            self._history[layer_idx].popleft()
+            # Recompute union directly instead of going through get_window
+            window = set()
+            for indices_set in self._history[layer_idx]:
+                window |= indices_set
+            self._cached_window[layer_idx] = window
+            self._dirty[layer_idx] = False
+        if len(window) > self._budget_neurons:
+            logger.warning(
+                "Layer %d: window has %d neurons but budget is %d "
+                "(single token exceeds budget)",
+                layer_idx,
+                len(window),
+                self._budget_neurons,
+            )
 
     def reset(self) -> None:
         """Clear all window state (new conversation)."""

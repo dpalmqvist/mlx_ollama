@@ -115,6 +115,88 @@ class TestWindowManager:
         assert wm.get_window(1) == {10, 20}
 
 
+class TestDynamicWindowManager:
+    def test_shrinks_when_over_budget(self):
+        """Window should shrink when neuron count exceeds budget."""
+        wm = WindowManager(
+            num_layers=1,
+            window_size=10,
+            memory_budget_fraction=0.5,
+            intermediate_size=10,
+        )
+        # Budget = 10 * 0.5 = 5 neurons
+        # Add tokens with many unique neurons
+        wm.update(0, mx.array([0, 1, 2]))
+        wm.update(0, mx.array([3, 4, 5]))
+        wm.update(0, mx.array([6, 7, 8]))
+
+        # Window should have been trimmed to stay near budget of 5
+        w = wm.get_window(0)
+        assert len(w) <= 6  # Some tolerance
+
+    def test_disabled_by_default(self):
+        """Without memory_budget_fraction, window behaves as fixed."""
+        wm = WindowManager(num_layers=1, window_size=2)
+        wm.update(0, mx.array([1, 2]))
+        wm.update(0, mx.array([3, 4]))
+        wm.update(0, mx.array([5, 6]))
+        w = wm.get_window(0)
+        # Fixed window_size=2: only last 2 updates
+        assert w == {3, 4, 5, 6}
+
+    def test_oldest_entries_dropped_first(self):
+        """When shrinking, oldest token entries are dropped."""
+        wm = WindowManager(
+            num_layers=1,
+            window_size=10,
+            memory_budget_fraction=0.3,
+            intermediate_size=10,
+        )
+        # Budget = 3 neurons
+        wm.update(0, mx.array([0, 1]))  # oldest
+        wm.update(0, mx.array([2, 3]))  # middle
+        wm.update(0, mx.array([4, 5]))  # newest
+
+        w = wm.get_window(0)
+        # Newest neurons should be present
+        assert 4 in w
+        assert 5 in w
+
+    def test_layers_independent_budgets(self):
+        """Each layer's window adjusts independently."""
+        wm = WindowManager(
+            num_layers=2,
+            window_size=10,
+            memory_budget_fraction=0.5,
+            intermediate_size=10,
+        )
+        # Layer 0: many neurons
+        for i in range(5):
+            wm.update(0, mx.array([i * 2, i * 2 + 1]))
+        # Layer 1: few neurons
+        wm.update(1, mx.array([0, 1]))
+
+        wm.get_window(0)  # exercise layer 0
+        w1 = wm.get_window(1)
+        # Layer 1 should have all its neurons (under budget)
+        assert w1 == {0, 1}
+
+    def test_warns_when_single_token_exceeds_budget(self, caplog):
+        """Log warning when a single token's neurons exceed the budget."""
+        import logging
+
+        wm = WindowManager(
+            num_layers=1,
+            window_size=10,
+            memory_budget_fraction=0.2,
+            intermediate_size=10,
+        )
+        # Budget = 2 neurons, but one token activates 5
+        with caplog.at_level(logging.WARNING, logger="olmlx.engine.flash.flash_mlp"):
+            wm.update(0, mx.array([0, 1, 2, 3, 4]))
+        assert "exceeds budget" in caplog.text
+
+
 # ---------------------------------------------------------------------------
 # FlashMLP tests
 # ---------------------------------------------------------------------------

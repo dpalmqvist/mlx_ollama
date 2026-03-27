@@ -990,6 +990,12 @@ def _cmd_flash_dense_prepare(args, model_path):
     print(f"Preparing {args.model} for flash inference...")
     print(f"  Model path: {model_path}")
     print(f"  Predictor rank: {args.rank}")
+    if args.sensitive_layers > 0:
+        print(
+            f"  Sensitive layers: last {args.sensitive_layers} (rank x{args.sensitive_rank_multiplier})"
+        )
+    dataset_label = args.calibration_dataset or "c4"
+    print(f"  Calibration dataset: {dataset_label}")
     print(f"  Calibration samples: {args.samples}")
     print(f"  Activation threshold: {args.threshold}")
     print(f"  Training epochs: {args.epochs}")
@@ -998,7 +1004,10 @@ def _cmd_flash_dense_prepare(args, model_path):
     output_dir = prepare_model_for_flash(
         model_path=model_path,
         rank=args.rank,
+        sensitive_layers=args.sensitive_layers,
+        sensitive_rank_multiplier=args.sensitive_rank_multiplier,
         num_samples=args.samples,
+        calibration_dataset=args.calibration_dataset,
         activation_threshold=args.threshold,
         epochs=args.epochs,
         progress_callback=_flash_progress,
@@ -1182,6 +1191,24 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=5,
         help="Predictor training epochs (default: 5)",
+    )
+    prepare_p.add_argument(
+        "--calibration-dataset",
+        type=str,
+        default=None,
+        help="Calibration dataset: 'c4' (default) or 'synthetic'",
+    )
+    prepare_p.add_argument(
+        "--sensitive-layers",
+        type=int,
+        default=0,
+        help="Number of last layers to use higher predictor rank (default: 0, disabled)",
+    )
+    prepare_p.add_argument(
+        "--sensitive-rank-multiplier",
+        type=int,
+        default=4,
+        help="Rank multiplier for sensitive layers (default: 4)",
     )
 
     info_p = flash_sub.add_parser(

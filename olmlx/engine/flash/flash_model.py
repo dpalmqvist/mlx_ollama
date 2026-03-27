@@ -33,6 +33,7 @@ class FlashConfig:
     window_size: int = 5
     io_threads: int = 32
     cache_budget_neurons: int = 1024
+    memory_budget_fraction: float | None = None
 
 
 class FlashModelWrapper(nn.Module):
@@ -53,7 +54,10 @@ class FlashModelWrapper(nn.Module):
         super().__init__()
         self._model = model
         self.window_manager = WindowManager(
-            flash_config.num_layers, flash_config.window_size
+            flash_config.num_layers,
+            flash_config.window_size,
+            memory_budget_fraction=flash_config.memory_budget_fraction,
+            intermediate_size=flash_config.intermediate_size,
         )
         self._replace_mlps(predictor_bank, weight_store, flash_config)
 
