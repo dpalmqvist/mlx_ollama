@@ -203,11 +203,11 @@ def _replace_moe_layers(
         )
 
         # Detect router style and create appropriate replacement.
-        # Qwen3-Next: gate is a plain nn.Linear (returns logits); we apply softmax.
+        # Qwen3-Next: gate is a linear layer (nn.Linear or QuantizedLinear) returning logits; we apply softmax.
         # DeepSeek-V3: gate is a custom module returning (inds, scores) directly.
         gate = getattr(moe_module, "gate", None)
-        if isinstance(gate, nn.Linear) and hasattr(moe_module, "shared_expert_gate"):
-            # Qwen3-Next style: plain nn.Linear gate + shared_expert + shared_expert_gate
+        if hasattr(moe_module, "shared_expert_gate") and gate is not None:
+            # Qwen3-Next style: linear gate + shared_expert + shared_expert_gate
             replacement = _FlashMoEQwen3Next(moe_module, flash_moe)
         elif gate is not None:
             # DeepSeek-V3 / Kimi-K2.5 style: gate returns (inds, scores)
