@@ -25,9 +25,9 @@ logger = logging.getLogger(__name__)
 class TurboQuantKVCache(_BaseCache):
     """KV cache with TurboQuant compression.
 
-    Stores only bit-packed indices and float16 norms. Dequantizes the
-    full cache on each ``update_and_fetch`` call — this is O(n) per step,
-    matching the cost of attention itself.
+    Stores only bit-packed indices and float32 norms. Dequantizes the
+    full cache on each ``update_and_fetch`` call — O(n · head_dim²) per
+    step due to the rotation matrix multiply.
     """
 
     step = 256
@@ -114,6 +114,13 @@ class TurboQuantKVCache(_BaseCache):
             dtype=input_dtype,
         )
         return k_out, v_out
+
+    @property
+    def state(self):
+        raise NotImplementedError(
+            "TurboQuantKVCache does not support serialization. "
+            "Disable disk cache offload when using TurboQuant."
+        )
 
     def is_trimmable(self):
         return True
