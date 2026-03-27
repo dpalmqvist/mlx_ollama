@@ -319,6 +319,35 @@ class TestTurboQuantKVCache:
         # For N=1, mask should be None (single token attention)
         assert mask is None
 
+    def test_prefix_stability(self):
+        """Dequantized prefix should be identical across consecutive fetches.
+
+        This verifies the O(n) incremental dequantization — the prefix
+        portion of the returned tensors must not change when new tokens
+        are appended.
+        """
+        cache = self._make_cache(bits=4, head_dim=64)
+
+        # Prefill 16 tokens
+        k1 = mx.random.normal((1, 4, 16, 64))
+        v1 = mx.random.normal((1, 4, 16, 64))
+        k_out1, v_out1 = cache.update_and_fetch(k1, v1)
+
+        # Append 1 token
+        k2 = mx.random.normal((1, 4, 1, 64))
+        v2 = mx.random.normal((1, 4, 1, 64))
+        k_out2, v_out2 = cache.update_and_fetch(k2, v2)
+
+        # First 16 tokens of second fetch should match first fetch exactly
+        np.testing.assert_array_equal(
+            np.array(k_out2[..., :16, :]),
+            np.array(k_out1),
+        )
+        np.testing.assert_array_equal(
+            np.array(v_out2[..., :16, :]),
+            np.array(v_out1),
+        )
+
     def test_fetch_after_trim_returns_correct_length(self):
         """After trim, next fetch should return trimmed + new tokens."""
         cache = self._make_cache(bits=4, head_dim=64)
@@ -393,22 +422,38 @@ class TestMakeTurboQuantCache:
         r1 = np.array(cache[1].rotation_key.matrix)
         assert not np.allclose(r0, r1)
 
-    def test_head_dim_fallback(self):
-        """When model.args.head_dim is missing, derive from hidden_size / num_attention_heads."""
+    def test_head_dim_fallback_from_k_proj(self):
+        """When model.args.head_dim is missing, derive from k_proj weight shape."""
         from unittest.mock import MagicMock
 
         from olmlx.engine.turboquant_cache import make_turboquant_cache
 
         class FakeArgs:
-            hidden_size = 512
-            num_attention_heads = 8
+            # Gemma 3 style: head_dim not in args, and hidden_size // num_heads is wrong
+            num_key_value_heads = 4
 
         model = MagicMock()
-        model.layers = [MagicMock() for _ in range(1)]
+        layer = MagicMock()
+        # k_proj output dim = num_kv_heads * head_dim = 4 * 64 = 256
+        layer.self_attn.k_proj.weight = mx.zeros((256, 512))
+        model.layers = [layer]
         model.args = FakeArgs()
 
         cache = make_turboquant_cache(model, bits=4)
         assert cache[0].rotation_key.matrix.shape == (64, 64)
+
+    def test_head_dim_from_args(self):
+        """When model.args.head_dim is present, use it directly."""
+        from unittest.mock import MagicMock
+
+        from olmlx.engine.turboquant_cache import make_turboquant_cache
+
+        model = MagicMock()
+        model.layers = [MagicMock() for _ in range(1)]
+        model.args.head_dim = 128
+
+        cache = make_turboquant_cache(model, bits=4)
+        assert cache[0].rotation_key.matrix.shape == (128, 128)
 
 
 # ---------------------------------------------------------------------------
@@ -441,6 +486,44 @@ class TestKvCacheQuantConfig:
 
         s = ExperimentalSettings(_env_file=None)
         assert s.kv_cache_quant == "turboquant:2"
+
+    def test_invalid_bits_rejected(self, monkeypatch):
+        """Unsupported bit-width should fail at config validation time."""
+        from pydantic import ValidationError
+
+        from olmlx.config import ExperimentalSettings
+
+        monkeypatch.setenv("OLMLX_EXPERIMENTAL_KV_CACHE_QUANT", "turboquant:3")
+        with pytest.raises(ValidationError):
+            ExperimentalSettings(_env_file=None)
+
+    def test_missing_bits_rejected(self, monkeypatch):
+        """Malformed value without bits should fail at config validation."""
+        from pydantic import ValidationError
+
+        from olmlx.config import ExperimentalSettings
+
+        monkeypatch.setenv("OLMLX_EXPERIMENTAL_KV_CACHE_QUANT", "turboquant:")
+        with pytest.raises(ValidationError):
+            ExperimentalSettings(_env_file=None)
+
+    def test_unknown_method_rejected(self, monkeypatch):
+        from pydantic import ValidationError
+
+        from olmlx.config import ExperimentalSettings
+
+        monkeypatch.setenv("OLMLX_EXPERIMENTAL_KV_CACHE_QUANT", "foo:4")
+        with pytest.raises(ValidationError):
+            ExperimentalSettings(_env_file=None)
+
+    def test_bare_string_rejected(self, monkeypatch):
+        from pydantic import ValidationError
+
+        from olmlx.config import ExperimentalSettings
+
+        monkeypatch.setenv("OLMLX_EXPERIMENTAL_KV_CACHE_QUANT", "turboquant")
+        with pytest.raises(ValidationError):
+            ExperimentalSettings(_env_file=None)
 
 
 # ---------------------------------------------------------------------------
