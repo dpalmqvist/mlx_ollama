@@ -142,7 +142,7 @@ class TestModelManager:
         with patch.object(
             manager,
             "_load_model",
-            return_value=(mock_model, mock_tokenizer, False, TemplateCaps()),
+            return_value=(mock_model, mock_tokenizer, False, TemplateCaps(), None),
         ):
             await manager.ensure_loaded("qwen3")
 
@@ -297,7 +297,7 @@ class TestLoadModel:
             mock_mlx_lm = MagicMock()
             mock_mlx_lm.load.return_value = (mock_model, mock_tokenizer)
             with patch.dict("sys.modules", {"mlx_lm": mock_mlx_lm}):
-                model, tokenizer, is_vlm, caps = manager._load_model("test/path")
+                model, tokenizer, is_vlm, caps, _ = manager._load_model("test/path")
 
         assert is_vlm is False
         assert model is mock_model
@@ -314,7 +314,7 @@ class TestLoadModel:
             mock_mlx_vlm = MagicMock()
             mock_mlx_vlm.load.return_value = (mock_model, mock_processor)
             with patch.dict("sys.modules", {"mlx_vlm": mock_mlx_vlm}):
-                model, tokenizer, is_vlm, caps = manager._load_model("test/vlm")
+                model, tokenizer, is_vlm, caps, _ = manager._load_model("test/vlm")
 
         assert is_vlm is True
 
@@ -334,7 +334,7 @@ class TestLoadModel:
             with patch.dict(
                 "sys.modules", {"mlx_lm": mock_mlx_lm, "mlx_vlm": mock_mlx_vlm}
             ):
-                model, tokenizer, is_vlm, caps = manager._load_model("test/path")
+                model, tokenizer, is_vlm, caps, _ = manager._load_model("test/path")
 
         assert is_vlm is True
 
@@ -349,7 +349,7 @@ class TestLoadModel:
             mock_mlx_lm = MagicMock()
             mock_mlx_lm.load.return_value = (mock_model, mock_tokenizer)
             with patch.dict("sys.modules", {"mlx_lm": mock_mlx_lm}):
-                model, tokenizer, is_vlm, caps = manager._load_model("test/path")
+                model, tokenizer, is_vlm, caps, _ = manager._load_model("test/path")
 
         assert is_vlm is False
 
@@ -369,7 +369,7 @@ class TestLoadModel:
             with patch.dict(
                 "sys.modules", {"mlx_lm": mock_mlx_lm, "mlx_vlm": mock_mlx_vlm}
             ):
-                model, tokenizer, is_vlm, caps = manager._load_model("test/path")
+                model, tokenizer, is_vlm, caps, _ = manager._load_model("test/path")
 
         assert is_vlm is True
 
@@ -471,7 +471,7 @@ class TestLoadModel:
             with patch("huggingface_hub.snapshot_download"):
                 with patch.dict("sys.modules", {"mlx_lm": mock_mlx_lm}):
                     with patch.object(Path, "unlink", unlink_that_fails_on_downloading):
-                        model, tok, is_vlm, caps = manager._load_model("test/path")
+                        model, tok, is_vlm, caps, _ = manager._load_model("test/path")
 
         assert model is mock_model
 
@@ -491,7 +491,7 @@ class TestModelLoadTimeout:
 
         def slow_load(hf_path):
             time.sleep(0.4)
-            return (MagicMock(), MagicMock(), False, TemplateCaps())
+            return (MagicMock(), MagicMock(), False, TemplateCaps(), None)
 
         with (
             patch.object(manager, "_load_model", side_effect=slow_load),
@@ -523,7 +523,7 @@ class TestModelLoadTimeout:
             patch.object(
                 manager,
                 "_load_model",
-                return_value=(mock_model, mock_tokenizer, False, TemplateCaps()),
+                return_value=(mock_model, mock_tokenizer, False, TemplateCaps(), None),
             ),
             patch(
                 "olmlx.utils.memory.get_metal_memory",
@@ -558,7 +558,7 @@ class TestModelLoadTimeout:
             patch.object(
                 manager,
                 "_load_model",
-                return_value=(mock_model, mock_tokenizer, False, TemplateCaps()),
+                return_value=(mock_model, mock_tokenizer, False, TemplateCaps(), None),
             ),
             patch(
                 "olmlx.utils.memory.get_metal_memory",
@@ -585,7 +585,7 @@ class TestModelLoadTimeout:
 
         def slow_load(hf_path):
             time.sleep(0.4)
-            return (MagicMock(), MagicMock(), False, TemplateCaps())
+            return (MagicMock(), MagicMock(), False, TemplateCaps(), None)
 
         with (
             patch.object(manager, "_load_model", side_effect=slow_load),
@@ -617,7 +617,7 @@ class TestModelLoadTimeout:
 
         def slow_load(hf_path):
             time.sleep(0.3)  # Short enough to finish during the test
-            return (MagicMock(), MagicMock(), False, TemplateCaps())
+            return (MagicMock(), MagicMock(), False, TemplateCaps(), None)
 
         with (
             patch.object(manager, "_load_model", side_effect=slow_load),
@@ -661,7 +661,7 @@ class TestModelLoadTimeout:
             call_count += 1
             if call_count == 1:
                 time.sleep(0.3)  # First call triggers timeout
-            return (MagicMock(), MagicMock(), False, TemplateCaps())
+            return (MagicMock(), MagicMock(), False, TemplateCaps(), None)
 
         total_ram = 64 * self.GB
 
@@ -718,7 +718,7 @@ class TestModelLoadTimeout:
             call_count += 1
             if call_count == 1:
                 time.sleep(0.5)  # First call: triggers timeout, cleanup takes 0.5s
-            return (MagicMock(), MagicMock(), False, TemplateCaps())
+            return (MagicMock(), MagicMock(), False, TemplateCaps(), None)
 
         total_ram = 64 * self.GB
         mem_before = 1 * self.GB
@@ -778,7 +778,7 @@ class TestModelLoadTimeout:
 
         def slow_load(hf_path):
             time.sleep(0.3)
-            return (MagicMock(), MagicMock(), False, TemplateCaps())
+            return (MagicMock(), MagicMock(), False, TemplateCaps(), None)
 
         gc_call_count = 0
 
@@ -826,7 +826,7 @@ class TestModelLoadTimeout:
 
         def very_slow_load(hf_path):
             time.sleep(10)  # Would run forever without cancellation
-            return (MagicMock(), MagicMock(), False, TemplateCaps())
+            return (MagicMock(), MagicMock(), False, TemplateCaps(), None)
 
         with (
             patch.object(manager, "_load_model", side_effect=very_slow_load),
@@ -860,7 +860,7 @@ class TestModelLoadTimeout:
 
         def slow_load(hf_path):
             time.sleep(0.4)
-            return (MagicMock(), MagicMock(), False, TemplateCaps())
+            return (MagicMock(), MagicMock(), False, TemplateCaps(), None)
 
         with (
             patch.object(manager, "_load_model", side_effect=slow_load),
@@ -901,7 +901,7 @@ class TestModelLoadTimeout:
             patch.object(
                 manager,
                 "_load_model",
-                return_value=(mock_model, mock_tokenizer, False, TemplateCaps()),
+                return_value=(mock_model, mock_tokenizer, False, TemplateCaps(), None),
             ),
             patch(
                 "olmlx.utils.memory.get_metal_memory",
@@ -1131,7 +1131,7 @@ class TestMemoryCheck:
             patch.object(
                 manager,
                 "_load_model",
-                return_value=(mock_model, mock_tokenizer, False, TemplateCaps()),
+                return_value=(mock_model, mock_tokenizer, False, TemplateCaps(), None),
             ),
             patch(
                 "olmlx.utils.memory.get_metal_memory",
@@ -1169,7 +1169,7 @@ class TestMemoryCheck:
             patch.object(
                 manager,
                 "_load_model",
-                return_value=(mock_model, mock_tokenizer, False, TemplateCaps()),
+                return_value=(mock_model, mock_tokenizer, False, TemplateCaps(), None),
             ),
             patch(
                 "olmlx.utils.memory.get_metal_memory",
@@ -1210,7 +1210,7 @@ class TestMemoryCheck:
             patch.object(
                 manager,
                 "_load_model",
-                return_value=(mock_model, mock_tokenizer, False, TemplateCaps()),
+                return_value=(mock_model, mock_tokenizer, False, TemplateCaps(), None),
             ),
             patch(
                 "olmlx.utils.memory.get_metal_memory",
@@ -1244,7 +1244,7 @@ class TestMemoryCheck:
             patch.object(
                 manager,
                 "_load_model",
-                return_value=(mock_model, mock_tokenizer, False, TemplateCaps()),
+                return_value=(mock_model, mock_tokenizer, False, TemplateCaps(), None),
             ),
             patch(
                 "olmlx.utils.memory.get_metal_memory",
@@ -1281,7 +1281,7 @@ class TestMemoryCheck:
             patch.object(
                 manager,
                 "_load_model",
-                return_value=(mock_model, mock_tokenizer, False, TemplateCaps()),
+                return_value=(mock_model, mock_tokenizer, False, TemplateCaps(), None),
             ),
             patch(
                 "olmlx.utils.memory.get_metal_memory",
@@ -1347,7 +1347,7 @@ class TestMemoryCheck:
             patch.object(
                 manager,
                 "_load_model",
-                return_value=(mock_model, mock_tokenizer, False, TemplateCaps()),
+                return_value=(mock_model, mock_tokenizer, False, TemplateCaps(), None),
             ),
             patch(
                 "olmlx.utils.memory.get_metal_memory",
@@ -1388,7 +1388,7 @@ class TestMemoryCheck:
             patch.object(
                 manager,
                 "_load_model",
-                return_value=(mock_model, mock_tokenizer, False, TemplateCaps()),
+                return_value=(mock_model, mock_tokenizer, False, TemplateCaps(), None),
             ),
             patch(
                 "olmlx.utils.memory.get_metal_memory",
@@ -1427,7 +1427,7 @@ class TestMemoryCheck:
             patch.object(
                 manager,
                 "_load_model",
-                return_value=(mock_model, mock_tokenizer, False, TemplateCaps()),
+                return_value=(mock_model, mock_tokenizer, False, TemplateCaps(), None),
             ),
             patch(
                 "olmlx.utils.memory.get_metal_memory",
@@ -1458,7 +1458,7 @@ class TestMemoryCheck:
             patch.object(
                 manager,
                 "_load_model",
-                return_value=(mock_model, mock_tokenizer, False, TemplateCaps()),
+                return_value=(mock_model, mock_tokenizer, False, TemplateCaps(), None),
             ),
             patch(
                 "olmlx.utils.memory.get_metal_memory",

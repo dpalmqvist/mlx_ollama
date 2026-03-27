@@ -491,10 +491,12 @@ class TestModelManagerSharding:
 
         manager = ModelManager(mock_registry, distributed_group=group)
         # Patch _load_model to return our mock model
-        manager._load_model = MagicMock(return_value=(model, tokenizer, False, caps))
+        manager._load_model = MagicMock(
+            return_value=(model, tokenizer, False, caps, None)
+        )
 
         # Call _load_model_and_shard (the internal that wraps _load_model + shard)
-        result_model, result_tok, is_vlm, result_caps, is_distributed = (
+        result_model, result_tok, is_vlm, result_caps, is_distributed, _ = (
             manager._load_model_and_shard("test/model")
         )
 
@@ -511,9 +513,11 @@ class TestModelManagerSharding:
         caps = MagicMock()
 
         manager = ModelManager(mock_registry)
-        manager._load_model = MagicMock(return_value=(model, tokenizer, False, caps))
+        manager._load_model = MagicMock(
+            return_value=(model, tokenizer, False, caps, None)
+        )
 
-        result_model, result_tok, is_vlm, result_caps, is_distributed = (
+        result_model, result_tok, is_vlm, result_caps, is_distributed, _ = (
             manager._load_model_and_shard("test/model")
         )
 
@@ -531,7 +535,9 @@ class TestModelManagerSharding:
         group = MagicMock()
 
         manager = ModelManager(mock_registry, distributed_group=group)
-        manager._load_model = MagicMock(return_value=(model, tokenizer, False, caps))
+        manager._load_model = MagicMock(
+            return_value=(model, tokenizer, False, caps, None)
+        )
 
         with pytest.raises(ValueError, match="does not support distributed"):
             manager._load_model_and_shard("test/model")
@@ -939,7 +945,9 @@ class TestVLMDistributedRejection:
 
         manager = ModelManager(MagicMock(), distributed_group=group)
         # _load_model returns is_vlm=True
-        manager._load_model = MagicMock(return_value=(model, tokenizer, True, caps))
+        manager._load_model = MagicMock(
+            return_value=(model, tokenizer, True, caps, None)
+        )
 
         with pytest.raises(ValueError, match="VLM models are not supported"):
             manager._load_model_and_shard("test/vlm-model")
@@ -955,9 +963,11 @@ class TestVLMDistributedRejection:
         group = MagicMock()
 
         manager = ModelManager(MagicMock(), distributed_group=group)
-        manager._load_model = MagicMock(return_value=(model, tokenizer, False, caps))
+        manager._load_model = MagicMock(
+            return_value=(model, tokenizer, False, caps, None)
+        )
 
-        _, _, is_vlm, _, is_distributed = manager._load_model_and_shard("test/model")
+        _, _, is_vlm, _, is_distributed, _ = manager._load_model_and_shard("test/model")
         assert is_vlm is False
         assert is_distributed is True
         model.shard.assert_called_once_with(group)

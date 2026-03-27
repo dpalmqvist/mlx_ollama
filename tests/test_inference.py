@@ -1514,6 +1514,10 @@ class TestKvCachePreflightCheck:
         lm = MagicMock()
         lm.is_vlm = False
         lm.is_distributed = False
+        lm.speculative_decoder = None
+        type(lm).is_speculative = property(
+            lambda self: self.speculative_decoder is not None
+        )
         lm.model = MagicMock()
         lm.model.args = MagicMock()
         lm.model.args.num_hidden_layers = 32

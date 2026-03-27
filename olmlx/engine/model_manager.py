@@ -249,6 +249,7 @@ class LoadedModel:
     is_distributed: bool = False
     is_flash: bool = False
     is_flash_moe: bool = False
+    speculative_decoder: Any = None
     weight_store: Any = None
     template_caps: TemplateCaps = field(default_factory=TemplateCaps)
     loaded_at: float = field(default_factory=time.time)
@@ -275,6 +276,10 @@ class LoadedModel:
                 model_name=self.name,
                 disk_max_bytes=disk_max_bytes,
             )
+
+    @property
+    def is_speculative(self) -> bool:
+        return self.speculative_decoder is not None
 
     @property
     def text_tokenizer(self) -> Any:
@@ -435,7 +440,10 @@ class ModelManager:
                         )
                     oldest_name = min(evictable, key=lambda k: evictable[k].loaded_at)
                     logger.info("Evicting model %s", oldest_name)
-                    del self._loaded[oldest_name]
+                    evicted = self._loaded.pop(oldest_name)
+                    # Release draft model Metal memory promptly
+                    evicted.speculative_decoder = None
+                    del evicted
 
                 # Flush Metal allocator cache so that buffers from evicted models
                 # don't inflate the mem_before measurement below.  Skip when
@@ -476,6 +484,7 @@ class ModelManager:
                                 is_vlm,
                                 caps,
                                 is_distributed,
+                                _spec_decoder,
                             ) = await asyncio.wait_for(
                                 asyncio.shield(load_task), timeout=timeout
                             )
@@ -497,7 +506,14 @@ class ModelManager:
                                 )
                             raise
                     else:
-                        model, tokenizer, is_vlm, caps, is_distributed = await coro
+                        (
+                            model,
+                            tokenizer,
+                            is_vlm,
+                            caps,
+                            is_distributed,
+                            _spec_decoder,
+                        ) = await coro
 
                     # Check if the model fits safely in memory.  On Apple Silicon
                     # the GPU shares system RAM — if total Metal memory exceeds the
@@ -581,6 +597,7 @@ class ModelManager:
                         is_distributed=is_distributed,
                         is_flash=is_flash,
                         is_flash_moe=is_flash_moe,
+                        speculative_decoder=_spec_decoder,
                         weight_store=_weight_store,
                         template_caps=caps,
                         expires_at=expires,
@@ -694,6 +711,8 @@ class ModelManager:
         lm = self._loaded.pop(normalized)
         if lm.weight_store is not None:
             lm.weight_store.close()
+        # Release draft model Metal memory promptly
+        lm.speculative_decoder = None
         return True
 
     # Config keys that indicate a vision-language model
@@ -818,7 +837,7 @@ class ModelManager:
 
     def _load_flash_model(
         self, hf_path: str, load_path: str, flash_dir: Path
-    ) -> tuple[Any, Any, bool, TemplateCaps]:
+    ) -> tuple[Any, Any, bool, TemplateCaps, Any]:
         """Load a model in flash mode (LLM in a Flash).
 
         1. Load model normally via mlx-lm
@@ -870,13 +889,46 @@ class ModelManager:
         wrapped = FlashModelWrapper(model, predictor_bank, weight_store, flash_config)
 
         if experimental.flash_speculative:
-            raise NotImplementedError(
-                "flash_speculative is not yet integrated into the inference pipeline. "
-                "SpeculativeFlashDecoder exists but requires target-model KV cache "
-                "support before it can be used for production inference."
+            from olmlx.engine.flash.speculative import SpeculativeFlashDecoder
+
+            if not experimental.flash_speculative_draft_model:
+                raise ValueError(
+                    "flash_speculative requires flash_speculative_draft_model to be set "
+                    "(OLMLX_EXPERIMENTAL_FLASH_SPECULATIVE_DRAFT_MODEL)"
+                )
+
+            logger.info(
+                "Loading draft model %s for speculative decoding",
+                experimental.flash_speculative_draft_model,
+            )
+            draft_model, draft_tokenizer = mlx_lm.load(
+                experimental.flash_speculative_draft_model
             )
 
-        return wrapped, tokenizer, False, caps
+            # Verify vocabulary compatibility — a mismatch causes silent token ID errors
+            target_vocab = getattr(getattr(wrapped, "args", None), "vocab_size", None)
+            draft_vocab = getattr(
+                getattr(draft_model, "args", None), "vocab_size", None
+            )
+            if (
+                target_vocab is not None
+                and draft_vocab is not None
+                and target_vocab != draft_vocab
+            ):
+                raise ValueError(
+                    f"Draft model vocab_size ({draft_vocab}) does not match "
+                    f"target model vocab_size ({target_vocab}). "
+                    f"Speculative decoding requires matching vocabularies."
+                )
+
+            decoder = SpeculativeFlashDecoder(
+                draft_model=draft_model,
+                target_model=wrapped,
+                num_speculative_tokens=experimental.flash_speculative_tokens,
+            )
+            return wrapped, tokenizer, False, caps, decoder
+
+        return wrapped, tokenizer, False, caps, None
 
     def _flash_moe_dir(self, hf_path: str) -> Path | None:
         """Return the flash-MoE directory for a model, if it exists."""
@@ -946,8 +998,11 @@ class ModelManager:
 
         return wrapped, tokenizer, False, caps
 
-    def _load_model(self, hf_path: str) -> tuple[Any, Any, bool, TemplateCaps]:
-        """Load a model, using config.json inspection to choose the right library."""
+    def _load_model(self, hf_path: str) -> tuple[Any, Any, bool, TemplateCaps, Any]:
+        """Load a model, using config.json inspection to choose the right library.
+
+        Returns (model, tokenizer, is_vlm, caps, speculative_decoder).
+        """
         # Ensure model is downloaded to the store
         load_path: str = hf_path
         if self.store is not None:
@@ -958,7 +1013,10 @@ class ModelManager:
         if self._is_flash_moe_enabled():
             flash_moe_dir = self._flash_moe_dir(hf_path)
             if flash_moe_dir is not None:
-                return self._load_flash_moe_model(hf_path, load_path, flash_moe_dir)
+                return (
+                    *self._load_flash_moe_model(hf_path, load_path, flash_moe_dir),
+                    None,
+                )
 
         # Check for flash-prepared model
         if self._is_flash_enabled():
@@ -976,19 +1034,19 @@ class ModelManager:
             model, processor = mlx_vlm.load(load_path)
             tok = processor.tokenizer if hasattr(processor, "tokenizer") else processor
             caps = detect_caps(tok)
-            return model, processor, True, caps
+            return model, processor, True, caps, None
 
         # Text or unknown — try mlx-lm first, fall back to mlx-vlm
-        return self._try_lm_then_vlm(load_path, hf_path)
+        return (*self._try_lm_then_vlm(load_path, hf_path), None)
 
     def _load_model_and_shard(
         self, hf_path: str
-    ) -> tuple[Any, Any, bool, TemplateCaps, bool]:
+    ) -> tuple[Any, Any, bool, TemplateCaps, bool, Any]:
         """Load a model and optionally shard it for distributed inference.
 
-        Returns (model, tokenizer, is_vlm, caps, is_distributed).
+        Returns (model, tokenizer, is_vlm, caps, is_distributed, speculative_decoder).
         """
-        model, tokenizer, is_vlm, caps = self._load_model(hf_path)
+        model, tokenizer, is_vlm, caps, speculative_decoder = self._load_model(hf_path)
         is_distributed = False
 
         if self._distributed_group is not None:
@@ -1051,7 +1109,7 @@ class ModelManager:
                     f"Supported: 'tensor', 'pipeline'."
                 )
 
-        return model, tokenizer, is_vlm, caps, is_distributed
+        return model, tokenizer, is_vlm, caps, is_distributed, speculative_decoder
 
     async def _expire_stale(self):
         """Unload models whose keep-alive has expired (active_refs == 0)."""
