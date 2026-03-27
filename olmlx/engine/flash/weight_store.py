@@ -380,9 +380,7 @@ class FlashWeightStore:
                 return buf.get_matrices(neuron_indices)
 
         # Re-fetch evicted neurons outside the lock (rare path)
-        extra = {
-            idx: self._read_neuron_raw(layer_idx, idx) for idx in still_missing
-        }
+        extra = {idx: self._read_neuron_raw(layer_idx, idx) for idx in still_missing}
         with buf.lock:
             for idx, (gate, up, down) in extra.items():
                 buf.insert(idx, gate, up, down)

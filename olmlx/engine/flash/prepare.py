@@ -441,7 +441,7 @@ def _train_predictors(
             eps_w = 1e-7
             num_pos = float(mx.sum(targets).item()) + eps_w
             num_neg = float(mx.sum(1 - targets).item()) + eps_w
-            pos_w = num_neg / num_pos
+            pos_w = min(num_neg / num_pos, 1000.0)
             neg_w = 1.0
         else:
             pos_w = 1.0
