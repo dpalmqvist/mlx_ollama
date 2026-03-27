@@ -91,7 +91,11 @@ class ExperimentalSettings(BaseSettings):
         _VALID_METHODS = {"turboquant"}
         _VALID_BITS = {"2", "4"}
         parts = v.split(":", 1)
-        if len(parts) != 2 or parts[0] not in _VALID_METHODS or parts[1] not in _VALID_BITS:
+        if (
+            len(parts) != 2
+            or parts[0] not in _VALID_METHODS
+            or parts[1] not in _VALID_BITS
+        ):
             raise ValueError(
                 f"Invalid kv_cache_quant={v!r}. "
                 f"Expected '<method>:<bits>' where method is one of {_VALID_METHODS} "

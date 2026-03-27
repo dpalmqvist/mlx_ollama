@@ -46,9 +46,7 @@ class TestCodebook:
 
         cb = get_codebook(bits=2, dim=128)
         expected = mx.array(GAUSSIAN_CODEBOOKS[2]) / mx.sqrt(mx.array(128.0))
-        np.testing.assert_allclose(
-            np.array(cb), np.array(expected), atol=1e-6
-        )
+        np.testing.assert_allclose(np.array(cb), np.array(expected), atol=1e-6)
 
 
 class TestRotation:
@@ -61,9 +59,7 @@ class TestRotation:
         rot = TurboQuantRotation(head_dim=128, seed=42)
         product = rot.matrix @ rot.matrix.T
         identity = mx.eye(128)
-        np.testing.assert_allclose(
-            np.array(product), np.array(identity), atol=1e-5
-        )
+        np.testing.assert_allclose(np.array(product), np.array(identity), atol=1e-5)
 
     def test_deterministic(self):
         """Same seed should produce same rotation."""
@@ -301,11 +297,13 @@ class TestTurboQuantKVCache:
         # Check relative MSE
         k_mse = float(mx.mean((keys - k_out) ** 2))
         k_var = float(mx.mean(keys**2))
-        assert k_mse / k_var < 0.05, f"Key 4-bit relative MSE too high: {k_mse/k_var}"
+        assert k_mse / k_var < 0.05, f"Key 4-bit relative MSE too high: {k_mse / k_var}"
 
         v_mse = float(mx.mean((values - v_out) ** 2))
         v_var = float(mx.mean(values**2))
-        assert v_mse / v_var < 0.05, f"Value 4-bit relative MSE too high: {v_mse/v_var}"
+        assert v_mse / v_var < 0.05, (
+            f"Value 4-bit relative MSE too high: {v_mse / v_var}"
+        )
 
     def test_make_mask(self):
         """make_mask should delegate to create_attention_mask."""
@@ -469,7 +467,11 @@ class TestKvCacheQuantConfig:
 
         s = ExperimentalSettings(
             _env_file=None,
-            **{k: v.default for k, v in ExperimentalSettings.model_fields.items() if v.default is not None and k != "kv_cache_quant"},
+            **{
+                k: v.default
+                for k, v in ExperimentalSettings.model_fields.items()
+                if v.default is not None and k != "kv_cache_quant"
+            },
         )
         assert s.kv_cache_quant is None
 

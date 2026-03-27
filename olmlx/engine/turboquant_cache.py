@@ -177,7 +177,9 @@ def make_turboquant_cache(model: Any, bits: int) -> list[TurboQuantKVCache]:
     for i in range(num_layers):
         rot_k = TurboQuantRotation(head_dim=head_dim, seed=i * 2)
         rot_v = TurboQuantRotation(head_dim=head_dim, seed=i * 2 + 1)
-        caches.append(TurboQuantKVCache(bits=bits, rotation_key=rot_k, rotation_value=rot_v))
+        caches.append(
+            TurboQuantKVCache(bits=bits, rotation_key=rot_k, rotation_value=rot_v)
+        )
 
     logger.info(
         "Created TurboQuant KV cache: %d layers, %d-bit, head_dim=%d",
