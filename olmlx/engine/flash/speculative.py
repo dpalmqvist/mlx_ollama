@@ -91,8 +91,10 @@ class SpeculativeFlashDecoder:
         self._last_target_logit = target_out[0, -1, :]
         mx.eval(self._last_target_logit)
 
-        # Populate draft cache (logits discarded — only cache state needed)
-        self._draft(prompt, cache=self._draft_cache)
+        # Populate draft cache (logits discarded — only cache state needed).
+        # mx.eval forces cache materialization before step() reads from it.
+        draft_logits = self._draft(prompt, cache=self._draft_cache)
+        mx.eval(draft_logits)
 
         self._cache_seq_len = prompt.shape[1]
 
@@ -150,16 +152,17 @@ class SpeculativeFlashDecoder:
         if trim_draft > 0:
             trim_prompt_cache(self._draft_cache, trim_draft)
 
-        # On full acceptance, draft is 1 behind target (hasn't processed D_lambda).
-        # Feed the last draft token to align.
+        # On full acceptance (num_accepted == lambda + 1), the draft cache is at
+        # offset + lambda while the target is at offset + lambda + 1.  Feed the
+        # last draft token through the draft to align both caches at the same offset.
         if num_accepted > self._lambda:
             last_draft = mx.array([[draft_tokens[-1]]])
             self._draft(last_draft, cache=self._draft_cache)
 
         # 5. Update state
         self._cache_seq_len += num_accepted
-        # The logit at position (num_accepted - 1) in verification_logits predicts
-        # the next "pending" position (cache_seq_len).
+        # _verify() always returns at least 1 token (the target's correction).
+        assert num_accepted >= 1, "step(): _verify() must return at least 1 token"
         self._last_target_logit = verification_logits[num_accepted - 1]
         mx.eval(self._last_target_logit)
 

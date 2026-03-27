@@ -481,6 +481,7 @@ class ModelManager:
                                 is_vlm,
                                 caps,
                                 is_distributed,
+                                _spec_decoder,
                             ) = await asyncio.wait_for(
                                 asyncio.shield(load_task), timeout=timeout
                             )
@@ -502,7 +503,14 @@ class ModelManager:
                                 )
                             raise
                     else:
-                        model, tokenizer, is_vlm, caps, is_distributed = await coro
+                        (
+                            model,
+                            tokenizer,
+                            is_vlm,
+                            caps,
+                            is_distributed,
+                            _spec_decoder,
+                        ) = await coro
 
                     # Check if the model fits safely in memory.  On Apple Silicon
                     # the GPU shares system RAM — if total Metal memory exceeds the
@@ -577,10 +585,6 @@ class ModelManager:
                     except ImportError:
                         pass
 
-                    _speculative_decoder = None
-                    if is_flash and hasattr(model, "_speculative_decoder"):
-                        _speculative_decoder = model._speculative_decoder
-
                     lm = LoadedModel(
                         name=normalized,
                         hf_path=hf_path,
@@ -590,7 +594,7 @@ class ModelManager:
                         is_distributed=is_distributed,
                         is_flash=is_flash,
                         is_flash_moe=is_flash_moe,
-                        speculative_decoder=_speculative_decoder,
+                        speculative_decoder=_spec_decoder,
                         weight_store=_weight_store,
                         template_caps=caps,
                         expires_at=expires,
@@ -828,7 +832,7 @@ class ModelManager:
 
     def _load_flash_model(
         self, hf_path: str, load_path: str, flash_dir: Path
-    ) -> tuple[Any, Any, bool, TemplateCaps]:
+    ) -> tuple[Any, Any, bool, TemplateCaps, Any]:
         """Load a model in flash mode (LLM in a Flash).
 
         1. Load model normally via mlx-lm
@@ -899,9 +903,9 @@ class ModelManager:
                 target_model=wrapped,
                 num_speculative_tokens=experimental.flash_speculative_tokens,
             )
-            wrapped._speculative_decoder = decoder
+            return wrapped, tokenizer, False, caps, decoder
 
-        return wrapped, tokenizer, False, caps
+        return wrapped, tokenizer, False, caps, None
 
     def _flash_moe_dir(self, hf_path: str) -> Path | None:
         """Return the flash-MoE directory for a model, if it exists."""
@@ -971,8 +975,11 @@ class ModelManager:
 
         return wrapped, tokenizer, False, caps
 
-    def _load_model(self, hf_path: str) -> tuple[Any, Any, bool, TemplateCaps]:
-        """Load a model, using config.json inspection to choose the right library."""
+    def _load_model(self, hf_path: str) -> tuple[Any, Any, bool, TemplateCaps, Any]:
+        """Load a model, using config.json inspection to choose the right library.
+
+        Returns (model, tokenizer, is_vlm, caps, speculative_decoder).
+        """
         # Ensure model is downloaded to the store
         load_path: str = hf_path
         if self.store is not None:
@@ -983,7 +990,10 @@ class ModelManager:
         if self._is_flash_moe_enabled():
             flash_moe_dir = self._flash_moe_dir(hf_path)
             if flash_moe_dir is not None:
-                return self._load_flash_moe_model(hf_path, load_path, flash_moe_dir)
+                return (
+                    *self._load_flash_moe_model(hf_path, load_path, flash_moe_dir),
+                    None,
+                )
 
         # Check for flash-prepared model
         if self._is_flash_enabled():
@@ -1001,19 +1011,19 @@ class ModelManager:
             model, processor = mlx_vlm.load(load_path)
             tok = processor.tokenizer if hasattr(processor, "tokenizer") else processor
             caps = detect_caps(tok)
-            return model, processor, True, caps
+            return model, processor, True, caps, None
 
         # Text or unknown — try mlx-lm first, fall back to mlx-vlm
-        return self._try_lm_then_vlm(load_path, hf_path)
+        return (*self._try_lm_then_vlm(load_path, hf_path), None)
 
     def _load_model_and_shard(
         self, hf_path: str
-    ) -> tuple[Any, Any, bool, TemplateCaps, bool]:
+    ) -> tuple[Any, Any, bool, TemplateCaps, bool, Any]:
         """Load a model and optionally shard it for distributed inference.
 
-        Returns (model, tokenizer, is_vlm, caps, is_distributed).
+        Returns (model, tokenizer, is_vlm, caps, is_distributed, speculative_decoder).
         """
-        model, tokenizer, is_vlm, caps = self._load_model(hf_path)
+        model, tokenizer, is_vlm, caps, speculative_decoder = self._load_model(hf_path)
         is_distributed = False
 
         if self._distributed_group is not None:
@@ -1076,7 +1086,7 @@ class ModelManager:
                     f"Supported: 'tensor', 'pipeline'."
                 )
 
-        return model, tokenizer, is_vlm, caps, is_distributed
+        return model, tokenizer, is_vlm, caps, is_distributed, speculative_decoder
 
     async def _expire_stale(self):
         """Unload models whose keep-alive has expired (active_refs == 0)."""

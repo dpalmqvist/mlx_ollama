@@ -6,6 +6,7 @@ contract used by the inference pipeline.
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from collections.abc import Generator
@@ -16,26 +17,7 @@ import mlx.core as mx
 from olmlx.engine.flash.speculative import SpeculativeFlashDecoder
 from olmlx.utils.streaming import StreamToken
 
-
-def _decode_incremental(
-    tokenizer: Any, generated: list[int], prev_text: str
-) -> tuple[str, str]:
-    """Decode new text incrementally by diffing against previous decode."""
-    if tokenizer is None:
-        return "", prev_text
-    full_text = (
-        tokenizer.decode(generated[-16:])
-        if len(generated) > 16
-        else tokenizer.decode(generated)
-    )
-    if len(generated) > 16:
-        # For long sequences, decode a small window and diff
-        prefix = tokenizer.decode(generated[-17:-1]) if len(generated) > 17 else ""
-        new_text = full_text[len(prefix) :]
-    else:
-        new_text = full_text[len(prev_text) :]
-        prev_text = full_text
-    return new_text, prev_text
+logger = logging.getLogger(__name__)
 
 
 def speculative_stream_generate(
@@ -66,7 +48,14 @@ def speculative_stream_generate(
     gen_count = 1
     elapsed = time.perf_counter() - t0
 
-    new_text, prev_text = _decode_incremental(tokenizer, generated, "")
+    # Incremental text decoding: decode full sequence and diff against previous length.
+    prev_text_len = 0
+    if tokenizer is not None:
+        full_text = tokenizer.decode(generated)
+        new_text = full_text
+        prev_text_len = len(full_text)
+    else:
+        new_text = ""
 
     yield StreamToken(
         text=new_text,
@@ -89,20 +78,26 @@ def speculative_stream_generate(
         accepted, _ = decoder.step()
 
         for token in accepted:
-            if gen_count >= max_tokens:
+            if cancel_event.is_set() or gen_count >= max_tokens:
                 break
 
             gen_count += 1
             generated.append(token)
             elapsed = time.perf_counter() - t0
 
-            new_text, prev_text = _decode_incremental(tokenizer, generated, prev_text)
+            # Decode full sequence and diff to get new text
+            if tokenizer is not None:
+                full_text = tokenizer.decode(generated)
+                new_text = full_text[prev_text_len:]
+                prev_text_len = len(full_text)
+            else:
+                new_text = ""
 
             finish = None
-            if gen_count >= max_tokens:
-                finish = "length"
-            elif eos_token_id is not None and token == eos_token_id:
+            if eos_token_id is not None and token == eos_token_id:
                 finish = "stop"
+            elif gen_count >= max_tokens:
+                finish = "length"
 
             yield StreamToken(
                 text=new_text,
@@ -114,7 +109,7 @@ def speculative_stream_generate(
                 finish_reason=finish,
             )
 
-            if finish == "stop":
+            if finish is not None:
                 return
 
 

@@ -1045,6 +1045,24 @@ async def _stream_completion(
         if lm.is_speculative:
             from olmlx.engine.flash.speculative_stream import async_speculative_stream
 
+            # Speculative decoding uses greedy argmax; sampling params are not supported.
+            _sampling_keys = {
+                "temperature",
+                "top_p",
+                "top_k",
+                "repetition_penalty",
+                "seed",
+            }
+            _dropped = {
+                k
+                for k in gen_kwargs
+                if k in _sampling_keys and gen_kwargs[k] is not None
+            }
+            if _dropped:
+                logger.warning(
+                    "Speculative decoding uses greedy argmax; ignoring sampling parameters: %s",
+                    ", ".join(sorted(_dropped)),
+                )
             stream = async_speculative_stream(
                 lm.speculative_decoder,
                 lm.tokenizer,
