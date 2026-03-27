@@ -1053,10 +1053,14 @@ async def _stream_completion(
                 "repetition_penalty",
                 "seed",
             }
+            # Greedy-compatible defaults: temperature=0, top_p=1.0, top_k=0
+            _greedy_defaults = {"temperature": 0, "top_p": 1.0, "top_k": 0}
             _dropped = {
                 k
                 for k in gen_kwargs
-                if k in _sampling_keys and gen_kwargs[k] is not None
+                if k in _sampling_keys
+                and gen_kwargs[k] is not None
+                and gen_kwargs[k] != _greedy_defaults.get(k)
             }
             if _dropped:
                 logger.warning(

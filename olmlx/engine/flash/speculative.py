@@ -49,6 +49,7 @@ class SpeculativeFlashDecoder:
         self._draft_cache: list | None = None
         self._cache_seq_len: int = 0
         self._last_target_logit: mx.array | None = None
+        self._pending_token: int | None = None
 
     def _update_acceptance_rate(self, num_accepted: int) -> None:
         """Update the rolling acceptance rate via EMA."""
@@ -67,6 +68,7 @@ class SpeculativeFlashDecoder:
         self._draft_cache = None
         self._cache_seq_len = 0
         self._last_target_logit = None
+        self._pending_token = None
 
     def prefill(self, prompt: mx.array) -> int:
         """Process the prompt through both models, populating KV caches.
@@ -99,6 +101,7 @@ class SpeculativeFlashDecoder:
         self._cache_seq_len = prompt.shape[1]
 
         first_token = int(mx.argmax(self._last_target_logit).item())
+        self._pending_token = first_token
         return first_token
 
     def step(self) -> tuple[list[int], int]:
@@ -115,9 +118,9 @@ class SpeculativeFlashDecoder:
         """
         assert self._target_cache is not None, "Call prefill() before step()"
         assert self._draft_cache is not None, "Call prefill() before step()"
-        assert self._last_target_logit is not None, "Call prefill() before step()"
+        assert self._pending_token is not None, "Call prefill() before step()"
 
-        pending_token = int(mx.argmax(self._last_target_logit).item())
+        pending_token = self._pending_token
 
         # 1. Draft: feed pending token, then generate lambda candidates
         #    Draft cache advances from offset to offset + lambda.
@@ -157,7 +160,8 @@ class SpeculativeFlashDecoder:
         # last draft token through the draft to align both caches at the same offset.
         if num_accepted > self._lambda:
             last_draft = mx.array([[draft_tokens[-1]]])
-            self._draft(last_draft, cache=self._draft_cache)
+            align_logits = self._draft(last_draft, cache=self._draft_cache)
+            mx.eval(align_logits)
 
         # 5. Update state
         self._cache_seq_len += num_accepted
@@ -165,6 +169,7 @@ class SpeculativeFlashDecoder:
         assert num_accepted >= 1, "step(): _verify() must return at least 1 token"
         self._last_target_logit = verification_logits[num_accepted - 1]
         mx.eval(self._last_target_logit)
+        self._pending_token = int(mx.argmax(self._last_target_logit).item())
 
         self._update_acceptance_rate(num_accepted)
         return accepted, self._lambda

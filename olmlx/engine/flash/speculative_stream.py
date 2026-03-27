@@ -43,10 +43,11 @@ def speculative_stream_generate(
 
     t0 = time.perf_counter()
     first_token = decoder.prefill(prompt_arr)
+    prefill_elapsed = time.perf_counter() - t0
+    prompt_tps_val = prompt_len / max(prefill_elapsed, 1e-9)
 
     generated: list[int] = [first_token]
     gen_count = 1
-    elapsed = time.perf_counter() - t0
 
     # Incremental text decoding: decode full sequence and diff against previous length.
     prev_text_len = 0
@@ -62,8 +63,8 @@ def speculative_stream_generate(
         token=first_token,
         prompt_tokens=prompt_len,
         generation_tokens=gen_count,
-        prompt_tps=prompt_len / max(elapsed, 1e-9),
-        generation_tps=gen_count / max(elapsed, 1e-9),
+        prompt_tps=prompt_tps_val,
+        generation_tps=gen_count / max(prefill_elapsed, 1e-9),
     )
 
     if (
@@ -83,7 +84,7 @@ def speculative_stream_generate(
 
             gen_count += 1
             generated.append(token)
-            elapsed = time.perf_counter() - t0
+            gen_elapsed = time.perf_counter() - t0
 
             # Decode full sequence and diff to get new text
             if tokenizer is not None:
@@ -104,8 +105,8 @@ def speculative_stream_generate(
                 token=token,
                 prompt_tokens=prompt_len,
                 generation_tokens=gen_count,
-                prompt_tps=prompt_len / max(elapsed, 1e-9),
-                generation_tps=gen_count / max(elapsed, 1e-9),
+                prompt_tps=prompt_tps_val,
+                generation_tps=gen_count / max(gen_elapsed, 1e-9),
                 finish_reason=finish,
             )
 

@@ -440,7 +440,10 @@ class ModelManager:
                         )
                     oldest_name = min(evictable, key=lambda k: evictable[k].loaded_at)
                     logger.info("Evicting model %s", oldest_name)
-                    del self._loaded[oldest_name]
+                    evicted = self._loaded.pop(oldest_name)
+                    # Release draft model Metal memory promptly
+                    evicted.speculative_decoder = None
+                    del evicted
 
                 # Flush Metal allocator cache so that buffers from evicted models
                 # don't inflate the mem_before measurement below.  Skip when
@@ -708,6 +711,8 @@ class ModelManager:
         lm = self._loaded.pop(normalized)
         if lm.weight_store is not None:
             lm.weight_store.close()
+        # Release draft model Metal memory promptly
+        lm.speculative_decoder = None
         return True
 
     # Config keys that indicate a vision-language model
