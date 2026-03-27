@@ -249,6 +249,7 @@ class LoadedModel:
     is_distributed: bool = False
     is_flash: bool = False
     is_flash_moe: bool = False
+    speculative_decoder: Any = None
     weight_store: Any = None
     template_caps: TemplateCaps = field(default_factory=TemplateCaps)
     loaded_at: float = field(default_factory=time.time)
@@ -275,6 +276,10 @@ class LoadedModel:
                 model_name=self.name,
                 disk_max_bytes=disk_max_bytes,
             )
+
+    @property
+    def is_speculative(self) -> bool:
+        return self.speculative_decoder is not None
 
     @property
     def text_tokenizer(self) -> Any:
@@ -572,6 +577,10 @@ class ModelManager:
                     except ImportError:
                         pass
 
+                    _speculative_decoder = None
+                    if is_flash and hasattr(model, "_speculative_decoder"):
+                        _speculative_decoder = model._speculative_decoder
+
                     lm = LoadedModel(
                         name=normalized,
                         hf_path=hf_path,
@@ -581,6 +590,7 @@ class ModelManager:
                         is_distributed=is_distributed,
                         is_flash=is_flash,
                         is_flash_moe=is_flash_moe,
+                        speculative_decoder=_speculative_decoder,
                         weight_store=_weight_store,
                         template_caps=caps,
                         expires_at=expires,
@@ -870,11 +880,26 @@ class ModelManager:
         wrapped = FlashModelWrapper(model, predictor_bank, weight_store, flash_config)
 
         if experimental.flash_speculative:
-            raise NotImplementedError(
-                "flash_speculative is not yet integrated into the inference pipeline. "
-                "SpeculativeFlashDecoder exists but requires target-model KV cache "
-                "support before it can be used for production inference."
+            from olmlx.engine.flash.speculative import SpeculativeFlashDecoder
+
+            if not experimental.flash_speculative_draft_model:
+                raise ValueError(
+                    "flash_speculative requires flash_speculative_draft_model to be set "
+                    "(OLMLX_EXPERIMENTAL_FLASH_SPECULATIVE_DRAFT_MODEL)"
+                )
+
+            logger.info(
+                "Loading draft model %s for speculative decoding",
+                experimental.flash_speculative_draft_model,
             )
+            draft_model, _ = mlx_lm.load(experimental.flash_speculative_draft_model)
+
+            decoder = SpeculativeFlashDecoder(
+                draft_model=draft_model,
+                target_model=wrapped,
+                num_speculative_tokens=experimental.flash_speculative_tokens,
+            )
+            wrapped._speculative_decoder = decoder
 
         return wrapped, tokenizer, False, caps
 

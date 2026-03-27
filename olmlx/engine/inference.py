@@ -1042,16 +1042,26 @@ async def _stream_completion(
                 lm, tokens, original_prompt, max_tokens, broadcast_kwargs
             )
 
-        stream = async_mlx_stream(
-            lm.model,
-            lm.tokenizer,
-            prompt,
-            max_tokens=max_tokens,
-            is_vlm=lm.is_vlm,
-            images=images,
-            memory_limit=memory_limit,
-            **gen_kwargs,
-        )
+        if lm.is_speculative:
+            from olmlx.engine.flash.speculative_stream import async_speculative_stream
+
+            stream = async_speculative_stream(
+                lm.speculative_decoder,
+                lm.tokenizer,
+                prompt,
+                max_tokens=max_tokens,
+            )
+        else:
+            stream = async_mlx_stream(
+                lm.model,
+                lm.tokenizer,
+                prompt,
+                max_tokens=max_tokens,
+                is_vlm=lm.is_vlm,
+                images=images,
+                memory_limit=memory_limit,
+                **gen_kwargs,
+            )
 
         # Channel filter for gpt-oss models (decides which tokens to yield as text)
         channel_filter = (
@@ -1281,6 +1291,38 @@ async def _full_completion_inner(
                 **gen_kwargs,
             )
             from mlx_vlm.generate import generation_stream
+        elif lm.is_speculative:
+            import threading
+
+            from olmlx.engine.flash.speculative_stream import (
+                speculative_stream_generate,
+            )
+
+            if isinstance(prompt, str):
+                prompt_tokens = lm.text_tokenizer.encode(prompt)
+            else:
+                prompt_tokens = prompt
+
+            cancel = threading.Event()
+            eos_token_id = getattr(lm.text_tokenizer, "eos_token_id", None)
+            result = None
+            text_parts = []
+            for response in speculative_stream_generate(
+                lm.speculative_decoder,
+                prompt_tokens,
+                max_tokens=max_tokens,
+                cancel_event=cancel,
+                eos_token_id=eos_token_id,
+                tokenizer=lm.text_tokenizer,
+            ):
+                text_parts.append(response.text)
+                result = response
+            if result is not None:
+                result = (result, "".join(text_parts))
+            # Speculative decoding does not use mlx_lm's generation_stream,
+            # so sync the default stream only.
+            mx.synchronize()
+            return result
         else:
             import mlx_lm
 
