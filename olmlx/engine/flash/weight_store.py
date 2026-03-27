@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
 import threading
@@ -19,6 +20,8 @@ from olmlx.engine.flash.bundler import (
     _DTYPE_BYTES,
     parse_header,
 )
+
+logger = logging.getLogger(__name__)
 
 _NP_DTYPE = {"float16": np.float16, "float32": np.float32, "bfloat16": np.uint16}
 
@@ -226,6 +229,12 @@ class FlashWeightStore:
                 )
         else:
             self._cache = NeuronCache(max_neurons_per_layer=cache_budget_neurons)
+        if bypass_cache and sys.platform != "darwin":
+            logger.warning(
+                "bypass_cache is only supported on macOS (F_NOCACHE); "
+                "OS page cache will not be bypassed on %s",
+                sys.platform,
+            )
         self._fds: dict[int, int] = {}
         try:
             for layer_idx, layout in self._layouts.items():
@@ -367,18 +376,16 @@ class FlashWeightStore:
             for idx, (gate, up, down) in loaded.items():
                 buf.insert(idx, gate, up, down)
             _, still_missing = buf.get_cached_indices(neuron_indices)
-
-        # Re-fetch evicted neurons outside the lock (rare path)
-        if still_missing:
-            extra = {
-                idx: self._read_neuron_raw(layer_idx, idx) for idx in still_missing
-            }
-            with buf.lock:
-                for idx, (gate, up, down) in extra.items():
-                    buf.insert(idx, gate, up, down)
+            if not still_missing:
                 return buf.get_matrices(neuron_indices)
 
+        # Re-fetch evicted neurons outside the lock (rare path)
+        extra = {
+            idx: self._read_neuron_raw(layer_idx, idx) for idx in still_missing
+        }
         with buf.lock:
+            for idx, (gate, up, down) in extra.items():
+                buf.insert(idx, gate, up, down)
             return buf.get_matrices(neuron_indices)
 
     def _load_neurons_cache(
