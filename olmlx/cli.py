@@ -606,6 +606,23 @@ def cmd_models_list(_args):
         )
 
 
+def cmd_models_search(args):
+    """Search for models by name."""
+    try:
+        store = _create_store()
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    results = store.registry.search(args.query)
+    if not results:
+        print(f"No models matching '{args.query}'.")
+        return
+    print(f"{'NAME':<30} {'HF PATH'}")
+    print("-" * 60)
+    for name, hf_path in results:
+        print(f"{name:<30} {hf_path}")
+
+
 def cmd_models_show(args):
     """Show details for a specific model."""
     try:
@@ -619,7 +636,11 @@ def cmd_models_show(args):
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
     if manifest is None:
-        print(f"Model '{args.model_name}' not found locally.", file=sys.stderr)
+        print(
+            f"Model '{args.model_name}' not found locally.\n"
+            f"Try: olmlx models search {args.model_name}",
+            file=sys.stderr,
+        )
         sys.exit(1)
     print(f"Name:           {manifest.name}")
     print(f"HF Path:        {manifest.hf_path}")
@@ -653,7 +674,10 @@ def cmd_models_pull(args):
     except SystemExit:
         raise
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr, flush=True)
+        msg = f"Error: {e}"
+        if "not found" in str(e).lower():
+            msg += f"\nTry: olmlx models search {args.model_name}"
+        print(msg, file=sys.stderr, flush=True)
         sys.exit(1)
 
 
@@ -1136,6 +1160,8 @@ def build_parser() -> argparse.ArgumentParser:
     del_p = mdl_sub.add_parser("delete", help="Delete a local model")
     del_p.add_argument("model_name", help="Model name or HF path")
     del_p.add_argument("--yes", "-y", action="store_true", help="Skip confirmation")
+    search_p = mdl_sub.add_parser("search", help="Search for models by name")
+    search_p.add_argument("query", help="Search query")
 
     chat_p = sub.add_parser("chat", help="Interactive chat")
     chat_p.add_argument("model_name", nargs="?", help="Model name or HF path")
@@ -1262,6 +1288,8 @@ def cli_main():
             cmd_models_show(args)
         elif args.models_command == "delete":
             cmd_models_delete(args)
+        elif args.models_command == "search":
+            cmd_models_search(args)
         else:
             parser.parse_args(["models", "--help"])
     elif args.command == "flash":

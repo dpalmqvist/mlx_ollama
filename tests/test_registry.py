@@ -228,6 +228,45 @@ class TestModelRegistry:
         assert "qwen3:latest" in models
 
 
+class TestModelRegistrySearch:
+    def test_search_exact_match(self, registry):
+        """Searching 'qwen3' should return the qwen3 entry."""
+        results = registry.search("qwen3")
+        assert len(results) >= 1
+        names = [r[0] for r in results]
+        assert "qwen3:latest" in names
+
+    def test_search_close_match(self, registry):
+        """Searching 'qwem3' (typo) should still return qwen3."""
+        results = registry.search("qwem3")
+        assert len(results) >= 1
+        names = [r[0] for r in results]
+        assert "qwen3:latest" in names
+
+    def test_search_no_match(self, registry):
+        """Searching 'zzzzzzz' should return empty list."""
+        results = registry.search("zzzzzzz")
+        assert results == []
+
+    def test_search_max_results(self, tmp_path, monkeypatch):
+        """With many models, search respects the max_results limit."""
+        config = {f"model{i}:latest": f"org/model{i}" for i in range(20)}
+        config_path = tmp_path / "models.json"
+        config_path.write_text(json.dumps(config))
+        monkeypatch.setattr("olmlx.engine.registry.settings.models_config", config_path)
+        reg = ModelRegistry()
+        reg.load()
+        results = reg.search("model", max_results=3)
+        assert len(results) <= 3
+
+    def test_search_base_name_without_tag(self, registry):
+        """Searching 'llama3' should match 'llama3:8b'."""
+        results = registry.search("llama3")
+        assert len(results) >= 1
+        names = [r[0] for r in results]
+        assert "llama3:8b" in names
+
+
 class TestAtomicWriteJson:
     def test_atomic_write_json_creates_valid_file(self, tmp_path):
         target = tmp_path / "data.json"

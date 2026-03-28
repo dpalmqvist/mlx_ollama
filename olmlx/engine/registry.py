@@ -150,5 +150,26 @@ class ModelRegistry:
         if self._mappings.pop(normalized, None) is not None:
             self._save_mappings()
 
+    def search(self, query: str, max_results: int = 5) -> list[tuple[str, str]]:
+        """Fuzzy search models by name. Returns [(name, hf_path), ...]."""
+        import difflib
+
+        all_models = self.list_models()
+        all_names = list(all_models.keys())
+        # Also search base names without tags
+        base_map = {n.split(":")[0]: n for n in all_names}
+        candidates = all_names + list(base_map.keys())
+        matches = difflib.get_close_matches(
+            query, candidates, n=max_results * 2, cutoff=0.4
+        )
+        seen: set[str] = set()
+        results: list[tuple[str, str]] = []
+        for m in matches:
+            full = base_map.get(m, m)
+            if full not in seen and full in all_models:
+                seen.add(full)
+                results.append((full, all_models[full]))
+        return results[:max_results]
+
     def _save_aliases(self):
         _atomic_write_json(self._aliases, self._aliases_path)

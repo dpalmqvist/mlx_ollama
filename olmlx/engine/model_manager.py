@@ -448,6 +448,8 @@ class ModelManager:
     ) -> LoadedModel:
         """Ensure a model is loaded and return it."""
         normalized = self.registry.normalize_name(name)
+        if normalized != name:
+            logger.info("Normalized model name '%s' -> '%s'", name, normalized)
 
         while True:
             # If a previous load timed out and the background thread is still
@@ -512,10 +514,16 @@ class ModelManager:
 
                 hf_path = self.registry.resolve(name)
                 if hf_path is None:
-                    raise ValueError(
-                        f"Model '{name}' not found. "
-                        f"Add it to {settings.models_config} or use a HuggingFace path like 'mlx-community/Qwen2.5-3B-Instruct-4bit'"
+                    suggestions = self.registry.search(name, max_results=3)
+                    msg = f"Model '{name}' not found."
+                    if suggestions:
+                        names = ", ".join(s[0] for s in suggestions)
+                        msg += f" Did you mean: {names}?"
+                    msg += (
+                        f"\nAdd it to {settings.models_config} or use a HuggingFace path "
+                        f"like 'mlx-community/Qwen2.5-3B-Instruct-4bit'"
                     )
+                    raise ValueError(msg)
 
                 # Auto-register direct HF paths so future requests find them
                 if "/" in name:
