@@ -322,9 +322,11 @@ class PromptCacheStore:
         # if so, keep the fresher in-memory entry and discard the stale disk load.
         if cache_id in self._entries:
             self._entries.move_to_end(cache_id)
+            existing = self._entries.get(cache_id)
             if disk_path is not None:
                 await asyncio.to_thread(disk_path.unlink, True)
-            return self._entries[cache_id]
+            # Re-check after await — entries may have been cleared
+            return self._entries.get(cache_id) or existing
         evicted_id, evicted = self._set_in_memory(cache_id, loaded)
         # Delete disk file only after successful insertion
         if disk_path is not None:
@@ -332,8 +334,6 @@ class PromptCacheStore:
         # Save evicted entry to disk (mirrors async_set behavior)
         if evicted_id is not None and evicted is not None:
             await asyncio.to_thread(self._save_to_disk, evicted_id, evicted)
-        elif evicted is not None:
-            del evicted
         return loaded
 
     async def async_set(

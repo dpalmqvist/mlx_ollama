@@ -1,3 +1,4 @@
+import difflib
 import json
 import os
 import tempfile
@@ -154,8 +155,6 @@ class ModelRegistry:
         """Fuzzy search models by name. Returns [(name, hf_path), ...]."""
         if not query or len(query) > 200:
             return []
-        import difflib
-
         all_models = self.list_models()
         all_names = list(all_models.keys())
         # Map each base name (without tag) to all full names that share it
