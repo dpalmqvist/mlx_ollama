@@ -263,6 +263,7 @@ class PromptCacheStore:
             for cache_id, state in list(self._entries.items()):
                 self._save_to_disk(cache_id, state)
         self._entries.clear()
+        self._evict_generation += 1
 
     def _save_entries_to_disk(
         self, entries: list[tuple[str, CachedPromptState]]
@@ -321,10 +322,9 @@ class PromptCacheStore:
         if loaded is None:
             return None
         # If entries were bulk-evicted during the await (memory pressure),
-        # don't re-insert — the eviction was intentional.
+        # don't re-insert — the eviction was intentional.  Leave the disk
+        # file intact so it can be restored later.
         if self._evict_generation != gen_before:
-            if disk_path is not None:
-                await asyncio.to_thread(disk_path.unlink, True)
             return None
         # Another coroutine may have populated this cache_id during the await;
         # if so, keep the fresher in-memory entry and discard the stale disk load.
@@ -334,12 +334,13 @@ class PromptCacheStore:
                 await asyncio.to_thread(disk_path.unlink, True)
             return self._entries.get(cache_id)
         evicted_id, evicted = self._set_in_memory(cache_id, loaded)
-        # Delete disk file only after successful insertion
-        if disk_path is not None:
-            await asyncio.to_thread(disk_path.unlink, True)
-        # Save evicted entry to disk (mirrors async_set behavior)
+        # Save evicted entry to disk first to avoid a window where
+        # evicted_id is in neither memory nor disk.
         if evicted_id is not None and evicted is not None:
             await asyncio.to_thread(self._save_to_disk, evicted_id, evicted)
+        # Delete disk file only after successful insertion and eviction save
+        if disk_path is not None:
+            await asyncio.to_thread(disk_path.unlink, True)
         return loaded
 
     async def async_set(

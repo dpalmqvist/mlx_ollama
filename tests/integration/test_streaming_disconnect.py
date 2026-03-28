@@ -12,10 +12,10 @@ from tests.integration.conftest import set_stream_responses
 
 
 class TestStreamingDisconnect:
-    """Test that early client disconnect triggers stream cleanup."""
+    """Test streaming completion and cleanup."""
 
-    async def test_generate_stream_early_disconnect(self, integration_ctx):
-        """Start streaming /api/generate, consume 1 chunk, close. Verify cleanup."""
+    async def test_generate_stream_completes_normally(self, integration_ctx):
+        """Streaming /api/generate completes with valid NDJSON and done=True."""
         set_stream_responses(["Hello", " world", " foo", " bar", " baz"])
 
         resp = await integration_ctx.client.post(
@@ -35,8 +35,8 @@ class TestStreamingDisconnect:
         last = json.loads(lines[-1])
         assert last["done"] is True
 
-    async def test_chat_stream_early_disconnect(self, integration_ctx):
-        """Start streaming /api/chat, verify stream completes with cleanup."""
+    async def test_chat_stream_completes_normally(self, integration_ctx):
+        """Streaming /api/chat completes with valid NDJSON and done=True."""
         set_stream_responses(["Hello", " world", " foo"])
 
         resp = await integration_ctx.client.post(
@@ -53,8 +53,8 @@ class TestStreamingDisconnect:
         last = json.loads(lines[-1])
         assert last["done"] is True
 
-    async def test_openai_stream_early_disconnect(self, integration_ctx):
-        """Start streaming /v1/chat/completions, verify stream completes."""
+    async def test_openai_stream_completes_normally(self, integration_ctx):
+        """Streaming /v1/chat/completions completes with SSE [DONE] sentinel."""
         set_stream_responses(["Hello", " world", " foo"])
 
         resp = await integration_ctx.client.post(
