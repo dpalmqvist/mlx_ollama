@@ -49,7 +49,7 @@ class AnthropicThinkingParam(BaseModel):
 class AnthropicMessagesRequest(BaseModel):
     model: ModelName
     messages: list[AnthropicMessage]
-    max_tokens: int = Field(4096, ge=1)
+    max_tokens: int = Field(4096, ge=1, le=131072)
     stream: bool = False
     temperature: float | None = Field(None, ge=0, le=1)
     top_p: float | None = Field(None, ge=0, le=1)

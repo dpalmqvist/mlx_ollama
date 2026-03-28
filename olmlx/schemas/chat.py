@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from olmlx.schemas.common import ModelName, ModelOptions
 
@@ -14,7 +14,7 @@ class ToolCall(BaseModel):
 
 class Message(BaseModel):
     role: str
-    content: str = ""
+    content: str = Field("", max_length=1_000_000)
     images: list[str] | None = None
     tool_calls: list[ToolCall] | None = None
 

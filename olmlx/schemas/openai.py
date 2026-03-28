@@ -46,8 +46,8 @@ class OpenAIChatRequest(BaseModel):
     n: int = Field(1, ge=1, le=1, description="Only n=1 is supported.")
     stream: bool = False
     stop: str | list[str] | None = None
-    max_tokens: int | None = Field(None, ge=1)
-    max_completion_tokens: int | None = Field(None, ge=1)
+    max_tokens: int | None = Field(None, ge=1, le=131072)
+    max_completion_tokens: int | None = Field(None, ge=1, le=131072)
     presence_penalty: float = Field(0.0, ge=-2, le=2)
     frequency_penalty: float = Field(0.0, ge=-2, le=2)
     tools: list[dict] | None = None
@@ -102,7 +102,7 @@ class OpenAICompletionRequest(BaseModel):
     n: int = Field(1, ge=1, le=1, description="Only n=1 is supported.")
     stream: bool = False
     stop: str | list[str] | None = None
-    max_tokens: int | None = Field(None, ge=1)
+    max_tokens: int | None = Field(None, ge=1, le=131072)
     presence_penalty: float = Field(0.0, ge=-2, le=2)
     frequency_penalty: float = Field(0.0, ge=-2, le=2)
     seed: int | None = None

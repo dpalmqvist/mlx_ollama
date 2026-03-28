@@ -1,11 +1,11 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from olmlx.schemas.common import ModelName, ModelOptions
 
 
 class GenerateRequest(BaseModel):
     model: ModelName
-    prompt: str = ""
+    prompt: str = Field("", max_length=1_000_000)
     suffix: str | None = None
     images: list[str] | None = None
     system: str | None = None

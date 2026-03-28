@@ -12,7 +12,9 @@ class ModelOptions(BaseModel):
 
     num_keep: int | None = None
     seed: int | None = None
-    num_predict: int | None = Field(None, ge=-2)  # -1=infinite, -2=fill context
+    num_predict: int | None = Field(
+        None, ge=-2, le=131072
+    )  # -1=infinite, -2=fill context
     top_k: int | None = Field(None, ge=0)
     top_p: float | None = Field(None, ge=0, le=1)
     min_p: float | None = Field(None, ge=0, le=1)

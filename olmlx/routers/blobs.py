@@ -3,6 +3,9 @@ from fastapi.responses import JSONResponse
 
 router = APIRouter()
 
+# Maximum blob upload size: 10 GB
+MAX_BLOB_SIZE = 10 * 1024 * 1024 * 1024
+
 
 @router.head("/api/blobs/{digest}")
 async def check_blob(digest: str, request: Request):
@@ -15,7 +18,22 @@ async def check_blob(digest: str, request: Request):
 @router.post("/api/blobs/{digest}")
 async def upload_blob(digest: str, request: Request):
     store = request.app.state.model_store
+
+    # Check Content-Length header first for early rejection
+    content_length = request.headers.get("content-length")
+    if content_length is not None and int(content_length) > MAX_BLOB_SIZE:
+        return JSONResponse(
+            {"error": f"blob too large (limit: {MAX_BLOB_SIZE} bytes)"},
+            status_code=413,
+        )
+
     body = await request.body()
+
+    if len(body) > MAX_BLOB_SIZE:
+        return JSONResponse(
+            {"error": f"blob too large (limit: {MAX_BLOB_SIZE} bytes)"},
+            status_code=413,
+        )
 
     # Verify digest
     import hashlib
