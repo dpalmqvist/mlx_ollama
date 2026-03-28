@@ -152,6 +152,8 @@ class ModelRegistry:
 
     def search(self, query: str, max_results: int = 5) -> list[tuple[str, str]]:
         """Fuzzy search models by name. Returns [(name, hf_path), ...]."""
+        if not query or len(query) > 200:
+            return []
         import difflib
 
         all_models = self.list_models()

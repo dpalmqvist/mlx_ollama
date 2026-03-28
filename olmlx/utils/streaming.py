@@ -42,6 +42,8 @@ async def safe_ndjson_stream(
                 exc_info=True,
             )
     finally:
+        # When called via aclose() (client disconnect), GeneratorExit is
+        # swallowed after this cleanup completes — the intended behaviour.
         await source.aclose()
 
 

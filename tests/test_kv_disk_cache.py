@@ -423,11 +423,11 @@ class TestAsyncDiskCache:
             return_value=(loaded_state, disk_file),
         ) as mock_thread:
             result = await store.async_get("a")
-            mock_thread.assert_called_once()
-            # Verify _read_from_disk was the function passed to to_thread
-            assert mock_thread.call_args[0][0] == store._read_from_disk
-            assert mock_thread.call_args[0][1] == "a"
             assert result is not None
+            # First call: _read_from_disk; second call: unlink
+            assert mock_thread.call_count >= 1
+            assert mock_thread.call_args_list[0][0][0] == store._read_from_disk
+            assert mock_thread.call_args_list[0][0][1] == "a"
 
     @pytest.mark.asyncio
     async def test_async_set_eviction_saves_in_thread(self, tmp_path):
