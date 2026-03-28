@@ -253,13 +253,54 @@ class PromptCacheStore:
         self._evict_all_to_disk_sync()
 
     def _evict_all_to_disk_sync(self) -> None:
-        """Sync implementation of evict_all_to_disk (used by async wrapper)."""
+        """Sync implementation of evict_all_to_disk."""
         if self._disk_enabled:
             for cache_id, state in list(self._entries.items()):
                 self._save_to_disk(cache_id, state)
         self._entries.clear()
 
+    def _save_entries_to_disk(
+        self, entries: list[tuple[str, CachedPromptState]]
+    ) -> None:
+        """Save a snapshot of entries to disk (safe to call from a worker thread)."""
+        for cache_id, state in entries:
+            self._save_to_disk(cache_id, state)
+
+    def _read_from_disk(self, cache_id: str) -> CachedPromptState | None:
+        """Read a cache entry from disk without mutating _entries.
+
+        Returns the restored state, or None.  The caller is responsible for
+        inserting it into _entries on the event loop.
+        """
+        if not self._disk_enabled:
+            return None
+        file_path = self._disk_file_path(cache_id)
+        if not file_path.exists():
+            return None
+        try:
+            cache, metadata = load_prompt_cache(str(file_path), return_metadata=True)
+            tokens = json.loads(metadata.get("tokens", "[]"))
+            state = CachedPromptState(tokens=tokens, cache=cache)
+            file_path.unlink(missing_ok=True)
+            logger.info(
+                "Restored cache '%s' from disk (%d tokens)",
+                cache_id,
+                len(tokens),
+            )
+            return state
+        except Exception:
+            logger.warning(
+                "Failed to load cache '%s' from disk",
+                cache_id,
+                exc_info=True,
+            )
+            file_path.unlink(missing_ok=True)
+            return None
+
     # -- Async wrappers that offload disk I/O to threads ----------------
+    #
+    # All _entries mutations happen on the event loop.  Only pure disk I/O
+    # (read/write safetensors, unlink, stat) is dispatched to a worker thread.
 
     async def async_get(self, cache_id: str) -> CachedPromptState | None:
         """Async version of get(). Memory lookup is sync; disk fallback runs in a thread."""
@@ -267,8 +308,13 @@ class PromptCacheStore:
         if state is not None:
             self._entries.move_to_end(cache_id)
             return state
-        # Memory miss — offload disk load to thread
-        return await asyncio.to_thread(self._load_from_disk, cache_id)
+        # Memory miss — read from disk in a thread, then insert on the event loop
+        loaded = await asyncio.to_thread(self._read_from_disk, cache_id)
+        if loaded is not None:
+            evicted = self.set(cache_id, loaded)
+            if evicted is not None:
+                del evicted
+        return loaded
 
     async def async_set(
         self, cache_id: str, state: CachedPromptState
@@ -280,8 +326,18 @@ class PromptCacheStore:
         return evicted
 
     async def async_evict_all_to_disk(self) -> None:
-        """Async version of evict_all_to_disk(). Offloads disk I/O to a thread."""
-        await asyncio.to_thread(self._evict_all_to_disk_sync)
+        """Async version of evict_all_to_disk(). Offloads disk I/O to a thread.
+
+        Snapshots and clears _entries on the event loop first, then saves
+        the snapshot to disk in a worker thread — no thread touches _entries.
+        """
+        if self._disk_enabled:
+            snapshot = list(self._entries.items())
+        else:
+            snapshot = []
+        self._entries.clear()
+        if snapshot:
+            await asyncio.to_thread(self._save_entries_to_disk, snapshot)
 
     def clear(self) -> None:
         """Remove all cache entries and disk cache files."""

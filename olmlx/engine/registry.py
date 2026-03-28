@@ -156,19 +156,24 @@ class ModelRegistry:
 
         all_models = self.list_models()
         all_names = list(all_models.keys())
-        # Also search base names without tags
-        base_map = {n.split(":")[0]: n for n in all_names}
-        candidates = all_names + list(base_map.keys())
+        # Map each base name (without tag) to all full names that share it
+        base_to_full: dict[str, list[str]] = {}
+        for n in all_names:
+            base_to_full.setdefault(n.split(":")[0], []).append(n)
+        # Deduplicated candidate list: full names + base names
+        candidates = list(dict.fromkeys(all_names + list(base_to_full.keys())))
         matches = difflib.get_close_matches(
             query, candidates, n=max_results * 2, cutoff=0.4
         )
         seen: set[str] = set()
         results: list[tuple[str, str]] = []
         for m in matches:
-            full = base_map.get(m, m)
-            if full not in seen and full in all_models:
-                seen.add(full)
-                results.append((full, all_models[full]))
+            # Expand base name matches to all full names
+            full_names = base_to_full.get(m, [m])
+            for full in full_names:
+                if full not in seen and full in all_models:
+                    seen.add(full)
+                    results.append((full, all_models[full]))
         return results[:max_results]
 
     def _save_aliases(self):

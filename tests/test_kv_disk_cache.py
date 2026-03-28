@@ -405,7 +405,7 @@ class TestAsyncDiskCache:
 
     @pytest.mark.asyncio
     async def test_async_get_disk_fallback_uses_thread(self, tmp_path):
-        """On memory miss with disk hit, asyncio.to_thread IS called with _load_from_disk."""
+        """On memory miss with disk hit, asyncio.to_thread IS called with _read_from_disk."""
         store = PromptCacheStore(
             max_slots=2,
             disk_path=tmp_path,
@@ -416,21 +416,18 @@ class TestAsyncDiskCache:
         disk_file.parent.mkdir(parents=True, exist_ok=True)
         disk_file.touch()
 
+        loaded_state = CachedPromptState(tokens=[10, 20], cache=["restored_kv"])
         with patch(
-            "olmlx.engine.model_manager.load_prompt_cache",
-            return_value=(["restored_kv"], {"tokens": "[10, 20]"}),
-        ):
-            with patch(
-                "asyncio.to_thread",
-                new_callable=AsyncMock,
-                return_value=CachedPromptState(tokens=[10, 20], cache=["restored_kv"]),
-            ) as mock_thread:
-                result = await store.async_get("a")
-                mock_thread.assert_called_once()
-                # Verify _load_from_disk was the function passed to to_thread
-                assert mock_thread.call_args[0][0] == store._load_from_disk
-                assert mock_thread.call_args[0][1] == "a"
-                assert result is not None
+            "asyncio.to_thread",
+            new_callable=AsyncMock,
+            return_value=loaded_state,
+        ) as mock_thread:
+            result = await store.async_get("a")
+            mock_thread.assert_called_once()
+            # Verify _read_from_disk was the function passed to to_thread
+            assert mock_thread.call_args[0][0] == store._read_from_disk
+            assert mock_thread.call_args[0][1] == "a"
+            assert result is not None
 
     @pytest.mark.asyncio
     async def test_async_set_eviction_saves_in_thread(self, tmp_path):
@@ -462,7 +459,7 @@ class TestAsyncDiskCache:
 
     @pytest.mark.asyncio
     async def test_async_evict_all_uses_thread(self, tmp_path):
-        """Verify evict_all_to_disk is offloaded to a thread."""
+        """Verify evict_all_to_disk snapshots on event loop, saves in a thread."""
         store = PromptCacheStore(
             max_slots=4,
             disk_path=tmp_path,
@@ -474,8 +471,10 @@ class TestAsyncDiskCache:
         with patch("asyncio.to_thread", new_callable=AsyncMock) as mock_thread:
             await store.async_evict_all_to_disk()
             mock_thread.assert_called_once()
-            # The function passed should be _evict_all_to_disk_sync or similar
-            assert mock_thread.call_args[0][0] == store._evict_all_to_disk_sync
+            # _save_entries_to_disk is called with the snapshot
+            assert mock_thread.call_args[0][0] == store._save_entries_to_disk
+            # _entries should already be cleared (snapshot-then-clear on event loop)
+            assert len(store) == 0
 
     def test_sync_methods_unchanged(self, tmp_path):
         """Regression: sync get()/set() still work exactly as before."""

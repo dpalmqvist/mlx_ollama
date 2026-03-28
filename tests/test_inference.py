@@ -1536,6 +1536,9 @@ class TestKvCachePreflightCheck:
         lm.prompt_cache_store = MagicMock()
         lm.prompt_cache_store.get.return_value = None
         lm.prompt_cache_store.evict_all_to_disk = MagicMock()
+        lm.prompt_cache_store.async_get = AsyncMock(return_value=None)
+        lm.prompt_cache_store.async_set = AsyncMock(return_value=None)
+        lm.prompt_cache_store.async_evict_all_to_disk = AsyncMock()
         lm.active_refs = 0
         return lm
 

@@ -25,6 +25,9 @@ async def safe_ndjson_stream(
     """
     try:
         async for item in source:
+            # Note: format_chunk exceptions are also caught below.  This is
+            # intentional — once streaming has started the HTTP status is 200,
+            # so the best we can do is emit an error payload and log it.
             formatted = format_chunk(item)
             if formatted is not None:
                 yield formatted
