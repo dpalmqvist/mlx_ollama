@@ -883,9 +883,9 @@ class TestBundleNemotronMoeExperts:
             "backbone.layers.1.mixer.switch_mlp.fc1.weight": rng.randn(
                 experts, inter, hidden
             ).astype(np.float16),
-            "backbone.layers.1.mixer.gate.weight": rng.randn(
-                experts, hidden
-            ).astype(np.float16),
+            "backbone.layers.1.mixer.gate.weight": rng.randn(experts, hidden).astype(
+                np.float16
+            ),
         }
         save_file(shard1, str(model_dir / "model-00001-of-00002.safetensors"))
 

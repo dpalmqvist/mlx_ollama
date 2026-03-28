@@ -39,9 +39,7 @@ class FlashMoE(nn.Module):
         self.weight_store = weight_store
         self._activation = activation
 
-    def _apply_gated_activation(
-        self, up_out: mx.array, gate_out: mx.array
-    ) -> mx.array:
+    def _apply_gated_activation(self, up_out: mx.array, gate_out: mx.array) -> mx.array:
         """Apply gated activation (SwiGLU). Activation is a 2-arg callable."""
         if self._activation is not None:
             return self._activation(up_out, gate_out)
@@ -49,9 +47,12 @@ class FlashMoE(nn.Module):
 
     def _apply_ungated_activation(self, x: mx.array) -> mx.array:
         """Apply non-gated activation (e.g. relu2). Activation is a 1-arg callable."""
-        if self._activation is not None:
-            return self._activation(x)
-        return nn.silu(x)
+        if self._activation is None:
+            raise ValueError(
+                "FlashMoE: non-gated (fc1/fc2) experts require an explicit activation "
+                "function — pass activation=relu2 (or your model's activation) to FlashMoE.__init__."
+            )
+        return self._activation(x)
 
     def __call__(
         self,

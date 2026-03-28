@@ -184,9 +184,7 @@ class TestFlashMoENemotron:
         flash_moe, _, _ = _setup_nemotron_flash_moe(tmp_path, hidden, inter, experts)
 
         x = mx.random.normal((2, 3, hidden))
-        inds = mx.array(
-            [[[0, 3], [1, 5], [2, 7]], [[3, 5], [2, 4], [6, 7]]]
-        )
+        inds = mx.array([[[0, 3], [1, 5], [2, 7]], [[3, 5], [2, 4], [6, 7]]])
         scores = mx.ones(inds.shape, dtype=mx.float32) * 0.5
 
         output = flash_moe(x, inds, scores)

@@ -173,7 +173,9 @@ class _ExpertFormat:
 
     layer_prefix: str  # e.g. "model.layers" or "backbone.layers"
     expert_prefix: str  # e.g. "mlp.switch_mlp" or "mixer.switch_mlp"
-    projections: tuple[str, ...]  # e.g. ("gate_proj", "up_proj", "down_proj") or ("fc1", "fc2")
+    projections: tuple[
+        str, ...
+    ]  # e.g. ("gate_proj", "up_proj", "down_proj") or ("fc1", "fc2")
 
     def full_prefix(self, layer_idx: int) -> str:
         return f"{self.layer_prefix}.{layer_idx}.{self.expert_prefix}"
