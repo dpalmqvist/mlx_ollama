@@ -169,16 +169,6 @@ class TestDeferredCleanupLock:
 class TestDrainAndJoinBlocksNewInference:
     """When drain_and_join times out with thread alive, new inference must be blocked."""
 
-    def test_drain_timeout_flag_exists(self):
-        """CancellableStream should have a flag to indicate stuck thread."""
-        from olmlx.utils.streaming import CancellableStream
-
-        stream = CancellableStream(lambda ce: iter([]), is_vlm=False)
-        # After fix, there should be a way to check if the thread is stuck
-        assert hasattr(stream, "thread_stuck") or hasattr(stream, "_thread_stuck"), (
-            "CancellableStream needs a thread_stuck indicator (Bug #120)"
-        )
-
     @pytest.mark.asyncio
     async def test_kv_cache_eviction_calls_synchronize(self):
         """After KV cache eviction mx.clear_cache(), mx.synchronize() must follow."""

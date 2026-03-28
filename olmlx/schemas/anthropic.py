@@ -1,6 +1,6 @@
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from olmlx.schemas.common import ModelName
 
@@ -49,8 +49,21 @@ class AnthropicThinkingParam(BaseModel):
 class AnthropicMessagesRequest(BaseModel):
     model: ModelName
     messages: list[AnthropicMessage]
-    max_tokens: int = Field(4096, ge=1, le=131072)
+    max_tokens: int = Field(4096, ge=1)
     stream: bool = False
+
+    @field_validator("max_tokens")
+    @classmethod
+    def validate_max_tokens(cls, v: int) -> int:
+        from olmlx.config import settings
+
+        if v > settings.max_tokens_limit:
+            raise ValueError(
+                f"max_tokens {v} exceeds configured limit {settings.max_tokens_limit} "
+                f"(set OLMLX_MAX_TOKENS_LIMIT to increase)"
+            )
+        return v
+
     temperature: float | None = Field(None, ge=0, le=1)
     top_p: float | None = Field(None, ge=0, le=1)
     top_k: int | None = Field(None, ge=1)  # Anthropic spec: top_k >= 1

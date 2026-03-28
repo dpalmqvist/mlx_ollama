@@ -228,6 +228,10 @@ def _get_deferred_cleanup_lock() -> asyncio.Lock:
 
     Module-level asyncio.Lock() binds to the loop at creation time, which
     breaks in tests that create fresh event loops.
+
+    Safe: asyncio is single-threaded; no await between the ``is None`` check
+    and the assignment, so no two coroutines can both observe ``None``
+    simultaneously.
     """
     global _deferred_cleanup_lock
     if _deferred_cleanup_lock is None:
