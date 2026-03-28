@@ -57,7 +57,10 @@ async def upload_blob(digest: str, request: Request):
             async for chunk in request.stream():
                 received += len(chunk)
                 if received > MAX_BLOB_SIZE:
-                    os.unlink(tmp_path)
+                    try:
+                        os.unlink(tmp_path)
+                    except OSError:
+                        pass
                     return JSONResponse(
                         {"error": f"blob too large (limit: {MAX_BLOB_SIZE} bytes)"},
                         status_code=413,
