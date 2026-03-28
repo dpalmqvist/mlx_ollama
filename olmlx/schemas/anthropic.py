@@ -1,6 +1,6 @@
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from olmlx.schemas.common import ModelName
 
@@ -34,9 +34,26 @@ class AnthropicContentBlock(BaseModel):
     model_config = {"extra": "allow"}
 
 
+_MAX_CONTENT_LENGTH = 1_000_000
+_MAX_CONTENT_BLOCKS = 1_000
+
+
 class AnthropicMessage(BaseModel):
     role: str
     content: str | list[AnthropicContentBlock]
+
+    @field_validator("content")
+    @classmethod
+    def validate_content_length(cls, v: str | list) -> str | list:
+        if isinstance(v, str) and len(v) > _MAX_CONTENT_LENGTH:
+            raise ValueError(
+                f"content length {len(v)} exceeds limit {_MAX_CONTENT_LENGTH}"
+            )
+        if isinstance(v, list) and len(v) > _MAX_CONTENT_BLOCKS:
+            raise ValueError(
+                f"content block count {len(v)} exceeds limit {_MAX_CONTENT_BLOCKS}"
+            )
+        return v
 
 
 class AnthropicThinkingParam(BaseModel):
@@ -51,6 +68,19 @@ class AnthropicMessagesRequest(BaseModel):
     messages: list[AnthropicMessage]
     max_tokens: int = Field(4096, ge=1)
     stream: bool = False
+
+    @field_validator("max_tokens")
+    @classmethod
+    def validate_max_tokens(cls, v: int) -> int:
+        from olmlx.config import settings
+
+        if v > settings.max_tokens_limit:
+            raise ValueError(
+                f"max_tokens {v} exceeds configured limit {settings.max_tokens_limit} "
+                f"(set OLMLX_MAX_TOKENS_LIMIT to increase)"
+            )
+        return v
+
     temperature: float | None = Field(None, ge=0, le=1)
     top_p: float | None = Field(None, ge=0, le=1)
     top_k: int | None = Field(None, ge=1)  # Anthropic spec: top_k >= 1
@@ -59,6 +89,20 @@ class AnthropicMessagesRequest(BaseModel):
     tools: list[AnthropicTool] | None = None
     tool_choice: dict | None = None
     thinking: AnthropicThinkingParam | None = None
+
+    @field_validator("system")
+    @classmethod
+    def validate_system_length(cls, v: str | list | None) -> str | list | None:
+        if isinstance(v, str) and len(v) > _MAX_CONTENT_LENGTH:
+            raise ValueError(
+                f"system length {len(v)} exceeds limit {_MAX_CONTENT_LENGTH}"
+            )
+        if isinstance(v, list) and len(v) > _MAX_CONTENT_BLOCKS:
+            raise ValueError(
+                f"system block count {len(v)} exceeds limit {_MAX_CONTENT_BLOCKS}"
+            )
+        return v
+
     metadata: dict | None = None
 
     model_config = {"extra": "allow"}

@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 ModelName = Annotated[str, Field(min_length=1, max_length=256)]
 
@@ -13,6 +13,21 @@ class ModelOptions(BaseModel):
     num_keep: int | None = None
     seed: int | None = None
     num_predict: int | None = Field(None, ge=-2)  # -1=infinite, -2=fill context
+
+    @field_validator("num_predict")
+    @classmethod
+    def validate_num_predict(cls, v: int | None) -> int | None:
+        if v is None or v < 0:
+            return v  # special values -1 (infinite) and -2 (fill context)
+        from olmlx.config import settings
+
+        if v > settings.max_tokens_limit:
+            raise ValueError(
+                f"num_predict {v} exceeds configured limit {settings.max_tokens_limit} "
+                f"(set OLMLX_MAX_TOKENS_LIMIT to increase)"
+            )
+        return v
+
     top_k: int | None = Field(None, ge=0)
     top_p: float | None = Field(None, ge=0, le=1)
     min_p: float | None = Field(None, ge=0, le=1)

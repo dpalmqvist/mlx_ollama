@@ -1249,6 +1249,132 @@ class TestRingHostfileGeneration:
             os.environ.pop(key, None)
 
 
+class TestSidebandSocketTimeout:
+    """Issue #127: Socket timeouts and JSON error handling in sideband protocol."""
+
+    def test_recv_message_times_out_on_incomplete_header(self):
+        """_recv_message should raise socket.timeout when client sends partial data."""
+        from olmlx.engine.distributed import _recv_message
+
+        server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server_sock.bind(("127.0.0.1", 0))
+        port = server_sock.getsockname()[1]
+        server_sock.listen(1)
+
+        client_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client_sock.connect(("127.0.0.1", port))
+        conn, _ = server_sock.accept()
+
+        try:
+            # Send only 2 bytes of a 4-byte header — incomplete message
+            client_sock.sendall(b"\x00\x00")
+            # Set a short timeout on the receiving socket
+            conn.settimeout(0.5)
+            with pytest.raises(socket.timeout):
+                _recv_message(conn)
+        finally:
+            client_sock.close()
+            conn.close()
+            server_sock.close()
+
+    def test_recv_message_raises_on_malformed_json(self):
+        """_recv_message should raise ValueError on malformed JSON payload."""
+        import struct
+
+        from olmlx.engine.distributed import _recv_message
+
+        server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server_sock.bind(("127.0.0.1", 0))
+        port = server_sock.getsockname()[1]
+        server_sock.listen(1)
+
+        client_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client_sock.connect(("127.0.0.1", port))
+        conn, _ = server_sock.accept()
+
+        try:
+            # Send a valid length header followed by invalid JSON
+            bad_payload = b"not valid json {{{{"
+            header = struct.pack("!I", len(bad_payload))
+            client_sock.sendall(header + bad_payload)
+            with pytest.raises(ValueError, match="malformed JSON"):
+                _recv_message(conn)
+        finally:
+            client_sock.close()
+            conn.close()
+            server_sock.close()
+
+    def test_coordinator_resets_timeout_after_handshake(self):
+        """After handshake, worker sockets should be blocking (no timeout) for inference loop."""
+        from olmlx.engine.distributed import DistributedCoordinator, DistributedWorker
+
+        coordinator = DistributedCoordinator(world_size=2, port=0)
+        actual_port = coordinator.port
+
+        def worker_fn():
+            worker = DistributedWorker(coordinator_host="127.0.0.1", port=actual_port)
+            worker.send_ready()
+            # Keep connection alive briefly
+            worker.wait_for_inference()
+            worker.close()
+
+        t = threading.Thread(target=worker_fn)
+        t.start()
+
+        coordinator.wait_for_workers(timeout=5.0)
+
+        # After wait_for_workers, worker sockets should be blocking (timeout=None)
+        # so idle workers don't crash with socket.timeout
+        for ws in coordinator._workers:
+            assert ws.gettimeout() is None, (
+                f"Worker socket should be blocking after handshake, got timeout={ws.gettimeout()}"
+            )
+
+        coordinator.broadcast_shutdown()
+        t.join(timeout=5.0)
+        coordinator.close()
+
+    def test_worker_wait_for_inference_handles_timeout_gracefully(self):
+        """Worker.wait_for_inference should propagate socket.timeout, not crash."""
+        from olmlx.engine.distributed import DistributedCoordinator, DistributedWorker
+
+        coordinator = DistributedCoordinator(world_size=2, port=0)
+        actual_port = coordinator.port
+
+        errors = []
+
+        def worker_fn():
+            try:
+                worker = DistributedWorker(
+                    coordinator_host="127.0.0.1", port=actual_port
+                )
+                worker.send_ready()
+                # Set a very short timeout so wait_for_inference times out
+                worker._sock.settimeout(0.3)
+                try:
+                    worker.wait_for_inference()
+                except socket.timeout:
+                    pass  # Expected — graceful handling
+                except Exception as e:
+                    errors.append(e)
+                worker.close()
+            except Exception as e:
+                errors.append(e)
+
+        t = threading.Thread(target=worker_fn)
+        t.start()
+
+        coordinator.wait_for_workers(timeout=5.0)
+        # Don't send anything — let the worker timeout
+        time.sleep(1)
+        coordinator.close()
+        t.join(timeout=5.0)
+
+        assert len(errors) == 0, f"Unexpected errors: {errors}"
+
+
 class TestSSHCommandConstruction:
     """Tests for SSH command with working dir and custom python."""
 

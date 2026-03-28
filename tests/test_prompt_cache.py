@@ -244,15 +244,23 @@ class TestCacheReusedOnPrefixMatch:
                 chunks.append(chunk)
 
         # Cache should have been trimmed by 2 (generated tokens beyond prefix)
-        mock_trim.assert_called_once_with(existing_cache, 2)
+        # Note: after Bug #123 fix, trim is called on a deep copy, not the original
+        mock_trim.assert_called_once()
+        trim_args = mock_trim.call_args
+        assert trim_args[0][1] == 2  # trim amount is still 2
 
         # async_mlx_stream should receive only suffix tokens (3 new ones)
         call_args = mock_async_stream.call_args
         prompt_arg = call_args[1].get("prompt") or call_args[0][2]
         assert prompt_arg == [60, 70, 80]
 
-        # prompt_cache should be passed in kwargs
-        assert call_args[1].get("prompt_cache") is existing_cache
+        # Bug #123: cache is removed from store before mutation (not deep-copied)
+        # so the generator receives the original cache object directly
+        prompt_cache_arg = call_args[1].get("prompt_cache")
+        assert prompt_cache_arg is not None
+        assert (
+            prompt_cache_arg is existing_cache
+        )  # same object, removed from store before use
 
 
 class TestCacheMissCreatesFresh:

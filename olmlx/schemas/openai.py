@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from olmlx.schemas.common import ModelName
 
@@ -55,6 +55,20 @@ class OpenAIChatRequest(BaseModel):
     seed: int | None = None
     response_format: ResponseFormat | None = None
 
+    @field_validator("max_tokens", "max_completion_tokens")
+    @classmethod
+    def validate_max_tokens(cls, v: int | None) -> int | None:
+        if v is None:
+            return v
+        from olmlx.config import settings
+
+        if v > settings.max_tokens_limit:
+            raise ValueError(
+                f"value {v} exceeds configured limit {settings.max_tokens_limit} "
+                f"(set OLMLX_MAX_TOKENS_LIMIT to increase)"
+            )
+        return v
+
 
 class OpenAIUsage(BaseModel):
     prompt_tokens: int = 0
@@ -106,6 +120,20 @@ class OpenAICompletionRequest(BaseModel):
     presence_penalty: float = Field(0.0, ge=-2, le=2)
     frequency_penalty: float = Field(0.0, ge=-2, le=2)
     seed: int | None = None
+
+    @field_validator("max_tokens")
+    @classmethod
+    def validate_max_tokens(cls, v: int | None) -> int | None:
+        if v is None:
+            return v
+        from olmlx.config import settings
+
+        if v > settings.max_tokens_limit:
+            raise ValueError(
+                f"value {v} exceeds configured limit {settings.max_tokens_limit} "
+                f"(set OLMLX_MAX_TOKENS_LIMIT to increase)"
+            )
+        return v
 
 
 class OpenAICompletionChoice(BaseModel):

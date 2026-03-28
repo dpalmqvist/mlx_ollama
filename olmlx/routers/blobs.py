@@ -1,7 +1,17 @@
+import hashlib
+import os
+import re
+import tempfile
+
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
 
 router = APIRouter()
+
+_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+
+# Maximum blob upload size: 10 GB
+MAX_BLOB_SIZE = 10 * 1024 * 1024 * 1024
 
 
 @router.head("/api/blobs/{digest}")
@@ -14,15 +24,58 @@ async def check_blob(digest: str, request: Request):
 
 @router.post("/api/blobs/{digest}")
 async def upload_blob(digest: str, request: Request):
+    if not _DIGEST_RE.match(digest):
+        return JSONResponse({"error": "invalid digest format"}, status_code=400)
+
     store = request.app.state.model_store
-    body = await request.body()
 
-    # Verify digest
-    import hashlib
+    # Fast-path: reject via Content-Length header before reading the body
+    content_length = request.headers.get("content-length")
+    try:
+        cl = int(content_length) if content_length is not None else 0
+    except ValueError:
+        cl = 0
+    if cl > MAX_BLOB_SIZE:
+        return JSONResponse(
+            {"error": f"blob too large (limit: {MAX_BLOB_SIZE} bytes)"},
+            status_code=413,
+        )
 
-    computed = "sha256:" + hashlib.sha256(body).hexdigest()
-    if digest != computed:
-        return JSONResponse({"error": "digest mismatch"}, status_code=400)
+    # Stream to a temp file with O(chunk) memory and incremental digest.
+    blobs_dir = store.models_dir / "blobs"
+    blobs_dir.mkdir(parents=True, exist_ok=True)
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=blobs_dir)
+    try:
+        try:
+            tmp_file = os.fdopen(tmp_fd, "wb")
+        except Exception:
+            os.close(tmp_fd)
+            raise
+        hasher = hashlib.sha256()
+        received = 0
+        with tmp_file as tmp:
+            async for chunk in request.stream():
+                received += len(chunk)
+                if received > MAX_BLOB_SIZE:
+                    try:
+                        os.unlink(tmp_path)
+                    except OSError:
+                        pass
+                    return JSONResponse(
+                        {"error": f"blob too large (limit: {MAX_BLOB_SIZE} bytes)"},
+                        status_code=413,
+                    )
+                tmp.write(chunk)
+                hasher.update(chunk)
 
-    await store.save_blob(digest, body)
-    return Response(status_code=201)
+        computed = "sha256:" + hasher.hexdigest()
+        if digest != computed:
+            os.unlink(tmp_path)
+            return JSONResponse({"error": "digest mismatch"}, status_code=400)
+
+        os.replace(tmp_path, blobs_dir / digest)
+        return Response(status_code=201)
+    except Exception:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        raise

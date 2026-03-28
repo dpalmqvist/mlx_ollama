@@ -250,6 +250,18 @@ def _pre_shard_and_distribute(
     return True
 
 
+def validate_remote_python(remote_python: str) -> None:
+    """Validate remote_python against a strict allowlist to prevent shell injection.
+
+    The remote_python config value is intentionally not shell-quoted (to allow
+    multi-word values like "uv run python"), so it must be validated to prevent
+    command injection via SSH.  Note: remote_working_dir does not need a similar
+    allowlist because it is passed through shlex.quote() before interpolation.
+    """
+    if not re.fullmatch(r"[a-zA-Z0-9_ /.@-]+", remote_python):
+        raise ValueError(f"Invalid remote_python value: {remote_python!r}")
+
+
 def _launch_distributed_workers() -> list[str]:
     """Launch worker processes on remote hosts via SSH for distributed inference.
 
@@ -361,6 +373,7 @@ def _launch_distributed_workers() -> list[str]:
         _atexit_registered = True
 
     remote_python = experimental.distributed_remote_python
+    validate_remote_python(remote_python)
     remote_working_dir = experimental.distributed_remote_working_dir
 
     # Pre-shard and distribute weights to workers if enabled
