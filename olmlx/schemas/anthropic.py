@@ -35,6 +35,7 @@ class AnthropicContentBlock(BaseModel):
 
 
 _MAX_CONTENT_LENGTH = 1_000_000
+_MAX_CONTENT_BLOCKS = 1_000
 
 
 class AnthropicMessage(BaseModel):
@@ -47,6 +48,10 @@ class AnthropicMessage(BaseModel):
         if isinstance(v, str) and len(v) > _MAX_CONTENT_LENGTH:
             raise ValueError(
                 f"content length {len(v)} exceeds limit {_MAX_CONTENT_LENGTH}"
+            )
+        if isinstance(v, list) and len(v) > _MAX_CONTENT_BLOCKS:
+            raise ValueError(
+                f"content block count {len(v)} exceeds limit {_MAX_CONTENT_BLOCKS}"
             )
         return v
 
@@ -91,6 +96,10 @@ class AnthropicMessagesRequest(BaseModel):
         if isinstance(v, str) and len(v) > _MAX_CONTENT_LENGTH:
             raise ValueError(
                 f"system length {len(v)} exceeds limit {_MAX_CONTENT_LENGTH}"
+            )
+        if isinstance(v, list) and len(v) > _MAX_CONTENT_BLOCKS:
+            raise ValueError(
+                f"system block count {len(v)} exceeds limit {_MAX_CONTENT_BLOCKS}"
             )
         return v
 

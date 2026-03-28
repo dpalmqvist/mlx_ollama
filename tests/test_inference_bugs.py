@@ -175,20 +175,29 @@ class TestDrainAndJoinBlocksNewInference:
         import inspect
 
         source = inspect.getsource(_inf_mod._stream_completion)
-        # Find the eviction recovery path (evict_all_to_disk + clear_cache)
-        # After the fix, mx.synchronize() should appear after mx.clear_cache()
-        # in the memory pressure section
         lines = source.split("\n")
-        for i, line in enumerate(lines):
-            if "evict_all_to_disk" in line:
-                # Look for mx.synchronize() within the next few lines after clear_cache
-                block = "\n".join(lines[i : i + 10])
-                if "clear_cache" in block:
-                    assert "synchronize" in block or "_safe_sync" in block, (
-                        "mx.synchronize() or _safe_sync() must follow mx.clear_cache() "
-                        "in KV cache eviction path (Bug #120)"
-                    )
-                break
+        # Find all evict_all_to_disk sites and verify each has _safe_sync
+        # somewhere between it and the next eviction site (or end of function).
+        eviction_indices = [
+            i
+            for i, line in enumerate(lines)
+            if "evict_all_to_disk" in line and not line.lstrip().startswith("#")
+        ]
+        assert len(eviction_indices) >= 1, (
+            "Expected at least one evict_all_to_disk call in _stream_completion"
+        )
+        for idx, start in enumerate(eviction_indices):
+            end = (
+                eviction_indices[idx + 1]
+                if idx + 1 < len(eviction_indices)
+                else len(lines)
+            )
+            block = "\n".join(lines[start:end])
+            if "clear_cache" in block:
+                assert "synchronize" in block or "_safe_sync" in block, (
+                    f"mx.synchronize() or _safe_sync() must follow mx.clear_cache() "
+                    f"in eviction path starting at source line {start} (Bug #120)"
+                )
 
 
 # ---------------------------------------------------------------------------
