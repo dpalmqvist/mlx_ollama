@@ -89,7 +89,12 @@ def _recv_message(sock: socket.socket) -> dict | None:
     payload = _recv_exact(sock, length)
     if payload is None:
         return None
-    return json.loads(payload.decode("utf-8"))
+    try:
+        return json.loads(payload.decode("utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"Sideband received malformed JSON ({len(payload)} bytes): {exc}"
+        ) from exc
 
 
 def _recv_exact(sock: socket.socket, n: int) -> bytes | None:
@@ -205,7 +210,7 @@ class DistributedCoordinator:
                             f"rejecting connection"
                         )
                 self._workers.append(conn)
-                conn.settimeout(None)
+                conn.settimeout(30.0)
                 logger.info(
                     "Worker %d/%d ready",
                     len(self._workers),
