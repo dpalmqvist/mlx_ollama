@@ -330,9 +330,11 @@ class PromptCacheStore:
         # if so, keep the fresher in-memory entry and discard the stale disk load.
         if cache_id in self._entries:
             self._entries.move_to_end(cache_id)
+            # Capture before any await — entries could be cleared during unlink
+            existing = self._entries[cache_id]
             if disk_path is not None:
                 await asyncio.to_thread(disk_path.unlink, True)
-            return self._entries.get(cache_id)
+            return existing
         evicted_id, evicted = self._set_in_memory(cache_id, loaded)
         # Save evicted entry to disk first to avoid a window where
         # evicted_id is in neither memory nor disk.
@@ -357,6 +359,11 @@ class PromptCacheStore:
 
         Snapshots and clears _entries on the event loop first, then saves
         the snapshot to disk in a worker thread — no thread touches _entries.
+
+        Note: there is a brief window between clearing memory and completing
+        the disk writes where entries are in neither location.  Any async_get
+        during this window will return None (cache miss).  This is acceptable
+        for a single-user server where this only runs under memory pressure.
         """
         if self._disk_enabled:
             snapshot = list(self._entries.items())
