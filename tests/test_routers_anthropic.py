@@ -1979,3 +1979,108 @@ class TestStreamCloseOnce:
         assert tracker.close_count == 1, (
             f"Expected result.aclose() called once, got {tracker.close_count}"
         )
+
+
+class TestAnthropicStreamingCleanup:
+    """Tests for streaming error handling and cleanup in the Anthropic router."""
+
+    @staticmethod
+    def _parse_sse_events(text: str) -> list[dict]:
+        """Parse SSE text into a list of {event, data} dicts."""
+        events = []
+        current_event = None
+        current_data = []
+        for line in text.split("\n"):
+            if line.startswith("event: "):
+                current_event = line[7:]
+            elif line.startswith("data: "):
+                current_data.append(line[6:])
+            elif line == "" and (current_event or current_data):
+                data_str = "\n".join(current_data)
+                try:
+                    data = json.loads(data_str)
+                except json.JSONDecodeError:
+                    data = data_str
+                events.append({"event": current_event, "data": data})
+                current_event = None
+                current_data = []
+        return events
+
+    async def test_streaming_error_emits_error_event(self, app_client):
+        """When the model stream raises mid-stream, an SSE error event is emitted."""
+
+        class ErrorStream:
+            def __init__(self):
+                self._yielded = False
+                self.aclose = AsyncMock()
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                if not self._yielded:
+                    self._yielded = True
+                    return {"text": "partial"}
+                raise RuntimeError("GPU error mid-stream")
+
+        error_stream = ErrorStream()
+
+        with patch(
+            "olmlx.routers.anthropic.generate_chat",
+            return_value=error_stream,
+        ):
+            resp = await app_client.post(
+                "/v1/messages",
+                json={
+                    "model": "qwen3",
+                    "max_tokens": 100,
+                    "stream": True,
+                    "messages": [{"role": "user", "content": "Hi"}],
+                },
+            )
+
+        assert resp.status_code == 200
+        events = self._parse_sse_events(resp.text)
+        # Should contain an error event
+        error_events = [e for e in events if e.get("event") == "error"]
+        assert len(error_events) >= 1
+        error_data = error_events[0]["data"]
+        assert error_data["type"] == "error"
+        assert error_data["error"]["type"] == "api_error"
+
+    async def test_streaming_cleanup_on_error(self, app_client):
+        """Verify result.aclose() is called even when the inner generator raises."""
+
+        class ErrorStream:
+            def __init__(self):
+                self._yielded = False
+                self.aclose = AsyncMock()
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                if not self._yielded:
+                    self._yielded = True
+                    return {"text": "partial"}
+                raise RuntimeError("GPU error mid-stream")
+
+        error_stream = ErrorStream()
+
+        with patch(
+            "olmlx.routers.anthropic.generate_chat",
+            return_value=error_stream,
+        ):
+            resp = await app_client.post(
+                "/v1/messages",
+                json={
+                    "model": "qwen3",
+                    "max_tokens": 100,
+                    "stream": True,
+                    "messages": [{"role": "user", "content": "Hi"}],
+                },
+            )
+
+        assert resp.status_code == 200
+        # The finally block in stream_sse should call result.aclose()
+        error_stream.aclose.assert_awaited_once()
