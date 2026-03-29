@@ -1571,6 +1571,29 @@ class TestEstimateKvCacheBytes:
         expected_raw = 80 * 2 * 64 * 128 * 1000 * 2
         assert result == int(expected_raw * _inf_mod.MEMORY_SAFETY_FACTOR)
 
+    def test_nas_model_wrong_attn_attr_name_falls_back_to_args(self):
+        """If layers exist but use a different attr name than self_attn, fall back to args."""
+        args = MagicMock(spec=[])
+        args.num_hidden_layers = 32
+        args.num_attention_heads = 32
+        args.num_key_value_heads = 8
+        args.hidden_size = 4096
+
+        model = MagicMock(spec=[])
+        model.args = args
+
+        layers = []
+        for _ in range(32):
+            layer = MagicMock(spec=[])  # no self_attn attribute
+            layers.append(layer)
+        model.model = MagicMock()
+        model.model.layers = layers
+
+        # Should fall back to args-based estimate, not return 0
+        result = _estimate_kv_cache_bytes(model, 1000)
+        expected_raw = 32 * 2 * 8 * 128 * 1000 * 2
+        assert result == int(expected_raw * _inf_mod.MEMORY_SAFETY_FACTOR)
+
 
 class TestKvCachePreflightCheck:
     """Tests for the pre-flight KV cache memory check in _stream_completion."""

@@ -410,9 +410,14 @@ def _estimate_kv_cache_bytes(model: Any, num_tokens: int) -> int:
                 break
             per_layer_kv_sum += layer_kv_heads
         else:
-            # All layers inspected successfully
-            raw = 2 * per_layer_kv_sum * head_dim * num_tokens * bytes_per_element
-            return int(raw * MEMORY_SAFETY_FACTOR)
+            # All layers inspected successfully — but only trust the result
+            # if we actually found some attention layers.  per_layer_kv_sum == 0
+            # likely means the attention module uses a different attribute name
+            # (e.g. "attention" instead of "self_attn"); fall through to the
+            # args-based estimate in that case.
+            if per_layer_kv_sum > 0:
+                raw = 2 * per_layer_kv_sum * head_dim * num_tokens * bytes_per_element
+                return int(raw * MEMORY_SAFETY_FACTOR)
 
     # Fallback: uniform estimate from args
     num_layers = args.num_hidden_layers
@@ -1098,9 +1103,7 @@ async def _stream_completion(
                             prompt = full_prompt_tokens
                     # Re-estimate after eviction for the full generation window
                     estimate_total = estimate_tokens + max_tokens
-                    kv_bytes = _estimate_kv_cache_bytes(
-                        lm.model, estimate_total
-                    )
+                    kv_bytes = _estimate_kv_cache_bytes(lm.model, estimate_total)
                     # Sync Metal to ensure freed buffers are reclaimed before re-reading
                     _safe_sync()
                     current_metal = memory_utils.get_metal_memory()
