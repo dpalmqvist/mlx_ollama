@@ -900,11 +900,6 @@ async def generate_completion(
                 "system prepended as plain text",
                 model_name,
             )
-        else:
-            logger.debug(
-                "apply_chat_template not supported for VLM %s via /api/generate",
-                model_name,
-            )
 
     gen_kwargs = _build_generate_kwargs(options, is_vlm=lm.is_vlm)
     mt = gen_kwargs.pop("max_tokens", max_tokens)

@@ -611,6 +611,38 @@ class TestGenerateCompletion:
         assert result["text"] == "output"
 
     @pytest.mark.asyncio
+    async def test_apply_chat_template_fallback_preserves_system(self, mock_manager):
+        """When template fails, system prompt is prepended as plain text."""
+        mock_mx = MagicMock()
+        mock_mx.core = mock_mx
+        mock_mlx_lm = MagicMock()
+        lm = mock_manager._loaded["qwen3:latest"]
+        lm.text_tokenizer.apply_chat_template.side_effect = RuntimeError(
+            "No chat template"
+        )
+
+        with patch("olmlx.engine.inference.mx", mock_mx):
+            with patch.dict("sys.modules", {"mlx_lm": mock_mlx_lm}):
+                # Patch _full_completion to capture the prompt it receives
+                with patch(
+                    "olmlx.engine.inference._full_completion",
+                    new_callable=AsyncMock,
+                ) as mock_full:
+                    mock_full.return_value = {"text": "output", "done": True}
+                    await generate_completion(
+                        mock_manager,
+                        "qwen3",
+                        "Hello",
+                        stream=False,
+                        apply_chat_template=True,
+                        system="You are helpful",
+                    )
+
+        # _full_completion receives (lm, prompt, max_tokens, gen_kwargs, stats, images)
+        prompt_arg = mock_full.call_args[0][1]
+        assert prompt_arg == "You are helpful\n\nHello"
+
+    @pytest.mark.asyncio
     async def test_streaming(self, mock_manager):
         mock_mx = MagicMock()
 
