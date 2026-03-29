@@ -888,12 +888,21 @@ async def generate_completion(
                 "Chat template failed for %s, falling back to raw prompt: %s",
                 model_name,
                 exc,
+                exc_info=True,
             )
     elif apply_chat_template and lm.is_vlm:
-        logger.warning(
-            "apply_chat_template not supported for VLM %s via /api/generate",
-            model_name,
-        )
+        if system:
+            prompt = f"{system}\n\n{prompt}"
+            logger.warning(
+                "apply_chat_template not supported for VLM %s; "
+                "system prepended as plain text",
+                model_name,
+            )
+        else:
+            logger.warning(
+                "apply_chat_template not supported for VLM %s via /api/generate",
+                model_name,
+            )
 
     gen_kwargs = _build_generate_kwargs(options, is_vlm=lm.is_vlm)
     mt = gen_kwargs.pop("max_tokens", max_tokens)
