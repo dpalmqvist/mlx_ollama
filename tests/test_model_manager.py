@@ -1498,3 +1498,14 @@ class TestMemoryCheck:
         assert mock_gc.call_count == 2
         assert mock_clear.call_count == 2
         assert "qwen3:latest" not in manager._loaded
+
+
+class TestEnsureLoadedNotFoundSuggestions:
+    @pytest.mark.asyncio
+    async def test_ensure_loaded_not_found_suggests_similar(self, registry, mock_store):
+        """When model not found, error should include 'Did you mean' with suggestions."""
+        manager = ModelManager(registry, mock_store)
+        with pytest.raises(ValueError, match="Did you mean") as exc_info:
+            await manager.ensure_loaded("qwem3")  # typo for qwen3
+        # Should mention the similar model
+        assert "qwen3:latest" in str(exc_info.value)

@@ -87,6 +87,7 @@ class PromptCacheStore:
         self._disk_path = disk_path
         self._model_name = model_name.replace("/", "--")
         self._disk_max_bytes = disk_max_bytes
+        self._evict_generation = 0  # bumped by async_evict_all_to_disk
 
     @property
     def _disk_enabled(self) -> bool:
@@ -191,6 +192,10 @@ class PromptCacheStore:
             path.unlink(missing_ok=True)
             logger.info("Disk cache cleanup: removed %s", path)
 
+    def peek(self, cache_id: str) -> CachedPromptState | None:
+        """Read-only check for a cache entry without LRU side effects."""
+        return self._entries.get(cache_id)
+
     def get(self, cache_id: str) -> CachedPromptState | None:
         """Get a cache entry, promoting it to MRU.
 
@@ -203,6 +208,29 @@ class PromptCacheStore:
         # Memory miss — try disk
         return self._load_from_disk(cache_id)
 
+    def _set_in_memory(
+        self, cache_id: str, state: CachedPromptState
+    ) -> tuple[str | None, CachedPromptState | None]:
+        """Update in-memory entries.
+
+        Returns (evicted_id, evicted_or_displaced):
+        - On cache-ID collision: (None, displaced_state_or_None)
+        - On LRU eviction: (evicted_id, evicted_state)
+        - No eviction needed: (None, None)
+        """
+        if cache_id in self._entries:
+            self._entries.move_to_end(cache_id)
+            old = self._entries[cache_id]
+            self._entries[cache_id] = state
+            displaced = old if old.cache is not state.cache else None
+            return None, displaced
+        evicted: CachedPromptState | None = None
+        evicted_id: str | None = None
+        if len(self._entries) >= self._max_slots:
+            evicted_id, evicted = self._entries.popitem(last=False)
+        self._entries[cache_id] = state
+        return evicted_id, evicted
+
     def set(self, cache_id: str, state: CachedPromptState) -> CachedPromptState | None:
         """Set a cache entry, evicting LRU if at capacity.
 
@@ -210,18 +238,8 @@ class PromptCacheStore:
         cleanup (different .cache object), or None when no cleanup is needed.
         Evicted entries are saved to disk if disk offload is enabled.
         """
-        if cache_id in self._entries:
-            self._entries.move_to_end(cache_id)
-            old = self._entries[cache_id]
-            self._entries[cache_id] = state
-            return old if old.cache is not state.cache else None
-        evicted: CachedPromptState | None = None
-        evicted_id: str | None = None
-        if len(self._entries) >= self._max_slots:
-            evicted_id, evicted = self._entries.popitem(last=False)
-        self._entries[cache_id] = state
-        # Save evicted entry to disk
-        if evicted is not None and evicted_id is not None:
+        evicted_id, evicted = self._set_in_memory(cache_id, state)
+        if evicted_id is not None and evicted is not None:
             self._save_to_disk(evicted_id, evicted)
         return evicted
 
@@ -237,10 +255,124 @@ class PromptCacheStore:
         Used during memory pressure to free GPU memory while preserving
         cache state on disk for later restoration.
         """
+        self._evict_all_to_disk_sync()
+
+    def _evict_all_to_disk_sync(self) -> None:
+        """Sync implementation of evict_all_to_disk."""
         if self._disk_enabled:
             for cache_id, state in list(self._entries.items()):
                 self._save_to_disk(cache_id, state)
         self._entries.clear()
+        self._evict_generation += 1
+
+    def _save_entries_to_disk(
+        self, entries: list[tuple[str, CachedPromptState]]
+    ) -> None:
+        """Save a snapshot of entries to disk (safe to call from a worker thread)."""
+        for cache_id, state in entries:
+            self._save_to_disk(cache_id, state)
+
+    def _read_from_disk(
+        self, cache_id: str
+    ) -> tuple[CachedPromptState | None, Path | None]:
+        """Read a cache entry from disk without mutating _entries.
+
+        Returns (state, file_path) so the caller can delete the file after
+        a successful insertion into _entries.  Returns (None, None) on miss
+        or failure.
+        """
+        if not self._disk_enabled:
+            return None, None
+        file_path = self._disk_file_path(cache_id)
+        if not file_path.exists():
+            return None, None
+        try:
+            cache, metadata = load_prompt_cache(str(file_path), return_metadata=True)
+            tokens = json.loads(metadata.get("tokens", "[]"))
+            state = CachedPromptState(tokens=tokens, cache=cache)
+            logger.info(
+                "Restored cache '%s' from disk (%d tokens)",
+                cache_id,
+                len(tokens),
+            )
+            return state, file_path
+        except Exception:
+            logger.warning(
+                "Failed to load cache '%s' from disk",
+                cache_id,
+                exc_info=True,
+            )
+            file_path.unlink(missing_ok=True)
+            return None, None
+
+    # -- Async wrappers that offload disk I/O to threads ----------------
+    #
+    # All _entries mutations happen on the event loop.  Only pure disk I/O
+    # (read/write safetensors, unlink, stat) is dispatched to a worker thread.
+
+    async def async_get(self, cache_id: str) -> CachedPromptState | None:
+        """Async version of get(). Memory lookup is sync; disk fallback runs in a thread."""
+        state = self._entries.get(cache_id)
+        if state is not None:
+            self._entries.move_to_end(cache_id)
+            return state
+        # Memory miss — read from disk in a thread, then insert on the event loop.
+        gen_before = self._evict_generation
+        loaded, disk_path = await asyncio.to_thread(self._read_from_disk, cache_id)
+        if loaded is None:
+            return None
+        # If entries were bulk-evicted during the await (memory pressure),
+        # don't re-insert — the eviction was intentional.  Leave the disk
+        # file intact so it can be restored later.
+        if self._evict_generation != gen_before:
+            return None
+        # Another coroutine may have populated this cache_id during the await;
+        # if so, keep the fresher in-memory entry and discard the stale disk load.
+        if cache_id in self._entries:
+            self._entries.move_to_end(cache_id)
+            # Capture before any await — entries could be cleared during unlink
+            existing = self._entries[cache_id]
+            if disk_path is not None:
+                await asyncio.to_thread(disk_path.unlink, True)
+            return existing
+        evicted_id, evicted = self._set_in_memory(cache_id, loaded)
+        # Save evicted entry to disk first to avoid a window where
+        # evicted_id is in neither memory nor disk.
+        if evicted_id is not None and evicted is not None:
+            await asyncio.to_thread(self._save_to_disk, evicted_id, evicted)
+        # Delete disk file only after successful insertion and eviction save
+        if disk_path is not None:
+            await asyncio.to_thread(disk_path.unlink, True)
+        return loaded
+
+    async def async_set(
+        self, cache_id: str, state: CachedPromptState
+    ) -> CachedPromptState | None:
+        """Async version of set(). Memory ops are sync; disk save runs in a thread."""
+        evicted_id, evicted = self._set_in_memory(cache_id, state)
+        if evicted_id is not None and evicted is not None:
+            await asyncio.to_thread(self._save_to_disk, evicted_id, evicted)
+        return evicted
+
+    async def async_evict_all_to_disk(self) -> None:
+        """Async version of evict_all_to_disk(). Offloads disk I/O to a thread.
+
+        Snapshots and clears _entries on the event loop first, then saves
+        the snapshot to disk in a worker thread — no thread touches _entries.
+
+        Note: there is a brief window between clearing memory and completing
+        the disk writes where entries are in neither location.  Any async_get
+        during this window will return None (cache miss).  This is acceptable
+        for a single-user server where this only runs under memory pressure.
+        """
+        if self._disk_enabled:
+            snapshot = list(self._entries.items())
+        else:
+            snapshot = []
+        self._entries.clear()
+        self._evict_generation += 1
+        if snapshot:
+            await asyncio.to_thread(self._save_entries_to_disk, snapshot)
 
     def clear(self) -> None:
         """Remove all cache entries and disk cache files."""
@@ -409,6 +541,8 @@ class ModelManager:
     ) -> LoadedModel:
         """Ensure a model is loaded and return it."""
         normalized = self.registry.normalize_name(name)
+        if normalized != name:
+            logger.info("Normalized model name '%s' -> '%s'", name, normalized)
 
         while True:
             # If a previous load timed out and the background thread is still
@@ -473,10 +607,16 @@ class ModelManager:
 
                 hf_path = self.registry.resolve(name)
                 if hf_path is None:
-                    raise ValueError(
-                        f"Model '{name}' not found. "
-                        f"Add it to {settings.models_config} or use a HuggingFace path like 'mlx-community/Qwen2.5-3B-Instruct-4bit'"
+                    suggestions = self.registry.search(name, max_results=3)
+                    msg = f"Model '{name}' not found."
+                    if suggestions:
+                        names = ", ".join(s[0] for s in suggestions)
+                        msg += f" Did you mean: {names}?"
+                    msg += (
+                        f"\nAdd it to {settings.models_config} or use a HuggingFace path "
+                        f"like 'mlx-community/Qwen2.5-3B-Instruct-4bit'"
                     )
+                    raise ValueError(msg)
 
                 # Auto-register direct HF paths so future requests find them
                 if "/" in name:

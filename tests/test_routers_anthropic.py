@@ -1979,3 +1979,65 @@ class TestStreamCloseOnce:
         assert tracker.close_count == 1, (
             f"Expected result.aclose() called once, got {tracker.close_count}"
         )
+
+
+class TestAnthropicStreamingCleanup:
+    """Tests for streaming error handling and cleanup in the Anthropic router."""
+
+    async def test_streaming_error_emits_error_event(self, app_client):
+        """When the model stream raises mid-stream, an SSE error event is emitted."""
+        from tests.conftest import make_error_stream
+        from tests.integration.conftest import parse_sse_events
+
+        error_stream = make_error_stream(
+            [{"text": "partial"}], error_msg="GPU error mid-stream"
+        )
+
+        with patch(
+            "olmlx.routers.anthropic.generate_chat",
+            return_value=error_stream,
+        ):
+            resp = await app_client.post(
+                "/v1/messages",
+                json={
+                    "model": "qwen3",
+                    "max_tokens": 100,
+                    "stream": True,
+                    "messages": [{"role": "user", "content": "Hi"}],
+                },
+            )
+
+        assert resp.status_code == 200
+        events = parse_sse_events(resp.text)
+        # Should contain an error event
+        error_events = [e for e in events if e.get("event") == "error"]
+        assert len(error_events) >= 1
+        error_data = error_events[0]["data"]
+        assert error_data["type"] == "error"
+        assert error_data["error"]["type"] == "api_error"
+
+    async def test_streaming_cleanup_on_error(self, app_client):
+        """Verify result.aclose() is called even when the inner generator raises."""
+        from tests.conftest import make_error_stream
+
+        error_stream = make_error_stream(
+            [{"text": "partial"}], error_msg="GPU error mid-stream"
+        )
+
+        with patch(
+            "olmlx.routers.anthropic.generate_chat",
+            return_value=error_stream,
+        ):
+            resp = await app_client.post(
+                "/v1/messages",
+                json={
+                    "model": "qwen3",
+                    "max_tokens": 100,
+                    "stream": True,
+                    "messages": [{"role": "user", "content": "Hi"}],
+                },
+            )
+
+        assert resp.status_code == 200
+        # The finally block in stream_sse should call result.aclose()
+        error_stream.aclose.assert_awaited_once()

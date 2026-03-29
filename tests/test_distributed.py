@@ -1510,3 +1510,105 @@ class TestSSHCommandConstruction:
         cli_module._cleanup_workers()
         for key in ("MLX_RANK", "MLX_HOSTFILE"):
             os.environ.pop(key, None)
+
+
+class TestSidebandProtocolExtended:
+    """Extended tests for the length-prefixed JSON sideband protocol."""
+
+    def test_sideband_protocol_send_recv_roundtrip(self):
+        """Create a real socket pair, send via _send_message, receive via _recv_message."""
+        from olmlx.engine.distributed import _recv_message, _send_message
+
+        server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server_sock.bind(("127.0.0.1", 0))
+        port = server_sock.getsockname()[1]
+        server_sock.listen(1)
+
+        client_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client_sock.connect(("127.0.0.1", port))
+        conn, _ = server_sock.accept()
+
+        try:
+            original = {
+                "prompt_tokens": [1, 2, 3, 4, 5],
+                "prompt_text": "Hello world test",
+                "max_tokens": 256,
+                "gen_kwargs": {"temp": 0.7, "top_p": 0.9},
+                "action": "generate",
+            }
+            _send_message(client_sock, original)
+            received = _recv_message(conn)
+            assert received == original
+            assert received["prompt_tokens"] == [1, 2, 3, 4, 5]
+            assert received["gen_kwargs"]["temp"] == 0.7
+        finally:
+            client_sock.close()
+            conn.close()
+            server_sock.close()
+
+    def test_sideband_protocol_large_message(self):
+        """Send a large JSON payload and verify integrity."""
+        from olmlx.engine.distributed import _recv_message, _send_message
+
+        server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server_sock.bind(("127.0.0.1", 0))
+        port = server_sock.getsockname()[1]
+        server_sock.listen(1)
+
+        client_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client_sock.connect(("127.0.0.1", port))
+        conn, _ = server_sock.accept()
+
+        try:
+            # Large message with many stop sequences and long prompt
+            large_msg = {
+                "prompt_tokens": list(range(10000)),
+                "prompt_text": "x" * 100000,
+                "max_tokens": 4096,
+                "gen_kwargs": {
+                    "temp": 0.7,
+                    "stop": [f"stop_{i}" for i in range(100)],
+                    "nested": {"deep": {"data": list(range(500))}},
+                },
+                "action": "generate",
+            }
+            _send_message(client_sock, large_msg)
+            received = _recv_message(conn)
+            assert received == large_msg
+            assert len(received["prompt_tokens"]) == 10000
+            assert len(received["prompt_text"]) == 100000
+            assert len(received["gen_kwargs"]["stop"]) == 100
+        finally:
+            client_sock.close()
+            conn.close()
+            server_sock.close()
+
+    def test_sideband_recv_partial_read(self):
+        """Verify _recv_message returns None when connection drops mid-message."""
+        import struct
+
+        from olmlx.engine.distributed import _recv_message
+
+        server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server_sock.bind(("127.0.0.1", 0))
+        port = server_sock.getsockname()[1]
+        server_sock.listen(1)
+
+        client_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client_sock.connect(("127.0.0.1", port))
+        conn, _ = server_sock.accept()
+
+        try:
+            # Send length header claiming 1000 bytes, but only send 10 bytes
+            header = struct.pack("!I", 1000)
+            client_sock.sendall(header + b"partial da")
+            # Close the sender — recv should detect incomplete message
+            client_sock.close()
+            result = _recv_message(conn)
+            assert result is None
+        finally:
+            conn.close()
+            server_sock.close()

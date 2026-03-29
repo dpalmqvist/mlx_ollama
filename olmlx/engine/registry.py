@@ -1,3 +1,4 @@
+import difflib
 import json
 import os
 import tempfile
@@ -149,6 +150,32 @@ class ModelRegistry:
             self._save_aliases()
         if self._mappings.pop(normalized, None) is not None:
             self._save_mappings()
+
+    def search(self, query: str, max_results: int = 5) -> list[tuple[str, str]]:
+        """Fuzzy search models by name. Returns [(name, hf_path), ...]."""
+        if not query or len(query) > 200:
+            return []
+        all_models = self.list_models()
+        all_names = list(all_models.keys())
+        # Map each base name (without tag) to all full names that share it
+        base_to_full: dict[str, list[str]] = {}
+        for n in all_names:
+            base_to_full.setdefault(n.split(":")[0], []).append(n)
+        # Deduplicated candidate list: full names + base names
+        candidates = list(dict.fromkeys(all_names + list(base_to_full.keys())))
+        matches = difflib.get_close_matches(
+            query, candidates, n=max(max_results * 4, 20), cutoff=0.4
+        )
+        seen: set[str] = set()
+        results: list[tuple[str, str]] = []
+        for m in matches:
+            # Expand base name matches to all full names
+            full_names = base_to_full.get(m, [m])
+            for full in full_names:
+                if full not in seen and full in all_models:
+                    seen.add(full)
+                    results.append((full, all_models[full]))
+        return results[:max_results]
 
     def _save_aliases(self):
         _atomic_write_json(self._aliases, self._aliases_path)

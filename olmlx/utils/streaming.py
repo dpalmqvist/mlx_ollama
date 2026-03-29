@@ -10,6 +10,43 @@ from typing import Any, Callable
 logger = logging.getLogger(__name__)
 
 
+async def safe_ndjson_stream(
+    source, format_chunk, format_error, log, log_prefix="streaming"
+):
+    """Wrap an async source with error handling and guaranteed cleanup.
+
+    Args:
+        source: Async iterator to consume (must support aclose()).
+        format_chunk: Callable(item) -> str for each yielded item.
+            Return None to skip an item.
+        format_error: Callable(Exception) -> str for error formatting.
+        log: Logger instance for error reporting.
+        log_prefix: Prefix for error log messages.
+    """
+    try:
+        async for item in source:
+            # Note: format_chunk exceptions are also caught below.  This is
+            # intentional — once streaming has started the HTTP status is 200,
+            # so the best we can do is emit an error payload and log it.
+            formatted = format_chunk(item)
+            if formatted is not None:
+                yield formatted
+    except Exception as exc:
+        log.error("Error during %s: %s", log_prefix, exc, exc_info=True)
+        try:
+            yield format_error(exc)
+        except Exception:
+            log.error(
+                "format_error raised during %s error handling",
+                log_prefix,
+                exc_info=True,
+            )
+    finally:
+        # When called via aclose() (client disconnect), GeneratorExit is
+        # swallowed after this cleanup completes — the intended behaviour.
+        await source.aclose()
+
+
 @dataclass
 class StreamToken:
     text: str

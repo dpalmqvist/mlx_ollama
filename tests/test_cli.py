@@ -18,6 +18,7 @@ from olmlx.cli import (
     cmd_models_delete,
     cmd_models_list,
     cmd_models_pull,
+    cmd_models_search,
     cmd_models_show,
     cmd_service_install,
     cmd_service_status,
@@ -732,3 +733,73 @@ class TestBuildParserModels:
         args = parser.parse_args(["config", "show"])
         assert args.command == "config"
         assert args.config_command == "show"
+
+    def test_models_search(self):
+        parser = build_parser()
+        args = parser.parse_args(["models", "search", "qwen"])
+        assert args.command == "models"
+        assert args.models_command == "search"
+        assert args.query == "qwen"
+
+
+class TestModelsSearchCmd:
+    def test_cmd_models_search_found(self, capsys, mock_store, _patch_store):
+        """Search with matches should print model names and HF paths."""
+        # mock_store.registry must have a search method
+        mock_store.registry = MagicMock()
+        mock_store.registry.search.return_value = [
+            ("qwen3:latest", "Qwen/Qwen3-8B-MLX"),
+        ]
+        args = MagicMock(query="qwen3")
+        cmd_models_search(args)
+        out = capsys.readouterr().out
+        assert "qwen3:latest" in out
+        assert "Qwen/Qwen3-8B-MLX" in out
+
+    def test_cmd_models_search_not_found(self, capsys, mock_store, _patch_store):
+        """Search with no matches should show 'No models matching' message."""
+        mock_store.registry = MagicMock()
+        mock_store.registry.search.return_value = []
+        args = MagicMock(query="zzzzzzz")
+        cmd_models_search(args)
+        out = capsys.readouterr().out
+        assert "No models matching" in out
+
+
+class TestCliMainModelsSearch:
+    def test_models_search_calls_handler(self, monkeypatch):
+        monkeypatch.setattr("sys.argv", ["olmlx", "models", "search", "qwen"])
+        mock_fn = MagicMock()
+        monkeypatch.setattr("olmlx.cli.cmd_models_search", mock_fn)
+        cli_main()
+        mock_fn.assert_called_once()
+
+
+class TestModelsShowSuggestion:
+    def test_show_not_found_suggests_search(self, capsys, mock_store, _patch_store):
+        """When model not found, stderr should suggest running search."""
+        mock_store.show.return_value = None
+        args = MagicMock(model_name="qwem3")
+        with pytest.raises(SystemExit) as exc_info:
+            cmd_models_show(args)
+        assert exc_info.value.code == 1
+        err = capsys.readouterr().err
+        assert "olmlx models search" in err
+
+
+class TestModelsPullSuggestion:
+    def test_pull_not_found_suggests_search(self, capsys, mock_store, _patch_store):
+        """When pull fails with 'not found', stderr should suggest running search."""
+
+        async def fake_pull(name):
+            if False:
+                yield {}
+            raise ValueError(f"Model '{name}' not found in config")
+
+        mock_store.pull = fake_pull
+        args = MagicMock(model_name="nonexistent")
+        with pytest.raises(SystemExit) as exc_info:
+            cmd_models_pull(args)
+        assert exc_info.value.code == 1
+        err = capsys.readouterr().err
+        assert "olmlx models search" in err
