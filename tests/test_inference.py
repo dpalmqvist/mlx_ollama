@@ -559,8 +559,8 @@ class TestGenerateCompletion:
         call_args = lm.text_tokenizer.apply_chat_template.call_args
         messages = call_args[0][0]
         assert messages == [{"role": "user", "content": "Hello"}]
-        # Should pass enable_thinking=True since mock has supports_enable_thinking=True
-        assert call_args[1]["enable_thinking"] is True
+        # Should pass enable_thinking=False for /api/generate (no thinking extraction)
+        assert call_args[1]["enable_thinking"] is False
 
     @pytest.mark.asyncio
     async def test_streaming(self, mock_manager):

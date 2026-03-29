@@ -868,8 +868,16 @@ async def generate_completion(
     if apply_chat_template and not lm.is_vlm:
         messages = [{"role": "user", "content": prompt}]
         prompt = _apply_chat_template_text(
-            lm.text_tokenizer, messages, caps=lm.template_caps
+            lm.text_tokenizer,
+            messages,
+            caps=lm.template_caps,
+            enable_thinking=False,
         )
+        logger.info(
+            "Applied chat template for /api/generate (prompt length: %d chars)",
+            len(prompt),
+        )
+        logger.debug("Templated prompt: %s", prompt[:500])
 
     gen_kwargs = _build_generate_kwargs(options, is_vlm=lm.is_vlm)
     mt = gen_kwargs.pop("max_tokens", max_tokens)
