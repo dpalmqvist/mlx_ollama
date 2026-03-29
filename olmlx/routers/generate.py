@@ -20,9 +20,6 @@ async def generate(req: GenerateRequest, request: Request):
     options = req.options.model_dump(exclude_none=True) if req.options else {}
 
     prompt = req.prompt
-    if req.system and not req.raw:
-        prompt = f"{req.system}\n\n{prompt}"
-
     max_tokens = options.pop("num_predict", 512)
 
     if req.stream:
@@ -36,6 +33,7 @@ async def generate(req: GenerateRequest, request: Request):
             max_tokens=max_tokens,
             images=req.images,
             apply_chat_template=not req.raw,
+            system=req.system if not req.raw else None,
         )
 
         def format_chunk(chunk):
@@ -99,6 +97,7 @@ async def generate(req: GenerateRequest, request: Request):
             max_tokens=max_tokens,
             images=req.images,
             apply_chat_template=not req.raw,
+            system=req.system if not req.raw else None,
         )
         now = datetime.now(timezone.utc).isoformat()
         stats = result.get("stats")

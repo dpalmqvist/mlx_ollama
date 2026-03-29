@@ -59,6 +59,7 @@ class TestGenerateRouter:
 
     @pytest.mark.asyncio
     async def test_generate_with_system(self, app_client):
+        """System prompt is passed as a separate kwarg, not prepended to prompt."""
         mock_result = {"text": "result", "done": True, "stats": TimingStats()}
 
         with patch(
@@ -76,14 +77,14 @@ class TestGenerateRouter:
             )
 
         assert resp.status_code == 200
-        # System should be prepended to prompt
         call_args = mock_gen.call_args
         prompt = call_args[0][2]  # 3rd positional arg
-        assert "You are helpful" in prompt
-        assert "Hello" in prompt
+        assert prompt == "Hello"  # system NOT prepended
+        assert call_args.kwargs["system"] == "You are helpful"
 
     @pytest.mark.asyncio
     async def test_generate_raw_ignores_system(self, app_client):
+        """In raw mode, system is not passed (and not prepended)."""
         mock_result = {"text": "result", "done": True, "stats": TimingStats()}
 
         with patch(
@@ -105,6 +106,7 @@ class TestGenerateRouter:
         call_args = mock_gen.call_args
         prompt = call_args[0][2]
         assert prompt == "Hello"
+        assert call_args.kwargs["system"] is None
 
     @pytest.mark.asyncio
     async def test_apply_chat_template_default(self, app_client):

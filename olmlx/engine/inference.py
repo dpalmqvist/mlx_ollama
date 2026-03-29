@@ -850,11 +850,13 @@ async def generate_completion(
     max_tokens: int = 512,
     images: list[str] | None = None,
     apply_chat_template: bool = False,
+    system: str | None = None,
 ) -> AsyncGenerator[dict, None] | dict:
     """Generate a text completion, streaming or not.
 
-    When *apply_chat_template* is True the raw prompt is wrapped as a single
-    user message and run through the model's chat template before generation.
+    When *apply_chat_template* is True the raw prompt is wrapped in chat
+    messages and run through the model's chat template before generation.
+    If *system* is provided, it becomes a ``{"role": "system"}`` message.
     This is needed for chat-only models (e.g. Nemotron-H) that require the
     template framing to produce meaningful output.
     """
@@ -865,7 +867,10 @@ async def generate_completion(
     stats.load_duration = load_timer.duration_ns
 
     if apply_chat_template and not lm.is_vlm:
-        messages = [{"role": "user", "content": prompt}]
+        messages: list[dict] = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
         prompt = _apply_chat_template_text(
             lm.text_tokenizer,
             messages,
@@ -877,6 +882,11 @@ async def generate_completion(
             len(prompt),
         )
         logger.debug("Templated prompt: %s", prompt[:500])
+    elif apply_chat_template and lm.is_vlm:
+        logger.warning(
+            "apply_chat_template not supported for VLM %s via /api/generate",
+            model_name,
+        )
 
     gen_kwargs = _build_generate_kwargs(options, is_vlm=lm.is_vlm)
     mt = gen_kwargs.pop("max_tokens", max_tokens)

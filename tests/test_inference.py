@@ -518,21 +518,8 @@ class TestGenerateCompletion:
         and passed through the chat template before generation."""
         mock_mx = MagicMock()
         mock_mx.core = mock_mx
-
-        # Track what prompt text is actually passed to mlx_lm.generate
-        captured_prompt = {}
-
-        async def fake_to_thread(fn, *args, **kwargs):
-            # mlx_lm.generate(model, tokenizer, prompt=..., ...)
-            # Capture the prompt kwarg
-            captured_prompt["value"] = kwargs.get(
-                "prompt", args[2] if len(args) > 2 else None
-            )
-            return "Generated output"
-
         mock_mlx_lm = MagicMock()
 
-        # Make the tokenizer's apply_chat_template return a known string
         lm = mock_manager._loaded["qwen3:latest"]
         lm.text_tokenizer.apply_chat_template.return_value = (
             "<|im_start|>user\nHello<|im_end|>\n<|im_start|>assistant\n"
@@ -543,7 +530,7 @@ class TestGenerateCompletion:
                 with patch(
                     "olmlx.engine.inference.asyncio.to_thread",
                     new_callable=AsyncMock,
-                    side_effect=fake_to_thread,
+                    return_value="Generated output",
                 ):
                     result = await generate_completion(
                         mock_manager,
@@ -554,13 +541,45 @@ class TestGenerateCompletion:
                     )
 
         assert result["text"] == "Generated output"
-        # Verify the chat template was applied with correct caps
+        # Verify the chat template was applied with correct messages and caps
         lm.text_tokenizer.apply_chat_template.assert_called_once()
         call_args = lm.text_tokenizer.apply_chat_template.call_args
         messages = call_args[0][0]
         assert messages == [{"role": "user", "content": "Hello"}]
         # Should pass enable_thinking=False for /api/generate (no thinking extraction)
         assert call_args[1]["enable_thinking"] is False
+
+    @pytest.mark.asyncio
+    async def test_apply_chat_template_with_system(self, mock_manager):
+        """System prompt becomes a proper system role message, not part of user content."""
+        mock_mx = MagicMock()
+        mock_mx.core = mock_mx
+        mock_mlx_lm = MagicMock()
+        lm = mock_manager._loaded["qwen3:latest"]
+        lm.text_tokenizer.apply_chat_template.return_value = "templated"
+
+        with patch("olmlx.engine.inference.mx", mock_mx):
+            with patch.dict("sys.modules", {"mlx_lm": mock_mlx_lm}):
+                with patch(
+                    "olmlx.engine.inference.asyncio.to_thread",
+                    new_callable=AsyncMock,
+                    return_value="output",
+                ):
+                    await generate_completion(
+                        mock_manager,
+                        "qwen3",
+                        "Hello",
+                        stream=False,
+                        apply_chat_template=True,
+                        system="You are helpful",
+                    )
+
+        call_args = lm.text_tokenizer.apply_chat_template.call_args
+        messages = call_args[0][0]
+        assert messages == [
+            {"role": "system", "content": "You are helpful"},
+            {"role": "user", "content": "Hello"},
+        ]
 
     @pytest.mark.asyncio
     async def test_streaming(self, mock_manager):
