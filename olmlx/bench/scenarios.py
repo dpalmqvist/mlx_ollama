@@ -12,82 +12,75 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_HOSTFILE = Path("~/.olmlx/hostfile.json").expanduser()
 
+# Skip functions return None (don't skip) or a reason string (skip).
+SkipCheck = Callable[[Path], str | None]
 
-def _no_skip(_model_path: Path) -> bool:
-    return False
+
+def _no_skip(_model_path: Path) -> str | None:
+    return None
 
 
-def _requires_flash(model_path: Path) -> bool:
+def _requires_flash(model_path: Path) -> str | None:
     """Skip if model has no flash_layout.json (not flash-prepared)."""
     flash_dir = model_path / "flash"
     if not flash_dir.exists() or not (flash_dir / "flash_layout.json").exists():
-        logger.info("Skipping: no flash preparation found at %s", flash_dir)
-        return True
-    return False
+        return f"No flash preparation found at {flash_dir}"
+    return None
 
 
-def _requires_moe(model_path: Path) -> bool:
+def _requires_moe(model_path: Path) -> str | None:
     """Skip if model is not a MoE architecture."""
     config_path = model_path / "config.json"
     if not config_path.exists():
-        logger.info("Skipping: no config.json at %s", model_path)
-        return True
+        return f"No config.json at {model_path}"
     try:
         config = json.loads(config_path.read_text())
     except (json.JSONDecodeError, OSError):
-        logger.info("Skipping: invalid config.json at %s", config_path)
-        return True
+        return f"Invalid config.json at {config_path}"
     if not isinstance(config, dict):
-        logger.info("Skipping: config.json is not a JSON object")
-        return True
+        return "config.json is not a JSON object"
     if "text_config" in config:
         config = config["text_config"]
     if not isinstance(config, dict):
-        logger.info("Skipping: text_config is not a JSON object")
-        return True
+        return "text_config is not a JSON object"
     is_moe = (
         (config.get("n_routed_experts") or 0) > 1
         or (config.get("num_local_experts") or 0) > 1
         or (config.get("num_experts") or 0) > 1
     )
     if not is_moe:
-        logger.info("Skipping: model is not MoE")
-        return True
-    return False
+        return "Model is not MoE"
+    return None
 
 
-def _requires_flash_moe(model_path: Path) -> bool:
+def _requires_flash_moe(model_path: Path) -> str | None:
     """Skip if model is not MoE or has no flash_moe preparation."""
-    if _requires_moe(model_path):
-        return True
+    reason = _requires_moe(model_path)
+    if reason is not None:
+        return reason
     flash_moe_dir = model_path / "flash_moe"
     if (
         not flash_moe_dir.exists()
         or not (flash_moe_dir / "flash_moe_layout.json").exists()
     ):
-        logger.info("Skipping: no flash-MoE preparation found at %s", flash_moe_dir)
-        return True
-    return False
+        return f"No flash-MoE preparation found at {flash_moe_dir}"
+    return None
 
 
-def _requires_distributed(_model_path: Path) -> bool:
+def _requires_distributed(_model_path: Path) -> str | None:
     """Skip if no valid hostfile exists for distributed inference."""
     if not _DEFAULT_HOSTFILE.exists():
-        logger.info("Skipping: no hostfile at %s", _DEFAULT_HOSTFILE)
-        return True
+        return f"No hostfile at {_DEFAULT_HOSTFILE}"
     try:
         hostfile = json.loads(_DEFAULT_HOSTFILE.read_text())
     except (json.JSONDecodeError, OSError):
-        logger.info("Skipping: hostfile at %s is invalid", _DEFAULT_HOSTFILE)
-        return True
+        return f"Hostfile at {_DEFAULT_HOSTFILE} is invalid"
     hosts = hostfile.get("hosts", [])
     if len(hosts) < 2:
-        logger.info("Skipping: hostfile has fewer than 2 hosts")
-        return True
+        return "Hostfile has fewer than 2 hosts"
     if not hostfile.get("model"):
-        logger.info("Skipping: hostfile has no 'model' field")
-        return True
-    return False
+        return "Hostfile has no 'model' field"
+    return None
 
 
 @dataclass(frozen=True)
@@ -95,7 +88,7 @@ class Scenario:
     name: str
     description: str
     env_overrides: dict[str, str] = field(default_factory=dict)
-    should_skip: Callable[[Path], bool] = _no_skip
+    should_skip: SkipCheck = _no_skip
     server_mode: bool = False  # True = launch olmlx serve + hit via HTTP
 
     def to_dict(self) -> dict:

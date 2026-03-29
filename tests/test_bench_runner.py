@@ -156,7 +156,7 @@ class TestRunBench:
         always_skip = Scenario(
             name="test-skip",
             description="Always skips",
-            should_skip=lambda p: True,
+            should_skip=lambda p: "test reason",
         )
 
         with patch("olmlx.bench.runner.get_scenarios", return_value=[always_skip]):
@@ -164,6 +164,7 @@ class TestRunBench:
 
         assert len(result.scenarios) == 1
         assert result.scenarios[0].skipped is True
+        assert result.scenarios[0].skip_reason == "test reason"
 
     def test_results_saved_to_disk(self, tmp_path, monkeypatch):
         """Results are persisted as JSON."""
@@ -175,7 +176,7 @@ class TestRunBench:
         always_skip = Scenario(
             name="baseline",
             description="Baseline",
-            should_skip=lambda p: True,
+            should_skip=lambda p: "skipped for test",
         )
 
         bench_dir = tmp_path / "bench"

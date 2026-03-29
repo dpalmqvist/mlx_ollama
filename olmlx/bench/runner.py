@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import socket
 import subprocess
 import sys
 import tempfile
@@ -27,6 +28,15 @@ from olmlx.bench.scenarios import Scenario, get_scenarios
 logger = logging.getLogger(__name__)
 
 _WORKER_TIMEOUT = 600  # seconds before killing a worker subprocess
+
+
+def _find_free_port() -> int:
+    """Bind to port 0 to get an OS-assigned ephemeral port."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
 _SERVER_STARTUP_TIMEOUT = 300  # seconds to wait for olmlx serve to become ready
 _SERVER_READY_POLL_INTERVAL = 2  # seconds between readiness checks
 
@@ -59,8 +69,9 @@ def run_bench(
         )
 
         # Check skip condition
-        if scenario.should_skip(model_path):
-            print("  SKIPPED", file=sys.stderr)
+        skip_reason = scenario.should_skip(model_path)
+        if skip_reason is not None:
+            print(f"  SKIPPED: {skip_reason}", file=sys.stderr)
             scenario_results.append(
                 ScenarioResult(
                     scenario_name=scenario.name,
@@ -68,7 +79,7 @@ def run_bench(
                     env_overrides=scenario.env_overrides,
                     prompt_results=[],
                     skipped=True,
-                    skip_reason=f"Model at {model_path} does not meet requirements",
+                    skip_reason=skip_reason,
                 )
             )
             continue
@@ -131,6 +142,7 @@ def _run_worker(
         env = os.environ.copy()
         env.update(scenario.env_overrides)
 
+        port = _find_free_port()
         cmd = [
             sys.executable,
             "-m",
@@ -141,6 +153,8 @@ def _run_worker(
             str(prompts_path),
             "--results-json",
             str(results_path),
+            "--port",
+            str(port),
         ]
         if max_tokens is not None:
             cmd.extend(["--max-tokens", str(max_tokens)])
@@ -259,7 +273,10 @@ def _run_server_scenario(
                     proc.wait(timeout=10)
                 except subprocess.TimeoutExpired:
                     proc.kill()
-                    proc.wait(timeout=5)
+                    try:
+                        proc.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        pass
             rc = proc.returncode
             return [
                 PromptResult(

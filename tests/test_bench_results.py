@@ -168,6 +168,21 @@ class TestSaveLoadRun:
         loaded = load_run(run_dir / "results.json")
         assert loaded.model == "m"
 
+    def test_save_run_collision_uses_suffix(self, tmp_path):
+        """Two runs with the same timestamp get distinct directories."""
+        run1 = create_run_result(model="m1", scenarios=[])
+        run2 = create_run_result(model="m2", scenarios=[])
+        run2.timestamp = run1.timestamp  # force collision
+
+        dir1 = save_run(run1, tmp_path)
+        dir2 = save_run(run2, tmp_path)
+
+        assert dir1 != dir2
+        assert dir1.name == run1.timestamp
+        assert dir2.name == f"{run1.timestamp}-1"
+        assert load_run(dir1).model == "m1"
+        assert load_run(dir2).model == "m2"
+
 
 class TestListRuns:
     def test_empty_dir(self, tmp_path):

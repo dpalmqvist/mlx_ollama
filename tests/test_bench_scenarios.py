@@ -66,18 +66,20 @@ class TestGetScenarios:
 class TestSkipChecks:
     def test_baseline_never_skips(self, tmp_path):
         baseline = get_scenarios(["baseline"])[0]
-        assert not baseline.should_skip(tmp_path)
+        assert baseline.should_skip(tmp_path) is None
 
     def test_flash_skips_without_layout(self, tmp_path):
         flash = get_scenarios(["flash"])[0]
-        assert flash.should_skip(tmp_path)
+        reason = flash.should_skip(tmp_path)
+        assert reason is not None
+        assert "flash" in reason.lower()
 
     def test_flash_runs_with_layout(self, tmp_path):
         flash_dir = tmp_path / "flash"
         flash_dir.mkdir()
         (flash_dir / "flash_layout.json").write_text("{}")
         flash = get_scenarios(["flash"])[0]
-        assert not flash.should_skip(tmp_path)
+        assert flash.should_skip(tmp_path) is None
 
     def test_flash_moe_skips_without_moe_config(self, tmp_path):
         (tmp_path / "config.json").write_text(json.dumps({"hidden_size": 768}))
@@ -100,7 +102,7 @@ class TestSkipChecks:
         flash_moe_dir.mkdir()
         (flash_moe_dir / "flash_moe_layout.json").write_text("{}")
         moe = get_scenarios(["flash-moe"])[0]
-        assert not moe.should_skip(tmp_path)
+        assert moe.should_skip(tmp_path) is None
 
     def test_flash_moe_detects_routed_experts(self, tmp_path):
         (tmp_path / "config.json").write_text(json.dumps({"n_routed_experts": 4}))
@@ -162,7 +164,9 @@ class TestDistributedScenarios:
             "olmlx.bench.scenarios._DEFAULT_HOSTFILE", tmp_path / "nonexistent.json"
         )
         dist = get_scenarios(["distributed"])[0]
-        assert dist.should_skip(tmp_path)
+        reason = dist.should_skip(tmp_path)
+        assert reason is not None
+        assert "hostfile" in reason.lower()
 
     def test_distributed_skips_with_too_few_hosts(self, tmp_path, monkeypatch):
         hostfile = tmp_path / "hostfile.json"
@@ -192,7 +196,7 @@ class TestDistributedScenarios:
         )
         monkeypatch.setattr("olmlx.bench.scenarios._DEFAULT_HOSTFILE", hostfile)
         dist = get_scenarios(["distributed"])[0]
-        assert not dist.should_skip(tmp_path)
+        assert dist.should_skip(tmp_path) is None
 
     def test_server_mode_roundtrip(self):
         s = Scenario(name="test", description="test", server_mode=True)

@@ -144,9 +144,21 @@ def _git_sha() -> str | None:
 
 
 def save_run(run: RunResult, bench_dir: Path = DEFAULT_BENCH_DIR) -> Path:
-    """Save a run result to disk. Returns the run directory."""
+    """Save a run result to disk. Returns the run directory.
+
+    Appends a numeric suffix if a directory for the same timestamp already
+    exists, preventing silent overwrites when runs start within the same second.
+    """
     run_dir = bench_dir / run.timestamp
-    run_dir.mkdir(parents=True, exist_ok=True)
+    if run_dir.exists():
+        counter = 1
+        while True:
+            candidate = bench_dir / f"{run.timestamp}-{counter}"
+            if not candidate.exists():
+                run_dir = candidate
+                break
+            counter += 1
+    run_dir.mkdir(parents=True)
     (run_dir / "results.json").write_text(
         json.dumps(run.to_dict(), indent=2, ensure_ascii=False)
     )
