@@ -18,7 +18,6 @@ from olmlx.engine.inference import (
     _apply_chat_template_text,
     _safe_sync,
     _schedule_deferred_inference_cleanup,
-    _strip_thinking_stream,
     generate_chat,
     generate_completion,
     generate_embeddings,
@@ -560,42 +559,8 @@ class TestGenerateCompletion:
         call_args = lm.text_tokenizer.apply_chat_template.call_args
         messages = call_args[0][0]
         assert messages == [{"role": "user", "content": "Hello"}]
-        # Should pass enable_thinking=True (caps has supports_enable_thinking=True)
-        assert call_args[1]["enable_thinking"] is True
-
-    @pytest.mark.asyncio
-    async def test_non_streaming_strips_thinking(self, mock_manager):
-        """Non-streaming with apply_chat_template strips <think> blocks."""
-        mock_mx = MagicMock()
-        mock_mx.core = mock_mx
-        mock_mlx_lm = MagicMock()
-        lm = mock_manager._loaded["qwen3:latest"]
-        lm.template_caps = TemplateCaps(
-            supports_tools=True, supports_enable_thinking=True, has_thinking_tags=True
-        )
-        # Template ends with <think> — model output starts inside thinking
-        lm.text_tokenizer.apply_chat_template.return_value = (
-            "<|im_start|>assistant\n<think>"
-        )
-
-        with patch("olmlx.engine.inference.mx", mock_mx):
-            with patch.dict("sys.modules", {"mlx_lm": mock_mlx_lm}):
-                with patch(
-                    "olmlx.engine.inference.asyncio.to_thread",
-                    new_callable=AsyncMock,
-                    # Model output starts inside <think> (prompt ends with it),
-                    # so the raw output is just: thinking...</think>answer
-                    return_value="planning stuff</think>The actual answer.",
-                ):
-                    result = await generate_completion(
-                        mock_manager,
-                        "qwen3",
-                        "Hello",
-                        stream=False,
-                        apply_chat_template=True,
-                    )
-
-        assert result["text"] == "The actual answer."
+        # Should pass enable_thinking=False for /api/generate (no thinking extraction)
+        assert call_args[1]["enable_thinking"] is False
 
     @pytest.mark.asyncio
     async def test_streaming(self, mock_manager):
@@ -653,109 +618,6 @@ class TestGenerateCompletion:
         # last chunk is the done signal
         assert chunks[-1]["done"] is True
         assert any(c.get("text") == "Hello" for c in chunks if not c.get("done"))
-
-
-class TestStripThinkingStream:
-    @pytest.mark.asyncio
-    async def test_strips_think_block(self):
-        """Thinking content between <think>...</think> is removed."""
-
-        async def source():
-            yield {"text": "<think>"}
-            yield {"text": "planning"}
-            yield {"text": " stuff"}
-            yield {"text": "</think>"}
-            yield {"text": "The answer."}
-            yield {"done": True}
-
-        chunks = []
-        async for chunk in _strip_thinking_stream(source()):
-            chunks.append(chunk)
-
-        texts = [c.get("text", "") for c in chunks if not c.get("done")]
-        assert "".join(texts) == "The answer."
-        assert chunks[-1]["done"] is True
-
-    @pytest.mark.asyncio
-    async def test_preserves_text_before_think(self):
-        """Text before <think> is preserved."""
-
-        async def source():
-            yield {"text": "Hello "}
-            yield {"text": "<think>stuff</think>"}
-            yield {"text": "World"}
-            yield {"done": True}
-
-        chunks = []
-        async for chunk in _strip_thinking_stream(source()):
-            chunks.append(chunk)
-
-        texts = [c.get("text", "") for c in chunks if not c.get("done")]
-        assert "".join(texts) == "Hello World"
-
-    @pytest.mark.asyncio
-    async def test_unclosed_think_discarded(self):
-        """If <think> is never closed, the thinking content is discarded."""
-
-        async def source():
-            yield {"text": "<think>"}
-            yield {"text": "endless thinking..."}
-            yield {"done": True}
-
-        chunks = []
-        async for chunk in _strip_thinking_stream(source()):
-            chunks.append(chunk)
-
-        texts = [c.get("text", "") for c in chunks if not c.get("done")]
-        assert "".join(texts) == ""
-
-    @pytest.mark.asyncio
-    async def test_no_think_passthrough(self):
-        """Without any <think> tags, all text passes through."""
-
-        async def source():
-            yield {"text": "Just a normal response."}
-            yield {"done": True}
-
-        chunks = []
-        async for chunk in _strip_thinking_stream(source()):
-            chunks.append(chunk)
-
-        texts = [c.get("text", "") for c in chunks if not c.get("done")]
-        assert "".join(texts) == "Just a normal response."
-
-    @pytest.mark.asyncio
-    async def test_starts_in_think(self):
-        """When starts_in_think=True, output begins inside a think block."""
-
-        async def source():
-            yield {"text": "planning..."}
-            yield {"text": "</think>"}
-            yield {"text": "The answer."}
-            yield {"done": True}
-
-        chunks = []
-        async for chunk in _strip_thinking_stream(source(), starts_in_think=True):
-            chunks.append(chunk)
-
-        texts = [c.get("text", "") for c in chunks if not c.get("done")]
-        assert "".join(texts) == "The answer."
-
-    @pytest.mark.asyncio
-    async def test_starts_in_think_never_closes(self):
-        """When starts_in_think=True and </think> never appears, all content is discarded."""
-
-        async def source():
-            yield {"text": "endless thinking..."}
-            yield {"text": " more thinking..."}
-            yield {"done": True}
-
-        chunks = []
-        async for chunk in _strip_thinking_stream(source(), starts_in_think=True):
-            chunks.append(chunk)
-
-        texts = [c.get("text", "") for c in chunks if not c.get("done")]
-        assert "".join(texts) == ""
 
 
 class TestGenerateChat:

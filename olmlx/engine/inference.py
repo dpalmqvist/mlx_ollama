@@ -5,7 +5,6 @@ import gc
 import importlib
 import json
 import logging
-import re
 import threading
 import time
 from collections.abc import AsyncGenerator
@@ -46,10 +45,6 @@ from olmlx.utils.streaming import async_mlx_stream
 from olmlx.utils.timing import Timer, TimingStats
 
 logger = logging.getLogger(__name__)
-
-# Regex to match <think>...</think> blocks in model output.
-_THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
-
 
 # gpt-oss special tokens used by the streaming filter
 _GPT_OSS_STRUCTURAL_TOKENS = frozenset(
@@ -845,64 +840,6 @@ def count_chat_tokens(
     return len(tokens)
 
 
-async def _strip_thinking_stream(
-    gen: AsyncGenerator[dict, None],
-    *,
-    starts_in_think: bool = False,
-) -> AsyncGenerator[dict, None]:
-    """Wrap a streaming completion generator, stripping <think>...</think>.
-
-    Buffers tokens while inside a think block, discards them when the block
-    closes, and passes through everything else.
-
-    When *starts_in_think* is True, the model output begins inside an already-
-    opened ``<think>`` block (the tag was part of the prompt, not the output).
-    """
-    in_think = starts_in_think
-    buf = ""
-
-    async for chunk in gen:
-        if chunk.get("done"):
-            # If we're still in an unclosed think block at the end, discard it.
-            yield chunk
-            return
-
-        text = chunk.get("text", "")
-        buf += text
-
-        if not in_think:
-            # Check if we're entering a think block
-            think_start = buf.find("<think>")
-            if think_start != -1:
-                # Emit text before <think>
-                before = buf[:think_start]
-                if before:
-                    yield {**chunk, "text": before}
-                buf = buf[think_start + len("<think>") :]
-                in_think = True
-            elif "<" in buf:
-                # Might be a partial "<think>" tag; hold back the ambiguous part
-                safe = buf[: buf.rfind("<")]
-                if safe:
-                    yield {**chunk, "text": safe}
-                buf = buf[len(safe) :]
-            else:
-                if buf:
-                    yield {**chunk, "text": buf}
-                buf = ""
-        # If in_think, check for closing tag
-        if in_think:
-            think_end = buf.find("</think>")
-            if think_end != -1:
-                # Discard everything up to and including </think>
-                buf = buf[think_end + len("</think>") :]
-                in_think = False
-                # Emit any remaining text after the close tag
-                if buf:
-                    yield {**chunk, "text": buf}
-                    buf = ""
-
-
 async def generate_completion(
     manager: ModelManager,
     model_name: str,
@@ -927,21 +864,17 @@ async def generate_completion(
         lm = await manager.ensure_loaded(model_name, keep_alive)
     stats.load_duration = load_timer.duration_ns
 
-    strip_thinking = False
-    starts_in_think = False
     if apply_chat_template and not lm.is_vlm:
         messages = [{"role": "user", "content": prompt}]
         prompt = _apply_chat_template_text(
-            lm.text_tokenizer, messages, caps=lm.template_caps
+            lm.text_tokenizer,
+            messages,
+            caps=lm.template_caps,
+            enable_thinking=False,
         )
-        strip_thinking = lm.template_caps.has_thinking_tags
-        # Some templates (e.g. Nemotron) end the prompt with <think>\n,
-        # meaning the model output starts INSIDE a thinking block.
-        starts_in_think = strip_thinking and prompt.rstrip().endswith("<think>")
         logger.info(
-            "Applied chat template for /api/generate (prompt length: %d chars%s)",
+            "Applied chat template for /api/generate (prompt length: %d chars)",
             len(prompt),
-            ", starts_in_think=True" if starts_in_think else "",
         )
         logger.debug("Templated prompt: %s", prompt[:500])
 
@@ -949,25 +882,9 @@ async def generate_completion(
     mt = gen_kwargs.pop("max_tokens", max_tokens)
 
     if stream:
-        gen = _stream_completion(lm, prompt, mt, gen_kwargs, stats, images)
-        if strip_thinking:
-            return _strip_thinking_stream(gen, starts_in_think=starts_in_think)
-        return gen
+        return _stream_completion(lm, prompt, mt, gen_kwargs, stats, images)
     else:
-        result = await _full_completion(lm, prompt, mt, gen_kwargs, stats, images)
-        if strip_thinking and result.get("text"):
-            text = result["text"]
-            if starts_in_think:
-                # Output starts inside <think> — strip up to </think>
-                end_idx = text.find("</think>")
-                if end_idx != -1:
-                    text = text[end_idx + len("</think>") :]
-                else:
-                    # Model never closed thinking — no visible response
-                    text = ""
-            text = _THINK_RE.sub("", text).lstrip()
-            result["text"] = text
-        return result
+        return await _full_completion(lm, prompt, mt, gen_kwargs, stats, images)
 
 
 async def _stream_completion(
