@@ -395,8 +395,17 @@ def _estimate_kv_cache_bytes(model: Any, num_tokens: int) -> int:
     )
     bytes_per_element = 2  # float16/bfloat16
 
-    # Try layer introspection for NAS/variable-attention models
-    inner = getattr(model, "model", None)
+    # Try layer introspection for NAS/variable-attention models.
+    # Track which sub-model owns the args so we introspect the right layers
+    # (for VLMs, args came from model.language_model — introspect that, not
+    # model.model which could be a vision encoder).
+    lang_model_component = getattr(model, "language_model", None)
+    args_owner = (
+        lang_model_component
+        if (lang_model_component is not None and getattr(model, "args", None) is None)
+        else model
+    )
+    inner = getattr(args_owner, "model", None)
     layers = getattr(inner, "layers", None) if inner is not None else None
     if isinstance(layers, (list, tuple)) and len(layers) > 0:
         per_layer_kv_sum = 0

@@ -1506,6 +1506,33 @@ class TestEstimateKvCacheBytes:
         result = _estimate_kv_cache_bytes(model, 1000)
         assert result == int(131_072_000 * _inf_mod.MEMORY_SAFETY_FACTOR)
 
+    def test_vlm_introspects_language_model_layers(self):
+        """VLM layer introspection uses language_model.model.layers, not model.model."""
+        model = MagicMock(spec=[])
+        model.language_model = MagicMock(spec=[])
+        model.language_model.args = self._make_model_args(
+            num_hidden_layers=32,
+            num_attention_heads=32,
+            hidden_size=4096,
+        )
+        # Remove num_key_value_heads from args to force introspection
+        del model.language_model.args.num_key_value_heads
+
+        # language_model.model.layers has the real attention layers
+        layers = []
+        for _ in range(32):
+            layer = MagicMock()
+            layer.self_attn = MagicMock()
+            layer.self_attn.n_kv_heads = 4
+            layers.append(layer)
+        model.language_model.model = MagicMock()
+        model.language_model.model.layers = layers
+
+        # Should use introspected kv_heads=4, not fallback to num_attention_heads=32
+        result = _estimate_kv_cache_bytes(model, 1000)
+        expected_raw = 32 * 2 * 4 * 128 * 1000 * 2
+        assert result == int(expected_raw * _inf_mod.MEMORY_SAFETY_FACTOR)
+
     def test_raises_when_no_args_found(self):
         """Raises AttributeError when model has no discoverable args."""
         model = MagicMock(spec=[])
@@ -1584,7 +1611,9 @@ class TestEstimateKvCacheBytes:
 
         layers = []
         for _ in range(32):
-            layer = MagicMock(spec=[])  # no self_attn attribute
+            layer = MagicMock(spec=["attention"])  # has "attention", not "self_attn"
+            layer.attention = MagicMock()
+            layer.attention.n_kv_heads = 8
             layers.append(layer)
         model.model = MagicMock()
         model.model.layers = layers
