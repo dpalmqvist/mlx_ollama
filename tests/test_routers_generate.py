@@ -107,6 +107,43 @@ class TestGenerateRouter:
         assert prompt == "Hello"
 
     @pytest.mark.asyncio
+    async def test_apply_chat_template_default(self, app_client):
+        """By default (raw=False), apply_chat_template=True is passed."""
+        mock_result = {"text": "result", "done": True, "stats": TimingStats()}
+
+        with patch(
+            "olmlx.routers.generate.generate_completion", new_callable=AsyncMock
+        ) as mock_gen:
+            mock_gen.return_value = mock_result
+            await app_client.post(
+                "/api/generate",
+                json={"model": "qwen3", "prompt": "Hello", "stream": False},
+            )
+
+        assert mock_gen.call_args.kwargs["apply_chat_template"] is True
+
+    @pytest.mark.asyncio
+    async def test_raw_skips_chat_template(self, app_client):
+        """When raw=True, apply_chat_template=False is passed."""
+        mock_result = {"text": "result", "done": True, "stats": TimingStats()}
+
+        with patch(
+            "olmlx.routers.generate.generate_completion", new_callable=AsyncMock
+        ) as mock_gen:
+            mock_gen.return_value = mock_result
+            await app_client.post(
+                "/api/generate",
+                json={
+                    "model": "qwen3",
+                    "prompt": "Hello",
+                    "raw": True,
+                    "stream": False,
+                },
+            )
+
+        assert mock_gen.call_args.kwargs["apply_chat_template"] is False
+
+    @pytest.mark.asyncio
     async def test_generate_streaming_error_mid_stream(self, app_client):
         """Error during streaming emits an NDJSON error line instead of crashing."""
 

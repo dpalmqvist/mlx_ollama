@@ -35,6 +35,7 @@ async def generate(req: GenerateRequest, request: Request):
             keep_alive=req.keep_alive,
             max_tokens=max_tokens,
             images=req.images,
+            apply_chat_template=not req.raw,
         )
 
         def format_chunk(chunk):
@@ -97,6 +98,7 @@ async def generate(req: GenerateRequest, request: Request):
             keep_alive=req.keep_alive,
             max_tokens=max_tokens,
             images=req.images,
+            apply_chat_template=not req.raw,
         )
         now = datetime.now(timezone.utc).isoformat()
         stats = result.get("stats")

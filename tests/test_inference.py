@@ -513,6 +513,54 @@ class TestGenerateCompletion:
         assert result["done"] is True
 
     @pytest.mark.asyncio
+    async def test_apply_chat_template(self, mock_manager):
+        """When apply_chat_template=True, prompt is wrapped as a user message
+        and passed through the chat template before generation."""
+        mock_mx = MagicMock()
+        mock_mx.core = mock_mx
+
+        # Track what prompt text is actually passed to mlx_lm.generate
+        captured_prompt = {}
+
+        async def fake_to_thread(fn, *args, **kwargs):
+            # mlx_lm.generate(model, tokenizer, prompt=..., ...)
+            # Capture the prompt kwarg
+            captured_prompt["value"] = kwargs.get(
+                "prompt", args[2] if len(args) > 2 else None
+            )
+            return "Generated output"
+
+        mock_mlx_lm = MagicMock()
+
+        # Make the tokenizer's apply_chat_template return a known string
+        lm = mock_manager._loaded["qwen3:latest"]
+        lm.text_tokenizer.apply_chat_template.return_value = (
+            "<|im_start|>user\nHello<|im_end|>\n<|im_start|>assistant\n"
+        )
+
+        with patch("olmlx.engine.inference.mx", mock_mx):
+            with patch.dict("sys.modules", {"mlx_lm": mock_mlx_lm}):
+                with patch(
+                    "olmlx.engine.inference.asyncio.to_thread",
+                    new_callable=AsyncMock,
+                    side_effect=fake_to_thread,
+                ):
+                    result = await generate_completion(
+                        mock_manager,
+                        "qwen3",
+                        "Hello",
+                        stream=False,
+                        apply_chat_template=True,
+                    )
+
+        assert result["text"] == "Generated output"
+        # Verify the chat template was applied
+        lm.text_tokenizer.apply_chat_template.assert_called_once()
+        call_args = lm.text_tokenizer.apply_chat_template.call_args
+        messages = call_args[0][0]
+        assert messages == [{"role": "user", "content": "Hello"}]
+
+    @pytest.mark.asyncio
     async def test_streaming(self, mock_manager):
         mock_mx = MagicMock()
 

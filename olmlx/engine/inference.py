@@ -850,13 +850,24 @@ async def generate_completion(
     keep_alive: str | None = None,
     max_tokens: int = 512,
     images: list[str] | None = None,
+    apply_chat_template: bool = False,
 ) -> AsyncGenerator[dict, None] | dict:
-    """Generate a text completion, streaming or not."""
+    """Generate a text completion, streaming or not.
+
+    When *apply_chat_template* is True the raw prompt is wrapped as a single
+    user message and run through the model's chat template before generation.
+    This is needed for chat-only models (e.g. Nemotron-H) that require the
+    template framing to produce meaningful output.
+    """
     stats = TimingStats()
 
     with Timer() as load_timer:
         lm = await manager.ensure_loaded(model_name, keep_alive)
     stats.load_duration = load_timer.duration_ns
+
+    if apply_chat_template and not lm.is_vlm:
+        messages = [{"role": "user", "content": prompt}]
+        prompt = _apply_chat_template_text(lm.text_tokenizer, messages)
 
     gen_kwargs = _build_generate_kwargs(options, is_vlm=lm.is_vlm)
     mt = gen_kwargs.pop("max_tokens", max_tokens)
