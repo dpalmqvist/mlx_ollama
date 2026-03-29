@@ -56,6 +56,20 @@ def _requires_moe(model_path: Path) -> bool:
     return False
 
 
+def _requires_flash_moe(model_path: Path) -> bool:
+    """Skip if model is not MoE or has no flash_moe preparation."""
+    if _requires_moe(model_path):
+        return True
+    flash_moe_dir = model_path / "flash_moe"
+    if (
+        not flash_moe_dir.exists()
+        or not (flash_moe_dir / "flash_moe_layout.json").exists()
+    ):
+        logger.info("Skipping: no flash-MoE preparation found at %s", flash_moe_dir)
+        return True
+    return False
+
+
 def _requires_distributed(_model_path: Path) -> bool:
     """Skip if no valid hostfile exists for distributed inference."""
     if not _DEFAULT_HOSTFILE.exists():
@@ -149,7 +163,7 @@ SCENARIOS: list[Scenario] = [
         name="flash-moe",
         description="Flash MoE expert offloading",
         env_overrides={"OLMLX_EXPERIMENTAL_FLASH_MOE": "true"},
-        should_skip=_requires_moe,
+        should_skip=_requires_flash_moe,
     ),
     Scenario(
         name="flash-moe+tq4",
@@ -158,7 +172,7 @@ SCENARIOS: list[Scenario] = [
             "OLMLX_EXPERIMENTAL_FLASH_MOE": "true",
             "OLMLX_EXPERIMENTAL_KV_CACHE_QUANT": "turboquant:4",
         },
-        should_skip=_requires_moe,
+        should_skip=_requires_flash_moe,
     ),
     # Distributed scenarios — require a valid hostfile with 2+ hosts and SSH
     # connectivity. The model used is taken from the hostfile's "model" field,

@@ -84,15 +84,29 @@ class TestSkipChecks:
         moe = get_scenarios(["flash-moe"])[0]
         assert moe.should_skip(tmp_path)
 
-    def test_flash_moe_runs_with_moe_config(self, tmp_path):
+    def test_flash_moe_skips_moe_without_preparation(self, tmp_path):
+        """MoE model but no flash_moe_layout.json — should skip."""
         (tmp_path / "config.json").write_text(
             json.dumps({"num_local_experts": 8, "hidden_size": 768})
         )
+        moe = get_scenarios(["flash-moe"])[0]
+        assert moe.should_skip(tmp_path)
+
+    def test_flash_moe_runs_with_moe_config_and_preparation(self, tmp_path):
+        (tmp_path / "config.json").write_text(
+            json.dumps({"num_local_experts": 8, "hidden_size": 768})
+        )
+        flash_moe_dir = tmp_path / "flash_moe"
+        flash_moe_dir.mkdir()
+        (flash_moe_dir / "flash_moe_layout.json").write_text("{}")
         moe = get_scenarios(["flash-moe"])[0]
         assert not moe.should_skip(tmp_path)
 
     def test_flash_moe_detects_routed_experts(self, tmp_path):
         (tmp_path / "config.json").write_text(json.dumps({"n_routed_experts": 4}))
+        flash_moe_dir = tmp_path / "flash_moe"
+        flash_moe_dir.mkdir()
+        (flash_moe_dir / "flash_moe_layout.json").write_text("{}")
         moe = get_scenarios(["flash-moe"])[0]
         assert not moe.should_skip(tmp_path)
 
@@ -100,6 +114,9 @@ class TestSkipChecks:
         (tmp_path / "config.json").write_text(
             json.dumps({"text_config": {"num_local_experts": 8}})
         )
+        flash_moe_dir = tmp_path / "flash_moe"
+        flash_moe_dir.mkdir()
+        (flash_moe_dir / "flash_moe_layout.json").write_text("{}")
         moe = get_scenarios(["flash-moe"])[0]
         assert not moe.should_skip(tmp_path)
 

@@ -259,7 +259,7 @@ def _run_server_scenario(
                     proc.wait(timeout=10)
                 except subprocess.TimeoutExpired:
                     proc.kill()
-                    proc.wait()
+                    proc.wait(timeout=5)
             rc = proc.returncode
             return [
                 PromptResult(
@@ -294,7 +294,7 @@ def _run_server_scenario(
                 proc.wait(timeout=15)
             except subprocess.TimeoutExpired:
                 proc.kill()
-                proc.wait()
+                proc.wait(timeout=5)
 
 
 def _run_prompts_over_http(
