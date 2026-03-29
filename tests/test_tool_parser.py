@@ -256,6 +256,20 @@ class TestTryMinimax:
         assert tool_uses[0]["input"] == {"path": "a.py"}
         assert tool_uses[1]["input"] == {"path": "b.py"}
 
+    def test_multiple_invokes_in_one_block(self):
+        text = (
+            "<minimax:tool_call>\n"
+            '<invoke name="foo"><parameter name="x">1</parameter></invoke>\n'
+            '<invoke name="bar"><parameter name="y">2</parameter></invoke>\n'
+            "</minimax:tool_call>"
+        )
+        tool_uses, remaining = _try_minimax(text)
+        assert len(tool_uses) == 2
+        assert tool_uses[0]["name"] == "foo"
+        assert tool_uses[1]["name"] == "bar"
+        # Both share the same span (entire block)
+        assert tool_uses[0]["_span"] == tool_uses[1]["_span"]
+
     def test_multiple_parameters(self):
         text = (
             "<minimax:tool_call>\n"
