@@ -871,17 +871,24 @@ async def generate_completion(
         if system:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
-        prompt = _apply_chat_template_text(
-            lm.text_tokenizer,
-            messages,
-            caps=lm.template_caps,
-            enable_thinking=False,
-        )
-        logger.info(
-            "Applied chat template for /api/generate (prompt length: %d chars)",
-            len(prompt),
-        )
-        logger.debug("Templated prompt: %s", prompt[:500])
+        try:
+            prompt = _apply_chat_template_text(
+                lm.text_tokenizer,
+                messages,
+                caps=lm.template_caps,
+                enable_thinking=False,
+            )
+            logger.info(
+                "Applied chat template for /api/generate (prompt length: %d chars)",
+                len(prompt),
+            )
+            logger.debug("Templated prompt: %s", prompt[:500])
+        except RuntimeError as exc:
+            logger.warning(
+                "Chat template failed for %s, falling back to raw prompt: %s",
+                model_name,
+                exc,
+            )
     elif apply_chat_template and lm.is_vlm:
         logger.warning(
             "apply_chat_template not supported for VLM %s via /api/generate",

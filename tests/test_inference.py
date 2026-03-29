@@ -582,6 +582,35 @@ class TestGenerateCompletion:
         ]
 
     @pytest.mark.asyncio
+    async def test_apply_chat_template_fallback_on_error(self, mock_manager):
+        """If the chat template fails (e.g. base model), fall back to raw prompt."""
+        mock_mx = MagicMock()
+        mock_mx.core = mock_mx
+        mock_mlx_lm = MagicMock()
+        lm = mock_manager._loaded["qwen3:latest"]
+        lm.text_tokenizer.apply_chat_template.side_effect = RuntimeError(
+            "No chat template"
+        )
+
+        with patch("olmlx.engine.inference.mx", mock_mx):
+            with patch.dict("sys.modules", {"mlx_lm": mock_mlx_lm}):
+                with patch(
+                    "olmlx.engine.inference.asyncio.to_thread",
+                    new_callable=AsyncMock,
+                    return_value="output",
+                ):
+                    result = await generate_completion(
+                        mock_manager,
+                        "qwen3",
+                        "Hello",
+                        stream=False,
+                        apply_chat_template=True,
+                    )
+
+        # Should succeed with the raw prompt, not raise
+        assert result["text"] == "output"
+
+    @pytest.mark.asyncio
     async def test_streaming(self, mock_manager):
         mock_mx = MagicMock()
 
