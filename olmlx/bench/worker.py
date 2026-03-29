@@ -39,47 +39,65 @@ async def _run_prompts(
 
     transport = ASGITransport(app=app, raise_app_exceptions=False)
     results = []
-    async with AsyncClient(transport=transport, base_url="http://bench") as client:
-        for prompt in prompts:
-            max_tokens = max_tokens_override or prompt.get("max_tokens", 256)
-            body = {
-                "model": model,
-                "stream": False,
-                "messages": prompt["messages"],
-                "options": {
-                    "seed": 42,
-                    "temperature": 0.0,
-                    "num_predict": max_tokens,
-                },
-            }
-            try:
-                resp = await client.post("/api/chat", json=body, timeout=300.0)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    results.append(
-                        {
-                            "prompt_name": prompt["name"],
-                            "category": prompt["category"],
-                            "output_text": data.get("message", {}).get("content", ""),
-                            "status_code": resp.status_code,
-                            "error": None,
-                            "eval_count": data.get("eval_count", 0),
-                            "eval_duration_ns": data.get("eval_duration", 0),
-                            "prompt_eval_count": data.get("prompt_eval_count", 0),
-                            "prompt_eval_duration_ns": data.get(
-                                "prompt_eval_duration", 0
-                            ),
-                            "total_duration_ns": data.get("total_duration", 0),
-                        }
-                    )
-                else:
+    try:
+        async with AsyncClient(transport=transport, base_url="http://bench") as client:
+            for prompt in prompts:
+                max_tokens = max_tokens_override or prompt.get("max_tokens", 256)
+                body = {
+                    "model": model,
+                    "stream": False,
+                    "messages": prompt["messages"],
+                    "options": {
+                        "seed": 42,
+                        "temperature": 0.0,
+                        "num_predict": max_tokens,
+                    },
+                }
+                try:
+                    resp = await client.post("/api/chat", json=body, timeout=300.0)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        results.append(
+                            {
+                                "prompt_name": prompt["name"],
+                                "category": prompt["category"],
+                                "output_text": data.get("message", {}).get(
+                                    "content", ""
+                                ),
+                                "status_code": resp.status_code,
+                                "error": None,
+                                "eval_count": data.get("eval_count", 0),
+                                "eval_duration_ns": data.get("eval_duration", 0),
+                                "prompt_eval_count": data.get("prompt_eval_count", 0),
+                                "prompt_eval_duration_ns": data.get(
+                                    "prompt_eval_duration", 0
+                                ),
+                                "total_duration_ns": data.get("total_duration", 0),
+                            }
+                        )
+                    else:
+                        results.append(
+                            {
+                                "prompt_name": prompt["name"],
+                                "category": prompt["category"],
+                                "output_text": "",
+                                "status_code": resp.status_code,
+                                "error": resp.text[:500],
+                                "eval_count": 0,
+                                "eval_duration_ns": 0,
+                                "prompt_eval_count": 0,
+                                "prompt_eval_duration_ns": 0,
+                                "total_duration_ns": 0,
+                            }
+                        )
+                except Exception as e:
                     results.append(
                         {
                             "prompt_name": prompt["name"],
                             "category": prompt["category"],
                             "output_text": "",
-                            "status_code": resp.status_code,
-                            "error": resp.text[:500],
+                            "status_code": 0,
+                            "error": str(e),
                             "eval_count": 0,
                             "eval_duration_ns": 0,
                             "prompt_eval_count": 0,
@@ -87,23 +105,8 @@ async def _run_prompts(
                             "total_duration_ns": 0,
                         }
                     )
-            except Exception as e:
-                results.append(
-                    {
-                        "prompt_name": prompt["name"],
-                        "category": prompt["category"],
-                        "output_text": "",
-                        "status_code": 0,
-                        "error": str(e),
-                        "eval_count": 0,
-                        "eval_duration_ns": 0,
-                        "prompt_eval_count": 0,
-                        "prompt_eval_duration_ns": 0,
-                        "total_duration_ns": 0,
-                    }
-                )
-
-    await manager.stop()
+    finally:
+        await manager.stop()
     return results
 
 

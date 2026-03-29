@@ -983,7 +983,9 @@ def cmd_bench_run(args):
     from olmlx.bench.results import DEFAULT_BENCH_DIR
 
     scenario_names = (
-        [s.strip() for s in args.scenarios.split(",")] if args.scenarios else None
+        [s.strip() for s in args.scenarios.split(",") if s.strip()]
+        if args.scenarios
+        else None
     )
     bench_dir = Path(args.output_dir) if args.output_dir else DEFAULT_BENCH_DIR
 

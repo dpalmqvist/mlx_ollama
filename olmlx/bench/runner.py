@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
 import subprocess
 import sys
 import tempfile
@@ -32,16 +31,12 @@ _SERVER_STARTUP_TIMEOUT = 300  # seconds to wait for olmlx serve to become ready
 _SERVER_READY_POLL_INTERVAL = 2  # seconds between readiness checks
 
 
-def _safe_dir_name(name: str) -> str:
-    return re.sub(r"[^a-zA-Z0-9_.-]", "_", name)
-
-
 def _resolve_model_path(model: str) -> Path:
     """Resolve an HF path to its local directory."""
     from olmlx.config import settings
+    from olmlx.models.store import _safe_dir_name
 
-    safe_name = _safe_dir_name(model)
-    return settings.models_dir / safe_name
+    return settings.models_dir / _safe_dir_name(model)
 
 
 def run_bench(
@@ -252,31 +247,27 @@ def _run_server_scenario(
         proc = subprocess.Popen(
             cmd,
             env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=sys.stderr,
         )
 
         print(f"  Waiting for server on port {port}...", file=sys.stderr)
         if not _wait_for_server(port, proc, _SERVER_STARTUP_TIMEOUT):
-            stderr_out = ""
-            if proc.poll() is not None:
-                _, stderr_bytes = proc.communicate(timeout=5)
-                stderr_out = stderr_bytes.decode(errors="replace")[-500:]
-            else:
+            if proc.poll() is None:
                 proc.terminate()
                 try:
-                    _, stderr_bytes = proc.communicate(timeout=10)
-                    stderr_out = stderr_bytes.decode(errors="replace")[-500:]
+                    proc.wait(timeout=10)
                 except subprocess.TimeoutExpired:
                     proc.kill()
                     proc.wait()
+            rc = proc.returncode
             return [
                 PromptResult(
                     prompt_name="__server_error__",
                     category="error",
                     output_text="",
                     status_code=0,
-                    error=f"Server failed to start within {_SERVER_STARTUP_TIMEOUT}s: {stderr_out}",
+                    error=f"Server failed to start within {_SERVER_STARTUP_TIMEOUT}s (exit code {rc})",
                 )
             ]
 
