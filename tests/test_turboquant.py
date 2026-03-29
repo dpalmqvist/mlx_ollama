@@ -547,9 +547,9 @@ class TestMakeTurboQuantCache:
         # make_cache returns only 4 entries (for M and * blocks)
         model.make_cache.return_value = [
             ArraysCache(size=2),  # M
-            KVCache(),            # *
+            KVCache(),  # *
             ArraysCache(size=2),  # M
-            KVCache(),            # *
+            KVCache(),  # *
         ]
 
         cache = make_turboquant_cache(model, bits=4)

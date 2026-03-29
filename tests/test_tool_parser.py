@@ -225,11 +225,11 @@ class TestTryBareJson:
 class TestTryMinimax:
     def test_single_tool_call(self):
         text = (
-            '<minimax:tool_call>\n'
+            "<minimax:tool_call>\n"
             '<invoke name="get_weather">\n'
             '<parameter name="city">Tokyo</parameter>\n'
-            '</invoke>\n'
-            '</minimax:tool_call>'
+            "</invoke>\n"
+            "</minimax:tool_call>"
         )
         tool_uses, remaining = _try_minimax(text)
         assert len(tool_uses) == 1
@@ -240,16 +240,16 @@ class TestTryMinimax:
 
     def test_multiple_tool_call_blocks(self):
         text = (
-            '<minimax:tool_call>\n'
+            "<minimax:tool_call>\n"
             '<invoke name="read_file">\n'
             '<parameter name="path">a.py</parameter>\n'
-            '</invoke>\n'
-            '</minimax:tool_call>\n'
-            '<minimax:tool_call>\n'
+            "</invoke>\n"
+            "</minimax:tool_call>\n"
+            "<minimax:tool_call>\n"
             '<invoke name="read_file">\n'
             '<parameter name="path">b.py</parameter>\n'
-            '</invoke>\n'
-            '</minimax:tool_call>'
+            "</invoke>\n"
+            "</minimax:tool_call>"
         )
         tool_uses, remaining = _try_minimax(text)
         assert len(tool_uses) == 2
@@ -258,13 +258,13 @@ class TestTryMinimax:
 
     def test_multiple_parameters(self):
         text = (
-            '<minimax:tool_call>\n'
+            "<minimax:tool_call>\n"
             '<invoke name="Agent">\n'
             '<parameter name="description">Explore codebase</parameter>\n'
             '<parameter name="prompt">Look at the code</parameter>\n'
             '<parameter name="subagent_type">Explore</parameter>\n'
-            '</invoke>\n'
-            '</minimax:tool_call>'
+            "</invoke>\n"
+            "</minimax:tool_call>"
         )
         tool_uses, remaining = _try_minimax(text)
         assert len(tool_uses) == 1
@@ -277,15 +277,15 @@ class TestTryMinimax:
 
     def test_multiline_parameter_value(self):
         text = (
-            '<minimax:tool_call>\n'
+            "<minimax:tool_call>\n"
             '<invoke name="Agent">\n'
             '<parameter name="description">Explore</parameter>\n'
             '<parameter name="prompt">Explore the codebase:\n'
-            '1. Architecture\n'
-            '2. Design patterns\n'
-            '3. Code quality</parameter>\n'
-            '</invoke>\n'
-            '</minimax:tool_call>'
+            "1. Architecture\n"
+            "2. Design patterns\n"
+            "3. Code quality</parameter>\n"
+            "</invoke>\n"
+            "</minimax:tool_call>"
         )
         tool_uses, remaining = _try_minimax(text)
         assert len(tool_uses) == 1
@@ -295,11 +295,11 @@ class TestTryMinimax:
     def test_with_surrounding_text(self):
         text = (
             "I'll explore the codebase.\n"
-            '<minimax:tool_call>\n'
+            "<minimax:tool_call>\n"
             '<invoke name="Agent">\n'
             '<parameter name="description">Explore</parameter>\n'
-            '</invoke>\n'
-            '</minimax:tool_call>\n'
+            "</invoke>\n"
+            "</minimax:tool_call>\n"
             "Let me know if you need more."
         )
         tool_uses, remaining = _try_minimax(text)
@@ -314,23 +314,23 @@ class TestTryMinimax:
 
     def test_empty_name_skipped(self):
         text = (
-            '<minimax:tool_call>\n'
+            "<minimax:tool_call>\n"
             '<invoke name="">\n'
             '<parameter name="x">1</parameter>\n'
-            '</invoke>\n'
-            '</minimax:tool_call>'
+            "</invoke>\n"
+            "</minimax:tool_call>"
         )
         tool_uses, remaining = _try_minimax(text)
         assert len(tool_uses) == 0
 
     def test_json_parameter_value_parsed(self):
         text = (
-            '<minimax:tool_call>\n'
+            "<minimax:tool_call>\n"
             '<invoke name="search">\n'
             '<parameter name="limit">10</parameter>\n'
             '<parameter name="verbose">true</parameter>\n'
-            '</invoke>\n'
-            '</minimax:tool_call>'
+            "</invoke>\n"
+            "</minimax:tool_call>"
         )
         tool_uses, remaining = _try_minimax(text)
         assert len(tool_uses) == 1
@@ -340,11 +340,11 @@ class TestTryMinimax:
     def test_via_parse_model_output(self):
         text = (
             "<think>Let me check</think>"
-            '<minimax:tool_call>\n'
+            "<minimax:tool_call>\n"
             '<invoke name="get_weather">\n'
             '<parameter name="city">Berlin</parameter>\n'
-            '</invoke>\n'
-            '</minimax:tool_call>'
+            "</invoke>\n"
+            "</minimax:tool_call>"
         )
         thinking, visible, tools = parse_model_output(text, has_tools=True)
         assert thinking == "Let me check"
